@@ -1,0 +1,9 @@
+name: callwave_flutter_workspace
+packages:
+  - packages/**
+
+scripts:
+  analyze:
+    run: melos exec -- flutter analyze
+  test:
+    run: melos exec -- flutter test

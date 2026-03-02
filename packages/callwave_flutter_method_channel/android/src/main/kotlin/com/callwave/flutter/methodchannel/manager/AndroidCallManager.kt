@@ -1,0 +1,207 @@
+package com.callwave.flutter.methodchannel.manager
+
+import android.Manifest
+import android.app.Activity
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.core.content.ContextCompat
+import com.callwave.flutter.methodchannel.CallwaveConstants
+import com.callwave.flutter.methodchannel.activity.FullScreenCallActivity
+import com.callwave.flutter.methodchannel.events.EventSinkBridge
+import com.callwave.flutter.methodchannel.model.CallEventPayload
+import com.callwave.flutter.methodchannel.model.CallPayload
+import com.callwave.flutter.methodchannel.model.CallPayload.Companion.toExtraJson
+import com.callwave.flutter.methodchannel.receiver.CallActionReceiver
+
+class AndroidCallManager(
+    private val context: Context,
+    private val notificationManager: CallNotificationManager,
+    private val timeoutScheduler: CallTimeoutScheduler,
+    private val activeCallRegistry: ActiveCallRegistry,
+    private val eventSinkBridge: EventSinkBridge,
+) {
+    private val payloadStore = HashMap<String, CallPayload>()
+
+    fun initialize() {
+        notificationManager.ensureChannel()
+    }
+
+    fun showIncomingCall(payload: CallPayload) {
+        if (!activeCallRegistry.tryStart(payload.callId)) {
+            emitEvent(payload.callId, CallwaveConstants.EVENT_DECLINED, payload.extra)
+            return
+        }
+
+        payloadStore[payload.callId] = payload
+
+        notificationManager.showIncomingCall(
+            payload = payload,
+            fullScreenIntent = fullScreenIntent(payload),
+            acceptIntent = actionIntent(CallwaveConstants.ACTION_ACCEPT, payload.callId, payload.extra),
+            declineIntent = actionIntent(CallwaveConstants.ACTION_DECLINE, payload.callId, payload.extra),
+        )
+        timeoutScheduler.schedule(payload.callId, payload.timeoutSeconds)
+    }
+
+    fun showOutgoingCall(payload: CallPayload) {
+        if (!activeCallRegistry.tryStart(payload.callId)) {
+            emitEvent(payload.callId, CallwaveConstants.EVENT_DECLINED, payload.extra)
+            return
+        }
+        payloadStore[payload.callId] = payload
+        notificationManager.showOutgoingCall(payload)
+        emitEvent(payload.callId, CallwaveConstants.EVENT_STARTED, payload.extra)
+    }
+
+    fun endCall(callId: String) {
+        timeoutScheduler.cancel(callId)
+        notificationManager.dismissIncoming(callId)
+        notificationManager.dismissMissed(callId)
+        activeCallRegistry.remove(callId)
+        val extra = payloadStore.remove(callId)?.extra
+        emitEvent(callId, CallwaveConstants.EVENT_ENDED, extra)
+    }
+
+    fun markMissed(callId: String) {
+        val payload = payloadStore[callId] ?: fallbackPayload(callId)
+        timeoutScheduler.cancel(callId)
+        notificationManager.dismissIncoming(callId)
+        activeCallRegistry.remove(callId)
+        notificationManager.showMissedCall(
+            payload = payload,
+            callbackIntent = actionIntent(CallwaveConstants.ACTION_CALLBACK, callId, payload.extra),
+        )
+        emitEvent(callId, CallwaveConstants.EVENT_MISSED, payload.extra)
+    }
+
+    fun onAccept(callId: String, extra: Map<String, Any?>?) {
+        timeoutScheduler.cancel(callId)
+        notificationManager.dismissIncoming(callId)
+        emitEvent(callId, CallwaveConstants.EVENT_ACCEPTED, extra ?: payloadStore[callId]?.extra)
+    }
+
+    fun onDecline(callId: String, extra: Map<String, Any?>?) {
+        timeoutScheduler.cancel(callId)
+        notificationManager.dismissIncoming(callId)
+        activeCallRegistry.remove(callId)
+        payloadStore.remove(callId)
+        emitEvent(callId, CallwaveConstants.EVENT_DECLINED, extra)
+    }
+
+    fun onTimeout(callId: String) {
+        val extra = payloadStore[callId]?.extra
+        emitEvent(callId, CallwaveConstants.EVENT_TIMEOUT, extra)
+        markMissed(callId)
+    }
+
+    fun onCallback(callId: String, extra: Map<String, Any?>?) {
+        notificationManager.dismissMissed(callId)
+        emitEvent(callId, CallwaveConstants.EVENT_CALLBACK, extra ?: payloadStore[callId]?.extra)
+    }
+
+    fun getActiveCallIds(): List<String> = activeCallRegistry.getActiveCallIds()
+
+    fun requestNotificationPermission(activity: Activity?): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return true
+        }
+
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (!granted && activity != null) {
+            activity.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
+        }
+        return granted
+    }
+
+    fun requestFullScreenIntentPermission(activity: Activity?) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            return
+        }
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (manager.canUseFullScreenIntent()) {
+            return
+        }
+        val target = Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).apply {
+            data = Uri.parse("package:${context.packageName}")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        if (activity != null) {
+            activity.startActivity(target)
+        } else {
+            context.startActivity(target)
+        }
+    }
+
+    private fun emitEvent(callId: String, type: String, extra: Map<String, Any?>?) {
+        eventSinkBridge.emit(
+            CallEventPayload.now(
+                callId = callId,
+                type = type,
+                extra = extra,
+            ),
+        )
+    }
+
+    private fun fullScreenIntent(payload: CallPayload): PendingIntent {
+        val intent = Intent(context, FullScreenCallActivity::class.java).apply {
+            putExtra(CallwaveConstants.EXTRA_CALL_ID, payload.callId)
+            putExtra(CallwaveConstants.EXTRA_CALLER_NAME, payload.callerName)
+            putExtra(CallwaveConstants.EXTRA_HANDLE, payload.handle)
+            putExtra(CallwaveConstants.EXTRA_EXTRA, toExtraJson(payload.extra))
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+
+        return PendingIntent.getActivity(
+            context,
+            payload.callId.hashCode() + 10000,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    private fun actionIntent(
+        action: String,
+        callId: String,
+        extra: Map<String, Any?>?,
+    ): PendingIntent {
+        val intent = Intent(context, CallActionReceiver::class.java).apply {
+            this.action = action
+            putExtra(CallwaveConstants.EXTRA_CALL_ID, callId)
+            putExtra(CallwaveConstants.EXTRA_EXTRA, toExtraJson(extra))
+        }
+
+        return PendingIntent.getBroadcast(
+            context,
+            action.hashCode() + callId.hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    private fun fallbackPayload(callId: String): CallPayload {
+        return CallPayload(
+            callId = callId,
+            callerName = "Unknown",
+            handle = "",
+            avatarUrl = null,
+            timeoutSeconds = 30,
+            callType = "audio",
+            extra = null,
+        )
+    }
+
+    companion object {
+        private const val REQUEST_NOTIFICATIONS = 4512
+    }
+}

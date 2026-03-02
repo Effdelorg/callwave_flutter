@@ -1,0 +1,35 @@
+name: callwave_flutter_method_channel
+description: MethodChannel implementation for callwave_flutter.
+version: 0.1.0
+homepage: https://github.com/callwave/callwave_flutter
+license: MIT
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+  flutter: '>=3.22.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  callwave_flutter_platform_interface: ^0.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  plugin:
+    implements: callwave_flutter
+    platforms:
+      android:
+        package: com.callwave.flutter.methodchannel
+        pluginClass: CallwaveFlutterPlugin
+        dartPluginClass: MethodChannelCallwaveFlutter
+      ios:
+        pluginClass: CallwaveFlutterPlugin
+        dartPluginClass: MethodChannelCallwaveFlutter
+
+dependency_overrides:
+  callwave_flutter_platform_interface:
+    path: ../callwave_flutter_platform_interface

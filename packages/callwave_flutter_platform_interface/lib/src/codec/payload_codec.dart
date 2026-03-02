@@ -1,0 +1,83 @@
+import '../enums/call_event_type.dart';
+import '../enums/call_type.dart';
+import '../models/call_data_dto.dart';
+import '../models/call_event_dto.dart';
+
+class PayloadCodec {
+  static const String keyCallId = 'callId';
+  static const String keyCallerName = 'callerName';
+  static const String keyHandle = 'handle';
+  static const String keyAvatarUrl = 'avatarUrl';
+  static const String keyTimeoutSeconds = 'timeoutSeconds';
+  static const String keyCallType = 'callType';
+  static const String keyExtra = 'extra';
+  static const String keyType = 'type';
+  static const String keyTimestampMs = 'timestampMs';
+
+  static Map<String, dynamic> callDataToMap(CallDataDto data) {
+    return <String, dynamic>{
+      keyCallId: data.callId,
+      keyCallerName: data.callerName,
+      keyHandle: data.handle,
+      keyAvatarUrl: data.avatarUrl,
+      keyTimeoutSeconds: data.timeoutSeconds,
+      keyCallType: data.callType.wireValue,
+      keyExtra: data.extra,
+    };
+  }
+
+  static CallDataDto callDataFromMap(Map<String, dynamic> map) {
+    return CallDataDto(
+      callId: map[keyCallId] as String,
+      callerName: map[keyCallerName] as String,
+      handle: map[keyHandle] as String,
+      avatarUrl: map[keyAvatarUrl] as String?,
+      timeoutSeconds: (map[keyTimeoutSeconds] as num?)?.toInt() ?? 30,
+      callType: CallType.fromWireValue(
+        (map[keyCallType] as String?) ?? CallType.audio.wireValue,
+      ),
+      extra: _asStringDynamicMap(map[keyExtra]),
+    );
+  }
+
+  static Map<String, dynamic> callEventToMap(CallEventDto event) {
+    return <String, dynamic>{
+      keyCallId: event.callId,
+      keyType: event.type.wireValue,
+      keyExtra: event.extra,
+      keyTimestampMs: event.timestampMs,
+    };
+  }
+
+  static CallEventDto? safeCallEventFromMap(Map<String, dynamic> map) {
+    final callId = map[keyCallId];
+    final rawType = map[keyType];
+    final timestamp = map[keyTimestampMs];
+
+    if (callId is! String || rawType is! String || timestamp is! num) {
+      return null;
+    }
+
+    final type = CallEventType.tryFromWireValue(rawType);
+    if (type == null) {
+      return null;
+    }
+
+    return CallEventDto(
+      callId: callId,
+      type: type,
+      timestampMs: timestamp.toInt(),
+      extra: _asStringDynamicMap(map[keyExtra]),
+    );
+  }
+
+  static Map<String, dynamic>? _asStringDynamicMap(Object? raw) {
+    if (raw is! Map) {
+      return null;
+    }
+
+    return raw.map<String, dynamic>((key, value) {
+      return MapEntry(key.toString(), value);
+    });
+  }
+}

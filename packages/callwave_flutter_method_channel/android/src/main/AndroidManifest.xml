@@ -1,0 +1,22 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  package="com.callwave.flutter.methodchannel">
+
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
+  <application>
+    <receiver
+      android:name=".receiver.CallActionReceiver"
+      android:exported="false" />
+
+    <activity
+      android:name=".activity.FullScreenCallActivity"
+      android:excludeFromRecents="true"
+      android:exported="false"
+      android:launchMode="singleTop"
+      android:showWhenLocked="true"
+      android:taskAffinity=""
+      android:theme="@style/CallwaveFullScreenTheme"
+      android:turnScreenOn="true" />
+  </application>
+</manifest>

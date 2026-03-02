@@ -1,0 +1,28 @@
+package com.callwave.flutter.methodchannel
+
+object CallwaveConstants {
+    const val METHOD_CHANNEL = "callwave_flutter/methods"
+    const val EVENT_CHANNEL = "callwave_flutter/events"
+    const val NOTIFICATION_CHANNEL_ID = "callwave_flutter_calls"
+
+    const val ACTION_ACCEPT = "com.callwave.flutter.methodchannel.ACTION_ACCEPT"
+    const val ACTION_DECLINE = "com.callwave.flutter.methodchannel.ACTION_DECLINE"
+    const val ACTION_TIMEOUT = "com.callwave.flutter.methodchannel.ACTION_TIMEOUT"
+    const val ACTION_CALLBACK = "com.callwave.flutter.methodchannel.ACTION_CALLBACK"
+
+    const val EXTRA_CALL_ID = "callId"
+    const val EXTRA_CALLER_NAME = "callerName"
+    const val EXTRA_HANDLE = "handle"
+    const val EXTRA_AVATAR_URL = "avatarUrl"
+    const val EXTRA_TIMEOUT_SECONDS = "timeoutSeconds"
+    const val EXTRA_CALL_TYPE = "callType"
+    const val EXTRA_EXTRA = "extra"
+
+    const val EVENT_ACCEPTED = "accepted"
+    const val EVENT_DECLINED = "declined"
+    const val EVENT_ENDED = "ended"
+    const val EVENT_TIMEOUT = "timeout"
+    const val EVENT_MISSED = "missed"
+    const val EVENT_CALLBACK = "callback"
+    const val EVENT_STARTED = "started"
+}

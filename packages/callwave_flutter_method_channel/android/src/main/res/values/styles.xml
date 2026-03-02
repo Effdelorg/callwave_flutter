@@ -1,0 +1,6 @@
+<resources>
+  <style name="CallwaveFullScreenTheme" parent="Theme.AppCompat.Light.NoActionBar">
+    <item name="android:windowIsTranslucent">false</item>
+    <item name="android:windowBackground">@android:color/background_dark</item>
+  </style>
+</resources>
