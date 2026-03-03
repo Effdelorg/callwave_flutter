@@ -65,7 +65,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
         _openIncomingLikeCallScreen(event);
         break;
       case CallEventType.accepted:
-        _openIncomingLikeCallScreen(event);
+        _openAcceptedCallScreen(event);
         break;
       case CallEventType.ended:
       case CallEventType.declined:
@@ -85,6 +85,16 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
     _openCallScreen(callData: callData, isOutgoing: false);
   }
 
+  void _openAcceptedCallScreen(CallEvent event) {
+    final callData = _callsById[event.callId] ?? _callDataFromEvent(event);
+    _callsById[event.callId] = callData;
+    _openCallScreen(
+      callData: callData,
+      isOutgoing: false,
+      startInConnecting: true,
+    );
+  }
+
   @override
   void dispose() {
     _subscription?.cancel();
@@ -95,6 +105,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
   void _openCallScreen({
     required CallData callData,
     required bool isOutgoing,
+    bool startInConnecting = false,
   }) {
     if (_openScreenCallIds.contains(callData.callId)) {
       return;
@@ -106,6 +117,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
         builder: (_) => CallScreen(
           callData: callData,
           isOutgoing: isOutgoing,
+          startInConnecting: startInConnecting,
           onCallEnded: () => _popOpenCallScreen(callData.callId),
         ),
       ),

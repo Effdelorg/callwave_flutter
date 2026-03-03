@@ -24,7 +24,7 @@ class CallActionReceiver : BroadcastReceiver() {
                 )
                 val accepted = CallwaveRuntime.callManager.onAccept(callId, extra, fallbackPayload)
                 if (accepted) {
-                    launchHostApp(context)
+                    launchHostApp(context, intent)
                 }
             }
             CallwaveConstants.ACTION_DECLINE -> CallwaveRuntime.callManager.onDecline(callId, extra)
@@ -33,8 +33,15 @@ class CallActionReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun launchHostApp(context: Context) {
+    private fun launchHostApp(context: Context, sourceIntent: Intent) {
         val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return
+        sourceIntent.extras?.let { extras ->
+            launchIntent.putExtras(extras)
+        }
+        launchIntent.putExtra(
+            CallwaveConstants.EXTRA_LAUNCH_ACTION,
+            CallwaveConstants.ACTION_ACCEPT_AND_OPEN,
+        )
         launchIntent.addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_ACTIVITY_SINGLE_TOP or

@@ -25,7 +25,8 @@ CallwaveFlutter.instance.events.listen((event) {
     // open incoming custom call screen with Accept / Decline
   }
   if (event.type == CallEventType.accepted) {
-    // open call screen
+    // open joined-flow screen (Connecting -> Connected)
+    // e.g. CallScreen(callData: data, startInConnecting: true)
   }
 });
 ```
@@ -38,6 +39,8 @@ or terminated app), the plugin emits `accepted`, brings the app to the
 foreground, and switches the notification to an ongoing call notification.
 On iOS, CallKit remains system-managed; the plugin emits `accepted` with merged
 caller metadata so apps can restore/open custom UI when active.
+Late/stale `incoming` events after accept are ignored in `CallScreenController`,
+so the UI does not regress back to ringing.
 
 Answer or decline from custom UI:
 

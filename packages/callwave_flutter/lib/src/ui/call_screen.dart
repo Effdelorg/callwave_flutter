@@ -20,6 +20,7 @@ class CallScreen extends StatefulWidget {
   const CallScreen({
     required this.callData,
     this.isOutgoing = false,
+    this.startInConnecting = false,
     this.onCallEnded,
     super.key,
   });
@@ -30,6 +31,9 @@ class CallScreen extends StatefulWidget {
   /// When `true` the initial status label shows "Calling..." instead of
   /// "Ringing...".
   final bool isOutgoing;
+
+  /// When `true`, starts in "Connecting..." and auto-advances to connected.
+  final bool startInConnecting;
 
   /// Invoked after the call ends. If `null` the screen auto-pops after a
   /// brief delay when a previous route exists.
@@ -54,6 +58,7 @@ class _CallScreenState extends State<CallScreen>
       callId: widget.callData.callId,
       callType: widget.callData.callType,
       isOutgoing: widget.isOutgoing,
+      startInConnecting: widget.startInConnecting,
     )..addListener(_onControllerChanged);
 
     _fadeController = AnimationController(

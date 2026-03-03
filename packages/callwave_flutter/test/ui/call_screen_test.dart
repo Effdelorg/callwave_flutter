@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:callwave_flutter/callwave_flutter.dart';
 import 'package:callwave_flutter_platform_interface/callwave_flutter_platform_interface.dart'
     as platform;
+import 'package:callwave_flutter/src/ui/call_screen_controller.dart';
 import 'package:callwave_flutter/src/ui/theme/call_screen_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -122,17 +123,50 @@ void main() {
 
     expect(callbackCount, 1);
   });
+
+  test('startInConnecting auto-advances to connected', () async {
+    final controller = CallScreenController(
+      callId: _FakePlatform.callId,
+      callType: CallType.audio,
+      startInConnecting: true,
+    );
+    addTearDown(controller.dispose);
+
+    expect(controller.status, CallStatus.connecting);
+
+    await Future<void>.delayed(const Duration(milliseconds: 850));
+    expect(controller.status, CallStatus.connected);
+  });
+
+  test('incoming after accepted does not regress to ringing', () async {
+    final controller = CallScreenController(
+      callId: _FakePlatform.callId,
+      callType: CallType.audio,
+    );
+    addTearDown(controller.dispose);
+
+    expect(controller.status, CallStatus.ringing);
+    fakePlatform.emit(type: platform.CallEventType.accepted);
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.status, isNot(CallStatus.ringing));
+
+    fakePlatform.emit(type: platform.CallEventType.incoming);
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.status, isNot(CallStatus.ringing));
+  });
 }
 
 void _pushCallScreen(
   GlobalKey<NavigatorState> navigatorKey,
   CallData callData, {
   VoidCallback? onCallEnded,
+  bool startInConnecting = false,
 }) {
   navigatorKey.currentState!.push(
     MaterialPageRoute<void>(
       builder: (_) => CallScreen(
         callData: callData,
+        startInConnecting: startInConnecting,
         onCallEnded: onCallEnded,
       ),
     ),

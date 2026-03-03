@@ -61,12 +61,7 @@ class AndroidCallManager(
         notificationManager.showIncomingCall(
             payload = payload,
             fullScreenIntent = fullScreenIntent(payload),
-            acceptIntent = actionIntent(
-                action = CallwaveConstants.ACTION_ACCEPT,
-                callId = payload.callId,
-                extra = payload.extra,
-                payload = payload,
-            ),
+            acceptIntent = acceptAndOpenIntent(payload),
             declineIntent = actionIntent(
                 action = CallwaveConstants.ACTION_DECLINE,
                 callId = payload.callId,
@@ -132,11 +127,27 @@ class AndroidCallManager(
     }
 
     fun handleIncomingCallIntent(intent: Intent?): Boolean {
+        val launchAction = intent?.getStringExtra(CallwaveConstants.EXTRA_LAUNCH_ACTION)
+        if (intent?.action == CallwaveConstants.ACTION_ACCEPT_AND_OPEN ||
+            launchAction == CallwaveConstants.ACTION_ACCEPT_AND_OPEN
+        ) {
+            val callId = intent.getStringExtra(CallwaveConstants.EXTRA_CALL_ID) ?: return false
+            val extraFromIntent = CallPayload.fromIntentExtras(
+                intent.getStringExtra(CallwaveConstants.EXTRA_EXTRA),
+            )
+            val fallbackPayload = payloadFromActionIntent(intent, callId, extraFromIntent)
+            onAccept(callId, extraFromIntent, fallbackPayload)
+            return true
+        }
+
         if (intent?.action != CallwaveConstants.ACTION_OPEN_INCOMING) {
             return false
         }
 
         val callId = intent.getStringExtra(CallwaveConstants.EXTRA_CALL_ID) ?: return false
+        if (acceptedCalls.contains(callId)) {
+            return true
+        }
         if (!openedIncomingCalls.add(callId)) {
             return true
         }
@@ -342,7 +353,7 @@ class AndroidCallManager(
 
         return PendingIntent.getActivity(
             context,
-            payload.callId.hashCode() + 10000,
+            payload.callId.hashCode() + PENDING_INTENT_REQUEST_CODE_OFFSET_FULL_SCREEN,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -371,6 +382,40 @@ class AndroidCallManager(
             context,
             action.hashCode() + callId.hashCode(),
             intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    private fun acceptAndOpenIntent(payload: CallPayload): PendingIntent {
+        val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
+            putExtra(CallwaveConstants.EXTRA_CALL_ID, payload.callId)
+            putExtra(CallwaveConstants.EXTRA_CALLER_NAME, payload.callerName)
+            putExtra(CallwaveConstants.EXTRA_HANDLE, payload.handle)
+            putExtra(CallwaveConstants.EXTRA_AVATAR_URL, payload.avatarUrl)
+            putExtra(CallwaveConstants.EXTRA_TIMEOUT_SECONDS, payload.timeoutSeconds)
+            putExtra(CallwaveConstants.EXTRA_CALL_TYPE, payload.callType)
+            putExtra(CallwaveConstants.EXTRA_EXTRA, toExtraJson(payload.extra))
+            putExtra(CallwaveConstants.EXTRA_LAUNCH_ACTION, CallwaveConstants.ACTION_ACCEPT_AND_OPEN)
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP,
+            )
+        }
+
+        if (launchIntent == null) {
+            return actionIntent(
+                action = CallwaveConstants.ACTION_ACCEPT,
+                callId = payload.callId,
+                extra = payload.extra,
+                payload = payload,
+            )
+        }
+
+        return PendingIntent.getActivity(
+            context,
+            payload.callId.hashCode() + PENDING_INTENT_REQUEST_CODE_OFFSET_ACCEPT_AND_OPEN,
+            launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
@@ -484,6 +529,8 @@ class AndroidCallManager(
     companion object {
         private const val TAG = "CallwaveFlutter"
         private const val REQUEST_NOTIFICATIONS = 4512
+        private const val PENDING_INTENT_REQUEST_CODE_OFFSET_FULL_SCREEN = 10000
+        private const val PENDING_INTENT_REQUEST_CODE_OFFSET_ACCEPT_AND_OPEN = 30000
     }
 }
 
