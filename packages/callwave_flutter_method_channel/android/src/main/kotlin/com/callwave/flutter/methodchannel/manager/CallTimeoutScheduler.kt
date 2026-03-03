@@ -15,7 +15,11 @@ class CallTimeoutScheduler(
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val pendingIntent = timeoutPendingIntentForUpdate(callId)
         val triggerAt = System.currentTimeMillis() + timeoutSeconds.coerceAtLeast(1) * 1000L
-        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+        } else {
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+        }
     }
 
     fun cancel(callId: String) {

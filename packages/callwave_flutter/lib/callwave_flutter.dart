@@ -5,3 +5,4 @@ export 'src/enums/call_event_type.dart';
 export 'src/enums/call_type.dart';
 export 'src/models/call_data.dart';
 export 'src/models/call_event.dart';
+export 'src/ui/call_screen.dart';
