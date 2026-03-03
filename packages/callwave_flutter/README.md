@@ -44,6 +44,13 @@ try {
 }
 ```
 
+`CallScreen` auto-return behavior:
+
+- When a call ends (`ended`, `declined`, `missed`, or `timeout`), `CallScreen`
+  auto-returns to the previous screen if one exists.
+- If `CallScreen` is the root route (no previous route), it stays on the
+  current screen and does not force navigation.
+
 Optional post-call behavior:
 
 ```dart

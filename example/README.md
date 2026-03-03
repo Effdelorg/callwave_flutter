@@ -25,3 +25,9 @@ Cold-start example:
 - Kill the app (or swipe it away).
 - Tap `Accept` on the incoming UI shown (native full-screen overlay when app was killed; custom Flutter UI if app was merely in background).
 - Re-open app and confirm buffered `accepted` event is shown.
+
+Timeout behavior:
+- Foreground/background: if `CallScreen` is open and the call times out, the
+  screen auto-returns to the previous route.
+- Terminated/cold-start timeout: no in-app back navigation is forced; rely on
+  system handling (for Android this is the missed-call notification).

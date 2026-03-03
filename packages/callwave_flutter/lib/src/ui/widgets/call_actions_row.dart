@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../call_screen_controller.dart';
+import '../theme/call_screen_theme.dart';
 import 'call_action_button.dart';
 
 /// Composes call actions for both incoming (Accept/Decline) and active call
@@ -28,7 +29,9 @@ class CallActionsRow extends StatelessWidget {
           CallActionButton(
             icon: Icons.call,
             label: 'Accept',
-            isActive: true,
+            backgroundColor: CallScreenTheme.acceptCallColor,
+            iconColor: CallScreenTheme.acceptCallIconColor,
+            isWiggling: true,
             onPressed: controller.acceptCall,
           ),
         ],
