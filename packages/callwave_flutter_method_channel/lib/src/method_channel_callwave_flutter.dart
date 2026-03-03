@@ -95,7 +95,19 @@ class MethodChannelCallwaveFlutter extends CallwaveFlutterPlatform {
   @override
   Future<void> requestFullScreenIntentPermission() async {
     await initialize();
-    await _methodChannel.invokeMethod<void>('requestFullScreenIntentPermission');
+    await _methodChannel
+        .invokeMethod<void>('requestFullScreenIntentPermission');
+  }
+
+  @override
+  Future<void> setPostCallBehavior(PostCallBehavior behavior) async {
+    await initialize();
+    await _methodChannel.invokeMethod<void>(
+      'setPostCallBehavior',
+      <String, dynamic>{
+        PayloadCodec.keyPostCallBehavior: behavior.wireValue,
+      },
+    );
   }
 
   CallEventDto? _safeDecodeEvent(dynamic raw) {

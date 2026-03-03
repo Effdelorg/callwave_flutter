@@ -121,19 +121,32 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
               runSpacing: 8,
               children: <Widget>[
                 ElevatedButton(
-                  onPressed: callId.isEmpty ? null : _requestNotificationPermission,
+                  onPressed:
+                      callId.isEmpty ? null : _requestNotificationPermission,
                   child: const Text('Notif Permission'),
                 ),
                 ElevatedButton(
-                  onPressed: callId.isEmpty ? null : _requestFullScreenPermission,
+                  onPressed:
+                      callId.isEmpty ? null : _requestFullScreenPermission,
                   child: const Text('FullScreen Permission'),
                 ),
                 ElevatedButton(
-                  onPressed: callId.isEmpty ? null : () => _showIncoming(callId),
+                  onPressed: callId.isEmpty ? null : _setPostCallStayOpen,
+                  child: const Text('Stay Open'),
+                ),
+                ElevatedButton(
+                  onPressed:
+                      callId.isEmpty ? null : _setPostCallBackgroundOnEnd,
+                  child: const Text('Bg On End'),
+                ),
+                ElevatedButton(
+                  onPressed:
+                      callId.isEmpty ? null : () => _showIncoming(callId),
                   child: const Text('Incoming'),
                 ),
                 ElevatedButton(
-                  onPressed: callId.isEmpty ? null : () => _showOutgoing(callId),
+                  onPressed:
+                      callId.isEmpty ? null : () => _showOutgoing(callId),
                   child: const Text('Outgoing'),
                 ),
                 ElevatedButton(
@@ -180,13 +193,27 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
   }
 
   Future<void> _requestNotificationPermission() async {
-    final granted = await CallwaveFlutter.instance.requestNotificationPermission();
+    final granted =
+        await CallwaveFlutter.instance.requestNotificationPermission();
     _pushLog('Notification permission granted: $granted');
   }
 
   Future<void> _requestFullScreenPermission() async {
     await CallwaveFlutter.instance.requestFullScreenIntentPermission();
     _pushLog('Requested full-screen intent permission screen.');
+  }
+
+  Future<void> _setPostCallStayOpen() async {
+    await CallwaveFlutter.instance
+        .setPostCallBehavior(PostCallBehavior.stayOpen);
+    _pushLog('Post-call behavior set to stayOpen.');
+  }
+
+  Future<void> _setPostCallBackgroundOnEnd() async {
+    await CallwaveFlutter.instance.setPostCallBehavior(
+      PostCallBehavior.backgroundOnEnded,
+    );
+    _pushLog('Post-call behavior set to backgroundOnEnded.');
   }
 
   Future<void> _showIncoming(String callId) async {
@@ -267,8 +294,10 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
     final fallback = _buildIncomingCallData(event.callId);
     final callerName =
         _readNonEmptyString(event.extra, 'callerName') ?? fallback.callerName;
-    final handle = _readNonEmptyString(event.extra, 'handle') ?? fallback.handle;
-    final callType = _readCallType(event.extra?['callType']) ?? fallback.callType;
+    final handle =
+        _readNonEmptyString(event.extra, 'handle') ?? fallback.handle;
+    final callType =
+        _readCallType(event.extra?['callType']) ?? fallback.callType;
 
     return CallData(
       callId: event.callId,

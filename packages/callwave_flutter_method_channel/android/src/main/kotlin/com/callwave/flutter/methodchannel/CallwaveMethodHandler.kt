@@ -71,6 +71,12 @@ class CallwaveMethodHandler(
                 result.success(null)
             }
 
+            "setPostCallBehavior" -> {
+                val behavior = call.argument<String>(CallwaveConstants.EXTRA_POST_CALL_BEHAVIOR)
+                callManager.setPostCallBehavior(behavior)
+                result.success(null)
+            }
+
             else -> result.notImplemented()
         }
     }

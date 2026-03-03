@@ -26,3 +26,11 @@ CallwaveFlutter.instance.events.listen((event) {
   }
 });
 ```
+
+Optional post-call behavior:
+
+```dart
+await CallwaveFlutter.instance.setPostCallBehavior(
+  PostCallBehavior.backgroundOnEnded,
+);
+```

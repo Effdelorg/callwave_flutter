@@ -1,5 +1,6 @@
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
+import 'enums/post_call_behavior.dart';
 import 'models/call_data_dto.dart';
 import 'models/call_event_dto.dart';
 
@@ -34,6 +35,12 @@ abstract class CallwaveFlutterPlatform extends PlatformInterface {
   Future<bool> requestNotificationPermission();
 
   Future<void> requestFullScreenIntentPermission();
+
+  /// Configures post-call behavior when the user ends a call via [endCall].
+  ///
+  /// On Android, [PostCallBehavior.backgroundOnEnded] moves the app to
+  /// background. On iOS, the setting is accepted but has no effect.
+  Future<void> setPostCallBehavior(PostCallBehavior behavior);
 }
 
 class _StubCallwaveFlutterPlatform extends CallwaveFlutterPlatform {
@@ -69,6 +76,13 @@ class _StubCallwaveFlutterPlatform extends CallwaveFlutterPlatform {
   Future<bool> requestNotificationPermission() {
     throw UnimplementedError(
       'requestNotificationPermission() has not been implemented.',
+    );
+  }
+
+  @override
+  Future<void> setPostCallBehavior(PostCallBehavior behavior) {
+    throw UnimplementedError(
+      'setPostCallBehavior() has not been implemented.',
     );
   }
 

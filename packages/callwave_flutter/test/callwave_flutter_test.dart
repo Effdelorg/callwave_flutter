@@ -40,6 +40,17 @@ void main() {
     expect(event.type, CallEventType.accepted);
     expect(event.timestamp, DateTime.fromMillisecondsSinceEpoch(5000));
   });
+
+  test('setPostCallBehavior delegates to platform interface', () async {
+    await CallwaveFlutter.instance.setPostCallBehavior(
+      PostCallBehavior.backgroundOnEnded,
+    );
+
+    expect(
+      fakePlatform.postCallBehavior,
+      platform.PostCallBehavior.backgroundOnEnded,
+    );
+  });
 }
 
 class _FakePlatform extends platform.CallwaveFlutterPlatform {
@@ -47,6 +58,8 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
       StreamController<platform.CallEventDto>.broadcast();
 
   String? lastIncomingCallId;
+  platform.PostCallBehavior postCallBehavior =
+      platform.PostCallBehavior.stayOpen;
 
   @override
   Stream<platform.CallEventDto> get events => _controller.stream;
@@ -72,6 +85,11 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
 
   @override
   Future<bool> requestNotificationPermission() async => true;
+
+  @override
+  Future<void> setPostCallBehavior(platform.PostCallBehavior behavior) async {
+    postCallBehavior = behavior;
+  }
 
   @override
   Future<void> showIncomingCall(platform.CallDataDto data) async {

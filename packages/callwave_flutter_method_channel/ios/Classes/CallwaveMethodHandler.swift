@@ -62,6 +62,12 @@ final class CallwaveMethodHandler {
     case "requestFullScreenIntentPermission":
       result(nil)
 
+    case "setPostCallBehavior":
+      let args = call.arguments as? [String: Any]
+      let behavior = args?["postCallBehavior"] as? String
+      callManager.setPostCallBehavior(rawValue: behavior)
+      result(nil)
+
     default:
       result(FlutterMethodNotImplemented)
     }

@@ -28,6 +28,8 @@ class AndroidCallManager(
     private val eventSinkBridge: EventSinkBridge,
 ) {
     private val payloadStore = HashMap<String, CallPayload>()
+    var activity: Activity? = null
+    private var postCallBehavior = PostCallBehavior.STAY_OPEN
 
     fun initialize() {
         notificationManager.ensureChannel()
@@ -78,6 +80,7 @@ class AndroidCallManager(
         activeCallRegistry.remove(callId)
         val extra = payloadStore.remove(callId)?.extra
         emitEvent(callId, CallwaveConstants.EVENT_ENDED, extra)
+        applyPostCallBehavior()
     }
 
     fun markMissed(callId: String) {
@@ -155,6 +158,10 @@ class AndroidCallManager(
         }
     }
 
+    fun setPostCallBehavior(rawBehavior: String?) {
+        postCallBehavior = PostCallBehavior.fromWireValue(rawBehavior)
+    }
+
     private fun emitEvent(callId: String, type: String, extra: Map<String, Any?>?) {
         eventSinkBridge.emit(
             CallEventPayload.now(
@@ -163,6 +170,16 @@ class AndroidCallManager(
                 extra = extra,
             ),
         )
+    }
+
+    private fun applyPostCallBehavior() {
+        if (postCallBehavior != PostCallBehavior.BACKGROUND_ON_ENDED) {
+            return
+        }
+        val currentActivity = activity ?: return
+        currentActivity.runOnUiThread {
+            currentActivity.moveTaskToBack(true)
+        }
     }
 
     private fun fullScreenIntent(payload: CallPayload): PendingIntent {
@@ -216,5 +233,20 @@ class AndroidCallManager(
     companion object {
         private const val TAG = "CallwaveFlutter"
         private const val REQUEST_NOTIFICATIONS = 4512
+    }
+}
+
+private enum class PostCallBehavior(val wireValue: String) {
+    STAY_OPEN("stayOpen"),
+    BACKGROUND_ON_ENDED("backgroundOnEnded"),
+    ;
+
+    companion object {
+        fun fromWireValue(rawValue: String?): PostCallBehavior {
+            if (rawValue == null) {
+                return STAY_OPEN
+            }
+            return entries.firstOrNull { it.wireValue == rawValue } ?: STAY_OPEN
+        }
     }
 }

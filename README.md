@@ -41,6 +41,17 @@ CallwaveFlutter.instance.events.listen((event) {
 });
 ```
 
+Optional post-call behavior:
+
+```dart
+await CallwaveFlutter.instance.setPostCallBehavior(
+  PostCallBehavior.backgroundOnEnded,
+);
+```
+
+`backgroundOnEnded` is applied on Android (moves app task to background after `endCall`).
+On iOS, the setting is accepted but intentionally no-op.
+
 ## Local Development
 
 1. Install melos (`dart pub global activate melos`).

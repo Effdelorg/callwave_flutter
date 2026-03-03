@@ -24,6 +24,7 @@ class CallwaveFlutterPlugin :
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         methodChannel?.setMethodCallHandler(null)
         eventChannel?.setStreamHandler(null)
+        CallwaveRuntime.callManager.activity = null
         methodChannel = null
         eventChannel = null
         methodHandler = null
@@ -68,5 +69,6 @@ class CallwaveFlutterPlugin :
 
     private fun bindActivity(activity: Activity?) {
         methodHandler?.activity = activity
+        CallwaveRuntime.callManager.activity = activity
     }
 }

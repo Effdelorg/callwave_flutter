@@ -19,6 +19,7 @@ object CallwaveConstants {
     const val EXTRA_AVATAR_URL = "avatarUrl"
     const val EXTRA_TIMEOUT_SECONDS = "timeoutSeconds"
     const val EXTRA_CALL_TYPE = "callType"
+    const val EXTRA_POST_CALL_BEHAVIOR = "postCallBehavior"
     const val EXTRA_EXTRA = "extra"
 
     const val EVENT_ACCEPTED = "accepted"

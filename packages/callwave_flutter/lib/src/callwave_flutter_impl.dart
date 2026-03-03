@@ -2,6 +2,7 @@ import 'package:callwave_flutter_platform_interface/callwave_flutter_platform_in
     as platform;
 
 import 'enums/call_event_type.dart';
+import 'enums/post_call_behavior.dart';
 import 'enums/call_type.dart';
 import 'models/call_data.dart';
 import 'models/call_event.dart';
@@ -53,6 +54,17 @@ class CallwaveFlutter {
     return _platform.requestFullScreenIntentPermission();
   }
 
+  /// Configures post-call behavior when the user ends a call via [endCall].
+  ///
+  /// Does not apply to timeout, decline, or [markMissed]. On Android,
+  /// [PostCallBehavior.backgroundOnEnded] moves the app to background.
+  /// On iOS, the setting is accepted but has no effect.
+  Future<void> setPostCallBehavior(PostCallBehavior behavior) {
+    return _platform.setPostCallBehavior(
+      _dtoPostCallBehaviorFromPublic(behavior),
+    );
+  }
+
   platform.CallDataDto _toDto(CallData data) {
     return platform.CallDataDto(
       callId: data.callId,
@@ -94,6 +106,17 @@ class CallwaveFlutter {
         return platform.CallType.audio;
       case CallType.video:
         return platform.CallType.video;
+    }
+  }
+
+  platform.PostCallBehavior _dtoPostCallBehaviorFromPublic(
+    PostCallBehavior behavior,
+  ) {
+    switch (behavior) {
+      case PostCallBehavior.stayOpen:
+        return platform.PostCallBehavior.stayOpen;
+      case PostCallBehavior.backgroundOnEnded:
+        return platform.PostCallBehavior.backgroundOnEnded;
     }
   }
 }
