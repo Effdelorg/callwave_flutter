@@ -48,6 +48,18 @@ class CallNotificationManager(
         }
         manager.createNotificationChannel(channel)
 
+        val outgoingChannel = NotificationChannel(
+            CallwaveConstants.NOTIFICATION_CHANNEL_ID_OUTGOING,
+            "Outgoing Calls",
+            NotificationManager.IMPORTANCE_LOW,
+        ).apply {
+            description = "Outgoing call notifications"
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+            setSound(null, null)
+            enableVibration(false)
+        }
+        manager.createNotificationChannel(outgoingChannel)
+
         val missedChannel = NotificationChannel(
             CallwaveConstants.NOTIFICATION_CHANNEL_ID_MISSED,
             "Missed Calls",
@@ -109,12 +121,13 @@ class CallNotificationManager(
     }
 
     fun showOutgoingCall(payload: CallPayload) {
-        val notification = NotificationCompat.Builder(context, CallwaveConstants.NOTIFICATION_CHANNEL_ID)
+        val notification = NotificationCompat.Builder(context, CallwaveConstants.NOTIFICATION_CHANNEL_ID_OUTGOING)
             .setSmallIcon(android.R.drawable.sym_call_outgoing)
             .setContentTitle("Calling ${payload.callerName}")
             .setContentText(payload.handle)
             .setCategory(NotificationCompat.CATEGORY_CALL)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setSilent(true)
             .setOngoing(true)
             .build()
 

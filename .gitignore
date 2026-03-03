@@ -22,3 +22,4 @@ packages/*/pubspec.lock
 !.env.example
 .DS_Store
 prd.txt
+/.cursor

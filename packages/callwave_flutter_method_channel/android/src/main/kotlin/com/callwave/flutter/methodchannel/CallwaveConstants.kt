@@ -5,6 +5,7 @@ object CallwaveConstants {
     const val EVENT_CHANNEL = "callwave_flutter/events"
     const val NOTIFICATION_CHANNEL_ID = "callwave_flutter_calls_v2"
     const val NOTIFICATION_CHANNEL_ID_MISSED = "callwave_flutter_missed_calls"
+    const val NOTIFICATION_CHANNEL_ID_OUTGOING = "callwave_flutter_outgoing_calls"
     const val NOTIFICATION_CHANNEL_ID_LEGACY = "callwave_flutter_calls"
 
     const val ACTION_ACCEPT = "com.callwave.flutter.methodchannel.ACTION_ACCEPT"
