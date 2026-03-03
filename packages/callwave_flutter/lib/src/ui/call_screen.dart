@@ -32,7 +32,7 @@ class CallScreen extends StatefulWidget {
   final bool isOutgoing;
 
   /// Invoked after the call ends. If `null` the screen auto-pops after a
-  /// brief delay.
+  /// brief delay when a previous route exists.
   final VoidCallback? onCallEnded;
 
   @override
@@ -82,7 +82,10 @@ class _CallScreenState extends State<CallScreen>
     if (widget.onCallEnded != null) {
       widget.onCallEnded!();
     } else {
-      Navigator.of(context).maybePop();
+      final navigator = Navigator.of(context);
+      if (navigator.canPop()) {
+        navigator.pop();
+      }
     }
   }
 

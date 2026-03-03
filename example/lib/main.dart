@@ -62,14 +62,10 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
 
     switch (event.type) {
       case CallEventType.incoming:
-        final callData = _callsById[event.callId] ?? _callDataFromEvent(event);
-        _callsById[event.callId] = callData;
-        _openCallScreen(callData: callData, isOutgoing: false);
+        _openIncomingLikeCallScreen(event);
         break;
       case CallEventType.accepted:
-        final callData = _callsById[event.callId] ?? _callDataFromEvent(event);
-        _callsById[event.callId] = callData;
-        _openCallScreen(callData: callData, isOutgoing: false);
+        _openIncomingLikeCallScreen(event);
         break;
       case CallEventType.ended:
       case CallEventType.declined:
@@ -81,6 +77,12 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
       case CallEventType.callback:
         break;
     }
+  }
+
+  void _openIncomingLikeCallScreen(CallEvent event) {
+    final callData = _callsById[event.callId] ?? _callDataFromEvent(event);
+    _callsById[event.callId] = callData;
+    _openCallScreen(callData: callData, isOutgoing: false);
   }
 
   @override
@@ -98,16 +100,29 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
       return;
     }
     _openScreenCallIds.add(callData.callId);
-    Navigator.of(context).push(
+    Navigator.of(context)
+        .push(
       MaterialPageRoute<void>(
         builder: (_) => CallScreen(
           callData: callData,
           isOutgoing: isOutgoing,
+          onCallEnded: () => _popOpenCallScreen(callData.callId),
         ),
       ),
-    ).whenComplete(() {
+    )
+        .whenComplete(() {
       _openScreenCallIds.remove(callData.callId);
     });
+  }
+
+  void _popOpenCallScreen(String callId) {
+    if (!mounted || !_openScreenCallIds.contains(callId)) {
+      return;
+    }
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+    }
   }
 
   @override
