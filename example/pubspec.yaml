@@ -2,9 +2,10 @@ name: callwave_flutter_example
 description: Example app for callwave_flutter.
 publish_to: 'none'
 version: 0.1.0+1
+resolution: workspace
 
 environment:
-  sdk: '>=3.3.0 <4.0.0'
+  sdk: '>=3.5.0 <4.0.0'
   flutter: '>=3.22.0'
 
 dependencies:
@@ -12,12 +13,6 @@ dependencies:
     sdk: flutter
   callwave_flutter:
     path: ../packages/callwave_flutter
-
-dependency_overrides:
-  callwave_flutter_platform_interface:
-    path: ../packages/callwave_flutter_platform_interface
-  callwave_flutter_method_channel:
-    path: ../packages/callwave_flutter_method_channel
 
 dev_dependencies:
   flutter_test:

@@ -33,6 +33,12 @@ CallwaveFlutter.instance.events.listen((event) {
 `CallEventType.incoming` from notification/full-screen tap is Android behavior.
 On iOS, incoming UI remains CallKit-managed system UI.
 
+When users tap `Answer` from Android system incoming UI (foreground, background,
+or terminated app), the plugin emits `accepted`, brings the app to the
+foreground, and switches the notification to an ongoing call notification.
+On iOS, CallKit remains system-managed; the plugin emits `accepted` with merged
+caller metadata so apps can restore/open custom UI when active.
+
 Answer or decline from custom UI:
 
 ```dart

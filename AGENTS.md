@@ -14,7 +14,7 @@ Federated Flutter plugin for WhatsApp-style VoIP call UX (incoming call UI, acce
 ## Conventions
 
 - **Clean architecture**: Platform interface defines contracts; method channel implements them.
-- **Melos**: Use `melos bootstrap`, `melos run analyze`, `melos run test`.
+- **Workspace**: Use `dart pub get` at root; `dart run melos run analyze` / `dart run melos run test` for cross-package tasks.
 - Keep changes minimal. Follow existing patterns in the codebase.
 
 ## What Not to Add

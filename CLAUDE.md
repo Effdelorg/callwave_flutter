@@ -4,12 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build & Development Commands
 
-This is a Melos monorepo. Install melos first: `dart pub global activate melos`.
+This is a Dart workspace with Melos. From the repo root:
 
 ```bash
-melos bootstrap          # Link all packages and resolve dependencies
-melos run analyze        # Run flutter analyze across all packages
-melos run test           # Run tests across all packages
+dart pub get                    # Resolve workspace dependencies
+dart run melos run analyze      # Run flutter analyze across all packages
+dart run melos run test         # Run tests across all packages
 ```
 
 To work on a single package:
@@ -71,7 +71,7 @@ Both platforms persist events to disk when the Flutter engine is not attached:
 
 ## SDK Requirements
 
-- Dart SDK: `>=3.3.0 <4.0.0`
+- Dart SDK: `>=3.5.0 <4.0.0`
 - Flutter: `>=3.22.0`
 - iOS: 13.0+
 - Android: uses `AlarmManager`, `POST_NOTIFICATIONS` (API 33+), `USE_FULL_SCREEN_INTENT` (API 34+)

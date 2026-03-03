@@ -136,7 +136,11 @@ final class IOSCallManager {
     guard let callId = callIdByUuid[uuid] else { return }
     let payload = payloadStore[callId]
     cancelTimeout(callId: callId)
-    emit(callId: callId, type: "accepted", extra: payload?.extra)
+    emit(
+      callId: callId,
+      type: "accepted",
+      extra: acceptedEventExtra(payload: payload)
+    )
   }
 
   func handleEnd(uuid: UUID, reason: CXCallEndedReason?) {
@@ -209,6 +213,16 @@ final class IOSCallManager {
       // iOS should not force-close/background the app from a plugin.
       return
     }
+  }
+
+  private func acceptedEventExtra(payload: CallPayload?) -> [String: Any] {
+    var merged = payload?.extra ?? [:]
+    merged["callerName"] = payload?.callerName ?? (merged["callerName"] as? String ?? "Unknown")
+    merged["handle"] = payload?.handle ?? (merged["handle"] as? String ?? "")
+    merged["callType"] = payload?.callType ?? (merged["callType"] as? String ?? "audio")
+    merged["avatarUrl"] = payload?.avatarUrl ?? merged["avatarUrl"] ?? NSNull()
+
+    return merged
   }
 }
 

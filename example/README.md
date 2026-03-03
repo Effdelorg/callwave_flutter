@@ -24,7 +24,9 @@ Cold-start example:
 - Trigger `Incoming`.
 - Kill the app (or swipe it away).
 - Tap `Accept` on the incoming UI shown (native full-screen overlay when app was killed; custom Flutter UI if app was merely in background).
-- Re-open app and confirm buffered `accepted` event is shown.
+- The app is brought to foreground, custom call UI opens from `accepted`, and
+  an ongoing call notification is shown.
+- Confirm the event log contains one `accepted` event for that tap.
 
 Timeout behavior:
 - Foreground/background: if `CallScreen` is open and the call times out, the

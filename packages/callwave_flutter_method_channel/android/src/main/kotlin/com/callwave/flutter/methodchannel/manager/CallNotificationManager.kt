@@ -135,6 +135,21 @@ class CallNotificationManager(
         notificationManagerCompat.notify(incomingNotificationId(payload.callId), notification)
     }
 
+    fun showOngoingCall(payload: CallPayload) {
+        val notification = NotificationCompat.Builder(context, CallwaveConstants.NOTIFICATION_CHANNEL_ID_OUTGOING)
+            .setSmallIcon(android.R.drawable.sym_call_outgoing)
+            .setContentTitle(payload.callerName)
+            .setContentText("Ongoing ${payload.callType} call")
+            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setSilent(true)
+            .setOngoing(true)
+            .setAutoCancel(false)
+            .build()
+
+        notificationManagerCompat.notify(incomingNotificationId(payload.callId), notification)
+    }
+
     fun showMissedCall(payload: CallPayload, callbackIntent: PendingIntent) {
         val notification = NotificationCompat.Builder(context, CallwaveConstants.NOTIFICATION_CHANNEL_ID_MISSED)
             .setSmallIcon(android.R.drawable.sym_call_missed)

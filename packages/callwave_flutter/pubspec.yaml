@@ -3,9 +3,10 @@ description: Flutter plugin for WhatsApp-style VoIP call UX.
 version: 0.1.0
 homepage: https://github.com/callwave/callwave_flutter
 license: MIT
+resolution: workspace
 
 environment:
-  sdk: '>=3.3.0 <4.0.0'
+  sdk: '>=3.5.0 <4.0.0'
   flutter: '>=3.22.0'
 
 dependencies:
@@ -26,9 +27,3 @@ flutter:
         default_package: callwave_flutter_method_channel
       ios:
         default_package: callwave_flutter_method_channel
-
-dependency_overrides:
-  callwave_flutter_platform_interface:
-    path: ../callwave_flutter_platform_interface
-  callwave_flutter_method_channel:
-    path: ../callwave_flutter_method_channel

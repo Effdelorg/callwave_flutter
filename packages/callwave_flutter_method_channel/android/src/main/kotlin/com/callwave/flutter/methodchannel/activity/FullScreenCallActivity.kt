@@ -19,6 +19,10 @@ class FullScreenCallActivity : AppCompatActivity() {
 
         val callId = intent.getStringExtra(CallwaveConstants.EXTRA_CALL_ID) ?: return finish()
         val callerName = intent.getStringExtra(CallwaveConstants.EXTRA_CALLER_NAME) ?: "Incoming call"
+        val handle = intent.getStringExtra(CallwaveConstants.EXTRA_HANDLE) ?: ""
+        val avatarUrl = intent.getStringExtra(CallwaveConstants.EXTRA_AVATAR_URL)
+        val timeoutSeconds = intent.getIntExtra(CallwaveConstants.EXTRA_TIMEOUT_SECONDS, 30)
+        val callType = intent.getStringExtra(CallwaveConstants.EXTRA_CALL_TYPE) ?: "audio"
         val extra = intent.getStringExtra(CallwaveConstants.EXTRA_EXTRA)
 
         val root = LinearLayout(this).apply {
@@ -36,7 +40,16 @@ class FullScreenCallActivity : AppCompatActivity() {
         val accept = Button(this).apply {
             text = "Accept"
             setOnClickListener {
-                sendAction(CallwaveConstants.ACTION_ACCEPT, callId, extra)
+                sendAction(
+                    action = CallwaveConstants.ACTION_ACCEPT,
+                    callId = callId,
+                    callerName = callerName,
+                    handle = handle,
+                    avatarUrl = avatarUrl,
+                    timeoutSeconds = timeoutSeconds,
+                    callType = callType,
+                    extra = extra,
+                )
                 finish()
             }
         }
@@ -44,7 +57,16 @@ class FullScreenCallActivity : AppCompatActivity() {
         val decline = Button(this).apply {
             text = "Decline"
             setOnClickListener {
-                sendAction(CallwaveConstants.ACTION_DECLINE, callId, extra)
+                sendAction(
+                    action = CallwaveConstants.ACTION_DECLINE,
+                    callId = callId,
+                    callerName = callerName,
+                    handle = handle,
+                    avatarUrl = avatarUrl,
+                    timeoutSeconds = timeoutSeconds,
+                    callType = callType,
+                    extra = extra,
+                )
                 finish()
             }
         }
@@ -55,10 +77,24 @@ class FullScreenCallActivity : AppCompatActivity() {
         setContentView(root)
     }
 
-    private fun sendAction(action: String, callId: String, extra: String?) {
+    private fun sendAction(
+        action: String,
+        callId: String,
+        callerName: String,
+        handle: String,
+        avatarUrl: String?,
+        timeoutSeconds: Int,
+        callType: String,
+        extra: String?,
+    ) {
         val intent = Intent(this, CallActionReceiver::class.java).apply {
             this.action = action
             putExtra(CallwaveConstants.EXTRA_CALL_ID, callId)
+            putExtra(CallwaveConstants.EXTRA_CALLER_NAME, callerName)
+            putExtra(CallwaveConstants.EXTRA_HANDLE, handle)
+            putExtra(CallwaveConstants.EXTRA_AVATAR_URL, avatarUrl)
+            putExtra(CallwaveConstants.EXTRA_TIMEOUT_SECONDS, timeoutSeconds)
+            putExtra(CallwaveConstants.EXTRA_CALL_TYPE, callType)
             putExtra(CallwaveConstants.EXTRA_EXTRA, extra)
         }
         sendBroadcast(intent)

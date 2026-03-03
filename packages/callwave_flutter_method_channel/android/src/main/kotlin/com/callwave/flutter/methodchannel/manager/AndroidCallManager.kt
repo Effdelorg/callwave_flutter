@@ -29,6 +29,7 @@ class AndroidCallManager(
 ) {
     private val payloadStore = HashMap<String, CallPayload>()
     private val openedIncomingCalls = HashSet<String>()
+    private val acceptedCalls = HashSet<String>()
     var activity: Activity? = null
     private var postCallBehavior = PostCallBehavior.STAY_OPEN
 
@@ -55,12 +56,23 @@ class AndroidCallManager(
 
         payloadStore[payload.callId] = payload
         openedIncomingCalls.remove(payload.callId)
+        acceptedCalls.remove(payload.callId)
 
         notificationManager.showIncomingCall(
             payload = payload,
             fullScreenIntent = fullScreenIntent(payload),
-            acceptIntent = actionIntent(CallwaveConstants.ACTION_ACCEPT, payload.callId, payload.extra),
-            declineIntent = actionIntent(CallwaveConstants.ACTION_DECLINE, payload.callId, payload.extra),
+            acceptIntent = actionIntent(
+                action = CallwaveConstants.ACTION_ACCEPT,
+                callId = payload.callId,
+                extra = payload.extra,
+                payload = payload,
+            ),
+            declineIntent = actionIntent(
+                action = CallwaveConstants.ACTION_DECLINE,
+                callId = payload.callId,
+                extra = payload.extra,
+                payload = payload,
+            ),
         )
         timeoutScheduler.schedule(payload.callId, payload.timeoutSeconds)
     }
@@ -71,6 +83,7 @@ class AndroidCallManager(
             return
         }
         payloadStore[payload.callId] = payload
+        acceptedCalls.remove(payload.callId)
         notificationManager.showOutgoingCall(payload)
         emitEvent(payload.callId, CallwaveConstants.EVENT_STARTED, payload.extra)
     }
@@ -81,6 +94,7 @@ class AndroidCallManager(
         notificationManager.dismissMissed(callId)
         activeCallRegistry.remove(callId)
         openedIncomingCalls.remove(callId)
+        acceptedCalls.remove(callId)
         val extra = payloadStore.remove(callId)?.extra
         emitEvent(callId, CallwaveConstants.EVENT_ENDED, extra)
         applyPostCallBehavior()
@@ -92,9 +106,15 @@ class AndroidCallManager(
         notificationManager.dismissIncoming(callId)
         activeCallRegistry.remove(callId)
         openedIncomingCalls.remove(callId)
+        acceptedCalls.remove(callId)
         notificationManager.showMissedCall(
             payload = payload,
-            callbackIntent = actionIntent(CallwaveConstants.ACTION_CALLBACK, callId, payload.extra),
+            callbackIntent = actionIntent(
+                action = CallwaveConstants.ACTION_CALLBACK,
+                callId = callId,
+                extra = payload.extra,
+                payload = payload,
+            ),
         )
         emitEvent(callId, CallwaveConstants.EVENT_MISSED, payload.extra)
     }
@@ -126,7 +146,7 @@ class AndroidCallManager(
         )
         var payload = payloadStore[callId]
         if (payload == null) {
-            val restoredPayload = payloadFromIncomingIntent(intent, callId, extraFromIntent)
+            val restoredPayload = payloadFromIntent(callId, intent, extraFromIntent)
             if (!activeCallRegistry.tryStart(callId)) {
                 openedIncomingCalls.remove(callId)
                 emitEvent(callId, CallwaveConstants.EVENT_DECLINED, restoredPayload.extra)
@@ -153,11 +173,47 @@ class AndroidCallManager(
         return true
     }
 
-    fun onAccept(callId: String, extra: Map<String, Any?>?) {
+    fun onAccept(
+        callId: String,
+        extra: Map<String, Any?>?,
+        fallbackPayload: CallPayload? = null,
+    ): Boolean {
+        if (!acceptedCalls.add(callId)) {
+            return false
+        }
+
+        val payload = resolvePayloadForAccept(callId, fallbackPayload)
+        if (payload == null) {
+            acceptedCalls.remove(callId)
+            if (fallbackPayload != null) {
+                timeoutScheduler.cancel(callId)
+                notificationManager.dismissIncoming(callId)
+                openedIncomingCalls.remove(callId)
+                emitEvent(
+                    callId,
+                    CallwaveConstants.EVENT_DECLINED,
+                    eventExtra(
+                        payload = fallbackPayload,
+                        fallbackExtra = extra,
+                    ),
+                )
+            }
+            return false
+        }
+
         timeoutScheduler.cancel(callId)
         notificationManager.dismissIncoming(callId)
         openedIncomingCalls.remove(callId)
-        emitEvent(callId, CallwaveConstants.EVENT_ACCEPTED, extra ?: payloadStore[callId]?.extra)
+        notificationManager.showOngoingCall(payload)
+        emitEvent(
+            callId,
+            CallwaveConstants.EVENT_ACCEPTED,
+            eventExtra(
+                payload = payload,
+                fallbackExtra = extra,
+            ),
+        )
+        return true
     }
 
     fun onDecline(callId: String, extra: Map<String, Any?>?) {
@@ -165,12 +221,14 @@ class AndroidCallManager(
         notificationManager.dismissIncoming(callId)
         activeCallRegistry.remove(callId)
         openedIncomingCalls.remove(callId)
+        acceptedCalls.remove(callId)
         payloadStore.remove(callId)
         emitEvent(callId, CallwaveConstants.EVENT_DECLINED, extra)
     }
 
     fun onTimeout(callId: String) {
         openedIncomingCalls.remove(callId)
+        acceptedCalls.remove(callId)
         val extra = payloadStore[callId]?.extra
         emitEvent(callId, CallwaveConstants.EVENT_TIMEOUT, extra)
         markMissed(callId)
@@ -179,6 +237,17 @@ class AndroidCallManager(
     fun onCallback(callId: String, extra: Map<String, Any?>?) {
         notificationManager.dismissMissed(callId)
         emitEvent(callId, CallwaveConstants.EVENT_CALLBACK, extra ?: payloadStore[callId]?.extra)
+    }
+
+    fun payloadFromActionIntent(
+        intent: Intent,
+        callId: String,
+        fallbackExtra: Map<String, Any?>?,
+    ): CallPayload? {
+        if (!intentHasPayloadData(intent) && fallbackExtra == null) {
+            return null
+        }
+        return payloadFromIntent(callId, intent, fallbackExtra)
     }
 
     fun getActiveCallIds(): List<String> = activeCallRegistry.getActiveCallIds()
@@ -283,11 +352,19 @@ class AndroidCallManager(
         action: String,
         callId: String,
         extra: Map<String, Any?>?,
+        payload: CallPayload? = null,
     ): PendingIntent {
         val intent = Intent(context, CallActionReceiver::class.java).apply {
             this.action = action
             putExtra(CallwaveConstants.EXTRA_CALL_ID, callId)
             putExtra(CallwaveConstants.EXTRA_EXTRA, toExtraJson(extra))
+            if (payload != null) {
+                putExtra(CallwaveConstants.EXTRA_CALLER_NAME, payload.callerName)
+                putExtra(CallwaveConstants.EXTRA_HANDLE, payload.handle)
+                putExtra(CallwaveConstants.EXTRA_AVATAR_URL, payload.avatarUrl)
+                putExtra(CallwaveConstants.EXTRA_TIMEOUT_SECONDS, payload.timeoutSeconds)
+                putExtra(CallwaveConstants.EXTRA_CALL_TYPE, payload.callType)
+            }
         }
 
         return PendingIntent.getBroadcast(
@@ -318,6 +395,24 @@ class AndroidCallManager(
         avatarUrl: String?,
         callType: String?,
     ): Map<String, Any?> {
+        return eventExtra(
+            payload = payload,
+            fallbackExtra = fallbackExtra,
+            callerName = callerName,
+            handle = handle,
+            avatarUrl = avatarUrl,
+            callType = callType,
+        )
+    }
+
+    private fun eventExtra(
+        payload: CallPayload?,
+        fallbackExtra: Map<String, Any?>?,
+        callerName: String? = null,
+        handle: String? = null,
+        avatarUrl: String? = null,
+        callType: String? = null,
+    ): Map<String, Any?> {
         val merged = HashMap<String, Any?>()
         if (fallbackExtra != null) {
             merged.putAll(fallbackExtra)
@@ -326,16 +421,27 @@ class AndroidCallManager(
             merged.putAll(payload.extra)
         }
 
-        merged[CallwaveConstants.EXTRA_CALLER_NAME] = payload?.callerName ?: callerName ?: "Unknown"
-        merged[CallwaveConstants.EXTRA_HANDLE] = payload?.handle ?: handle ?: ""
-        merged[CallwaveConstants.EXTRA_AVATAR_URL] = payload?.avatarUrl ?: avatarUrl
-        merged[CallwaveConstants.EXTRA_CALL_TYPE] = payload?.callType ?: callType ?: "audio"
+        merged[CallwaveConstants.EXTRA_CALLER_NAME] = payload?.callerName
+            ?: callerName
+            ?: merged[CallwaveConstants.EXTRA_CALLER_NAME]
+            ?: "Unknown"
+        merged[CallwaveConstants.EXTRA_HANDLE] = payload?.handle
+            ?: handle
+            ?: merged[CallwaveConstants.EXTRA_HANDLE]
+            ?: ""
+        merged[CallwaveConstants.EXTRA_AVATAR_URL] = payload?.avatarUrl
+            ?: avatarUrl
+            ?: merged[CallwaveConstants.EXTRA_AVATAR_URL]
+        merged[CallwaveConstants.EXTRA_CALL_TYPE] = payload?.callType
+            ?: callType
+            ?: merged[CallwaveConstants.EXTRA_CALL_TYPE]
+            ?: "audio"
         return merged
     }
 
-    private fun payloadFromIncomingIntent(
-        intent: Intent,
+    private fun payloadFromIntent(
         callId: String,
+        intent: Intent,
         fallbackExtra: Map<String, Any?>?,
     ): CallPayload {
         return CallPayload(
@@ -347,6 +453,32 @@ class AndroidCallManager(
             callType = intent.getStringExtra(CallwaveConstants.EXTRA_CALL_TYPE) ?: "audio",
             extra = fallbackExtra,
         )
+    }
+
+    private fun resolvePayloadForAccept(callId: String, fallbackPayload: CallPayload?): CallPayload? {
+        val existingPayload = payloadStore[callId]
+        if (existingPayload != null) {
+            return existingPayload
+        }
+
+        if (fallbackPayload == null) {
+            return null
+        }
+
+        if (!activeCallRegistry.tryStart(callId)) {
+            return null
+        }
+
+        payloadStore[callId] = fallbackPayload
+        return fallbackPayload
+    }
+
+    private fun intentHasPayloadData(intent: Intent): Boolean {
+        return intent.hasExtra(CallwaveConstants.EXTRA_CALLER_NAME) ||
+            intent.hasExtra(CallwaveConstants.EXTRA_HANDLE) ||
+            intent.hasExtra(CallwaveConstants.EXTRA_AVATAR_URL) ||
+            intent.hasExtra(CallwaveConstants.EXTRA_TIMEOUT_SECONDS) ||
+            intent.hasExtra(CallwaveConstants.EXTRA_CALL_TYPE)
     }
 
     companion object {
