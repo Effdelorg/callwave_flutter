@@ -3,7 +3,9 @@ package com.callwave.flutter.methodchannel
 object CallwaveConstants {
     const val METHOD_CHANNEL = "callwave_flutter/methods"
     const val EVENT_CHANNEL = "callwave_flutter/events"
-    const val NOTIFICATION_CHANNEL_ID = "callwave_flutter_calls"
+    const val NOTIFICATION_CHANNEL_ID = "callwave_flutter_calls_v2"
+    const val NOTIFICATION_CHANNEL_ID_MISSED = "callwave_flutter_missed_calls"
+    const val NOTIFICATION_CHANNEL_ID_LEGACY = "callwave_flutter_calls"
 
     const val ACTION_ACCEPT = "com.callwave.flutter.methodchannel.ACTION_ACCEPT"
     const val ACTION_DECLINE = "com.callwave.flutter.methodchannel.ACTION_DECLINE"

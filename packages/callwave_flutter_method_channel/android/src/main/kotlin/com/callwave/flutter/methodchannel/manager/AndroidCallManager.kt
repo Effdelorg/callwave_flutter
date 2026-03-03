@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import androidx.core.content.ContextCompat
 import com.callwave.flutter.methodchannel.CallwaveConstants
 import com.callwave.flutter.methodchannel.activity.FullScreenCallActivity
@@ -36,6 +37,17 @@ class AndroidCallManager(
         if (!activeCallRegistry.tryStart(payload.callId)) {
             emitEvent(payload.callId, CallwaveConstants.EVENT_DECLINED, payload.extra)
             return
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (!manager.canUseFullScreenIntent()) {
+                Log.w(
+                    TAG,
+                    "USE_FULL_SCREEN_INTENT not granted. " +
+                        "Call requestFullScreenIntentPermission() during onboarding.",
+                )
+            }
         }
 
         payloadStore[payload.callId] = payload
@@ -202,6 +214,7 @@ class AndroidCallManager(
     }
 
     companion object {
+        private const val TAG = "CallwaveFlutter"
         private const val REQUEST_NOTIFICATIONS = 4512
     }
 }
