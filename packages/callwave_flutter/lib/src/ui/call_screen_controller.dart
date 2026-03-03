@@ -14,7 +14,7 @@ enum CallStatus { ringing, connecting, connected, ended }
 ///
 /// Listens to [CallwaveFlutter.instance.events] filtered by [callId] and
 /// manages status transitions, an elapsed-time timer, and local UI toggles
-/// (mute / speaker).
+/// (accept/decline, mute / speaker).
 class CallScreenController extends ChangeNotifier {
   static const Duration _simulatedConnectingDelay = Duration(milliseconds: 800);
 
@@ -65,13 +65,39 @@ class CallScreenController extends ChangeNotifier {
   }
 
   void endCall() {
-    CallwaveFlutter.instance.endCall(callId);
+    unawaited(
+      _runCallCommand(
+        actionName: 'endCall',
+        request: CallwaveFlutter.instance.endCall(callId),
+      ),
+    );
+  }
+
+  void acceptCall() {
+    unawaited(
+      _runCallCommand(
+        actionName: 'acceptCall',
+        request: CallwaveFlutter.instance.acceptCall(callId),
+      ),
+    );
+  }
+
+  void declineCall() {
+    unawaited(
+      _runCallCommand(
+        actionName: 'declineCall',
+        request: CallwaveFlutter.instance.declineCall(callId),
+      ),
+    );
   }
 
   // ── Event handling ────────────────────────────────────────────────────
 
   void _onEvent(CallEvent event) {
     switch (event.type) {
+      case CallEventType.incoming:
+        _transitionTo(CallStatus.ringing);
+        break;
       case CallEventType.accepted:
       case CallEventType.started:
         _transitionTo(CallStatus.connecting);
@@ -81,11 +107,13 @@ class CallScreenController extends ChangeNotifier {
             _transitionTo(CallStatus.connected);
           }
         });
+        break;
       case CallEventType.ended:
       case CallEventType.declined:
       case CallEventType.timeout:
       case CallEventType.missed:
         _transitionTo(CallStatus.ended);
+        break;
       case CallEventType.callback:
         break;
     }
@@ -97,6 +125,23 @@ class CallScreenController extends ChangeNotifier {
       label: 'CallScreenController event stream stack trace',
       stackTrace: stackTrace,
     );
+  }
+
+  Future<void> _runCallCommand({
+    required String actionName,
+    required Future<void> request,
+  }) async {
+    try {
+      await request;
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CallScreenController $actionName failed for callId=$callId: $error',
+      );
+      debugPrintStack(
+        label: 'CallScreenController $actionName stack trace',
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   void _transitionTo(CallStatus next) {

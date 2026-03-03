@@ -29,6 +29,10 @@ class CallTimeoutScheduler(
         pendingIntent.cancel()
     }
 
+    fun isScheduled(callId: String): Boolean {
+        return timeoutPendingIntentForLookup(callId) != null
+    }
+
     private fun timeoutPendingIntentForUpdate(callId: String): PendingIntent {
         val intent = Intent(context, CallActionReceiver::class.java).apply {
             action = CallwaveConstants.ACTION_TIMEOUT

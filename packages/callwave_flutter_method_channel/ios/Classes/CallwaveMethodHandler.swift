@@ -44,6 +44,42 @@ final class CallwaveMethodHandler {
       callManager.endCall(callId: callId)
       result(nil)
 
+    case "acceptCall":
+      let args = call.arguments as? [String: Any]
+      guard let callId = args?["callId"] as? String else {
+        result(FlutterError(code: "invalid_call_id", message: "callId is required", details: nil))
+        return
+      }
+      guard callManager.acceptCall(callId: callId) else {
+        result(
+          FlutterError(
+            code: "invalid_call_id",
+            message: "No active incoming call found for callId=\(callId)",
+            details: nil
+          )
+        )
+        return
+      }
+      result(nil)
+
+    case "declineCall":
+      let args = call.arguments as? [String: Any]
+      guard let callId = args?["callId"] as? String else {
+        result(FlutterError(code: "invalid_call_id", message: "callId is required", details: nil))
+        return
+      }
+      guard callManager.declineCall(callId: callId) else {
+        result(
+          FlutterError(
+            code: "invalid_call_id",
+            message: "No active incoming call found for callId=\(callId)",
+            details: nil
+          )
+        )
+        return
+      }
+      result(nil)
+
     case "markMissed":
       let args = call.arguments as? [String: Any]
       guard let callId = args?["callId"] as? String else {

@@ -26,6 +26,16 @@ abstract class CallwaveFlutterPlatform extends PlatformInterface {
 
   Future<void> showOutgoingCall(CallDataDto data);
 
+  /// Accepts an active incoming call.
+  ///
+  /// Implementations should throw if [callId] is unknown or no longer active.
+  Future<void> acceptCall(String callId);
+
+  /// Declines an active incoming call.
+  ///
+  /// Implementations should throw if [callId] is unknown or no longer active.
+  Future<void> declineCall(String callId);
+
   Future<void> endCall(String callId);
 
   Future<void> markMissed(String callId);
@@ -50,6 +60,16 @@ class _StubCallwaveFlutterPlatform extends CallwaveFlutterPlatform {
   @override
   Future<void> endCall(String callId) {
     throw UnimplementedError('endCall() has not been implemented.');
+  }
+
+  @override
+  Future<void> acceptCall(String callId) {
+    throw UnimplementedError('acceptCall() has not been implemented.');
+  }
+
+  @override
+  Future<void> declineCall(String callId) {
+    throw UnimplementedError('declineCall() has not been implemented.');
   }
 
   @override

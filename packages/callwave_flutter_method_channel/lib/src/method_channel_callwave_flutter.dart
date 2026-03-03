@@ -64,6 +64,22 @@ class MethodChannelCallwaveFlutter extends CallwaveFlutterPlatform {
   }
 
   @override
+  Future<void> acceptCall(String callId) async {
+    await initialize();
+    await _methodChannel.invokeMethod<void>('acceptCall', <String, dynamic>{
+      PayloadCodec.keyCallId: callId,
+    });
+  }
+
+  @override
+  Future<void> declineCall(String callId) async {
+    await initialize();
+    await _methodChannel.invokeMethod<void>('declineCall', <String, dynamic>{
+      PayloadCodec.keyCallId: callId,
+    });
+  }
+
+  @override
   Future<void> markMissed(String callId) async {
     await initialize();
     await _methodChannel.invokeMethod<void>('markMissed', <String, dynamic>{

@@ -21,10 +21,27 @@ Listen to events:
 
 ```dart
 CallwaveFlutter.instance.events.listen((event) {
+  if (event.type == CallEventType.incoming) {
+    // open incoming custom call screen with Accept / Decline
+  }
   if (event.type == CallEventType.accepted) {
     // open call screen
   }
 });
+```
+
+`CallEventType.incoming` from notification/full-screen tap is Android behavior.
+On iOS, incoming UI remains CallKit-managed system UI.
+
+Answer or decline from custom UI:
+
+```dart
+try {
+  await CallwaveFlutter.instance.acceptCall('c-42');
+  // or: await CallwaveFlutter.instance.declineCall('c-42');
+} catch (error) {
+  // invalid/expired callId, or call no longer active
+}
 ```
 
 Optional post-call behavior:

@@ -72,6 +72,12 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   Future<void> endCall(String callId) async {}
 
   @override
+  Future<void> acceptCall(String callId) async {}
+
+  @override
+  Future<void> declineCall(String callId) async {}
+
+  @override
   Future<List<String>> getActiveCallIds() async => const <String>[];
 
   @override

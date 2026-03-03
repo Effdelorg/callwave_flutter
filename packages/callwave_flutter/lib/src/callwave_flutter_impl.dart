@@ -34,6 +34,22 @@ class CallwaveFlutter {
     return _platform.showOutgoingCall(_toDto(data));
   }
 
+  /// Accepts an active incoming call.
+  ///
+  /// The returned future fails if [callId] does not map to an active incoming
+  /// call on the current platform runtime.
+  Future<void> acceptCall(String callId) {
+    return _platform.acceptCall(callId);
+  }
+
+  /// Declines an active incoming call.
+  ///
+  /// The returned future fails if [callId] does not map to an active incoming
+  /// call on the current platform runtime.
+  Future<void> declineCall(String callId) {
+    return _platform.declineCall(callId);
+  }
+
   Future<void> endCall(String callId) {
     return _platform.endCall(callId);
   }
@@ -81,6 +97,8 @@ class CallwaveFlutter {
     platform.CallEventType dtoType,
   ) {
     switch (dtoType) {
+      case platform.CallEventType.incoming:
+        return CallEventType.incoming;
       case platform.CallEventType.accepted:
         return CallEventType.accepted;
       case platform.CallEventType.declined:

@@ -12,6 +12,7 @@ object CallwaveConstants {
     const val ACTION_DECLINE = "com.callwave.flutter.methodchannel.ACTION_DECLINE"
     const val ACTION_TIMEOUT = "com.callwave.flutter.methodchannel.ACTION_TIMEOUT"
     const val ACTION_CALLBACK = "com.callwave.flutter.methodchannel.ACTION_CALLBACK"
+    const val ACTION_OPEN_INCOMING = "com.callwave.flutter.methodchannel.ACTION_OPEN_INCOMING"
 
     const val EXTRA_CALL_ID = "callId"
     const val EXTRA_CALLER_NAME = "callerName"
@@ -22,6 +23,7 @@ object CallwaveConstants {
     const val EXTRA_POST_CALL_BEHAVIOR = "postCallBehavior"
     const val EXTRA_EXTRA = "extra"
 
+    const val EVENT_INCOMING = "incoming"
     const val EVENT_ACCEPTED = "accepted"
     const val EVENT_DECLINED = "declined"
     const val EVENT_ENDED = "ended"

@@ -14,11 +14,14 @@ flutter run
 1. Tap `Notif Permission` (Android 13+).
 2. Tap `FullScreen Permission` (Android 14+).
 3. Tap `Incoming` to show the incoming call UI.
-4. Tap `Accept` or `Decline` from system UI.
-5. Check the in-app event log.
+4. Tap the incoming call details to open custom Flutter call UI.
+5. Tap `Accept` or `Decline` from that custom UI.
+6. Check the in-app event log.
+
+Note: the custom incoming screen trigger on notification/details tap is Android behavior. iOS uses CallKit system incoming UI.
 
 Cold-start example:
 - Trigger `Incoming`.
-- Kill the app.
-- Tap `Accept` on incoming UI.
+- Kill the app (or swipe it away).
+- Tap `Accept` on the incoming UI shown (native full-screen overlay when app was killed; custom Flutter UI if app was merely in background).
 - Re-open app and confirm buffered `accepted` event is shown.

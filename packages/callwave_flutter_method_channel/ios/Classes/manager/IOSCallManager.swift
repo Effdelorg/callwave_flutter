@@ -92,6 +92,26 @@ final class IOSCallManager {
     }
   }
 
+  func acceptCall(callId: String) -> Bool {
+    guard let uuid = uuidByCallId[callId], payloadStore[callId] != nil else {
+      return false
+    }
+    handleAccept(uuid: uuid)
+    return true
+  }
+
+  func declineCall(callId: String) -> Bool {
+    guard let uuid = uuidByCallId[callId], payloadStore[callId] != nil else {
+      return false
+    }
+    let payload = payloadStore[callId]
+    cancelTimeout(callId: callId)
+    provider.reportCall(with: uuid, endedAt: Date(), reason: .declinedElsewhere)
+    cleanup(callId: callId, uuid: uuid)
+    emit(callId: callId, type: "declined", extra: payload?.extra)
+    return true
+  }
+
   func markMissed(callId: String) {
     let payload = payloadStore[callId]
     cancelTimeout(callId: callId)

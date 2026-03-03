@@ -39,6 +39,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
 
   final List<String> _eventLog = <String>[];
   final Map<String, CallData> _callsById = <String, CallData>{};
+  final Set<String> _openScreenCallIds = <String>{};
   final TextEditingController _callIdController =
       TextEditingController(text: 'demo-call-001');
   StreamSubscription<CallEvent>? _subscription;
@@ -60,6 +61,11 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
     });
 
     switch (event.type) {
+      case CallEventType.incoming:
+        final callData = _callsById[event.callId] ?? _callDataFromEvent(event);
+        _callsById[event.callId] = callData;
+        _openCallScreen(callData: callData, isOutgoing: false);
+        break;
       case CallEventType.accepted:
         final callData = _callsById[event.callId] ?? _callDataFromEvent(event);
         _callsById[event.callId] = callData;
@@ -88,6 +94,10 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
     required CallData callData,
     required bool isOutgoing,
   }) {
+    if (_openScreenCallIds.contains(callData.callId)) {
+      return;
+    }
+    _openScreenCallIds.add(callData.callId);
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => CallScreen(
@@ -95,7 +105,9 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
           isOutgoing: isOutgoing,
         ),
       ),
-    );
+    ).whenComplete(() {
+      _openScreenCallIds.remove(callData.callId);
+    });
   }
 
   @override
@@ -161,7 +173,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
             ),
             const SizedBox(height: 16),
             const Text(
-              'Cold-start test: send an incoming call, swipe app away, tap Accept on the full-screen call UI, then reopen app and check logs.',
+              'Cold-start test: send an incoming call, swipe app away, tap Accept on the incoming UI (native full-screen overlay when killed; custom Flutter UI if app was in background), then reopen app and check logs.',
             ),
             const SizedBox(height: 16),
             const Text('Events'),
