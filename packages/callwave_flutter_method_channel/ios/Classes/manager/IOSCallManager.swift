@@ -12,6 +12,7 @@ final class IOSCallManager {
   private var uuidByCallId: [String: UUID] = [:]
   private var callIdByUuid: [UUID: String] = [:]
   private var timeoutItems: [String: DispatchWorkItem] = [:]
+  private var postCallBehavior: PostCallBehavior = .stayOpen
 
   init(eventBridge: EventStreamBridge, activeCallRegistry: ActiveCallRegistry) {
     self.eventBridge = eventBridge
@@ -78,6 +79,7 @@ final class IOSCallManager {
   func endCall(callId: String) {
     guard let uuid = uuidByCallId[callId] else {
       emit(callId: callId, type: "ended", extra: nil)
+      applyPostCallBehaviorIfNeeded()
       return
     }
 
@@ -86,7 +88,28 @@ final class IOSCallManager {
     callController.request(transaction) { [weak self] _ in
       self?.cleanup(callId: callId, uuid: uuid)
       self?.emit(callId: callId, type: "ended", extra: nil)
+      self?.applyPostCallBehaviorIfNeeded()
     }
+  }
+
+  func acceptCall(callId: String) -> Bool {
+    guard let uuid = uuidByCallId[callId], payloadStore[callId] != nil else {
+      return false
+    }
+    handleAccept(uuid: uuid)
+    return true
+  }
+
+  func declineCall(callId: String) -> Bool {
+    guard let uuid = uuidByCallId[callId], payloadStore[callId] != nil else {
+      return false
+    }
+    let payload = payloadStore[callId]
+    cancelTimeout(callId: callId)
+    provider.reportCall(with: uuid, endedAt: Date(), reason: .declinedElsewhere)
+    cleanup(callId: callId, uuid: uuid)
+    emit(callId: callId, type: "declined", extra: payload?.extra)
+    return true
   }
 
   func markMissed(callId: String) {
@@ -103,6 +126,10 @@ final class IOSCallManager {
 
   func activeCallIds() -> [String] {
     activeCallRegistry.activeCallIds()
+  }
+
+  func setPostCallBehavior(rawValue: String?) {
+    postCallBehavior = PostCallBehavior(rawValue: rawValue ?? "stayOpen") ?? .stayOpen
   }
 
   func handleAccept(uuid: UUID) {
@@ -173,4 +200,19 @@ final class IOSCallManager {
     timeoutItems[callId]?.cancel()
     timeoutItems.removeValue(forKey: callId)
   }
+
+  private func applyPostCallBehaviorIfNeeded() {
+    switch postCallBehavior {
+    case .stayOpen:
+      return
+    case .backgroundOnEnded:
+      // iOS should not force-close/background the app from a plugin.
+      return
+    }
+  }
+}
+
+private enum PostCallBehavior: String {
+  case stayOpen
+  case backgroundOnEnded
 }

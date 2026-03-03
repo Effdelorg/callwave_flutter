@@ -13,6 +13,7 @@ class PayloadCodec {
   static const String keyExtra = 'extra';
   static const String keyType = 'type';
   static const String keyTimestampMs = 'timestampMs';
+  static const String keyPostCallBehavior = 'postCallBehavior';
 
   static Map<String, dynamic> callDataToMap(CallDataDto data) {
     return <String, dynamic>{

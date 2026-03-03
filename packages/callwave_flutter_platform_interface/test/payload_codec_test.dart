@@ -2,6 +2,16 @@ import 'package:callwave_flutter_platform_interface/callwave_flutter_platform_in
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  group('PostCallBehavior', () {
+    test('fromWireValue returns stayOpen for null or unknown values', () {
+      expect(PostCallBehavior.fromWireValue(null), PostCallBehavior.stayOpen);
+      expect(
+        PostCallBehavior.fromWireValue('not-a-valid-mode'),
+        PostCallBehavior.stayOpen,
+      );
+    });
+  });
+
   group('PayloadCodec', () {
     test('serializes and deserializes CallDataDto', () {
       const data = CallDataDto(

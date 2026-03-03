@@ -1,5 +1,6 @@
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
+import 'enums/post_call_behavior.dart';
 import 'models/call_data_dto.dart';
 import 'models/call_event_dto.dart';
 
@@ -25,6 +26,16 @@ abstract class CallwaveFlutterPlatform extends PlatformInterface {
 
   Future<void> showOutgoingCall(CallDataDto data);
 
+  /// Accepts an active incoming call.
+  ///
+  /// Implementations should throw if [callId] is unknown or no longer active.
+  Future<void> acceptCall(String callId);
+
+  /// Declines an active incoming call.
+  ///
+  /// Implementations should throw if [callId] is unknown or no longer active.
+  Future<void> declineCall(String callId);
+
   Future<void> endCall(String callId);
 
   Future<void> markMissed(String callId);
@@ -34,6 +45,12 @@ abstract class CallwaveFlutterPlatform extends PlatformInterface {
   Future<bool> requestNotificationPermission();
 
   Future<void> requestFullScreenIntentPermission();
+
+  /// Configures post-call behavior when the user ends a call via [endCall].
+  ///
+  /// On Android, [PostCallBehavior.backgroundOnEnded] moves the app to
+  /// background. On iOS, the setting is accepted but has no effect.
+  Future<void> setPostCallBehavior(PostCallBehavior behavior);
 }
 
 class _StubCallwaveFlutterPlatform extends CallwaveFlutterPlatform {
@@ -43,6 +60,16 @@ class _StubCallwaveFlutterPlatform extends CallwaveFlutterPlatform {
   @override
   Future<void> endCall(String callId) {
     throw UnimplementedError('endCall() has not been implemented.');
+  }
+
+  @override
+  Future<void> acceptCall(String callId) {
+    throw UnimplementedError('acceptCall() has not been implemented.');
+  }
+
+  @override
+  Future<void> declineCall(String callId) {
+    throw UnimplementedError('declineCall() has not been implemented.');
   }
 
   @override
@@ -69,6 +96,13 @@ class _StubCallwaveFlutterPlatform extends CallwaveFlutterPlatform {
   Future<bool> requestNotificationPermission() {
     throw UnimplementedError(
       'requestNotificationPermission() has not been implemented.',
+    );
+  }
+
+  @override
+  Future<void> setPostCallBehavior(PostCallBehavior behavior) {
+    throw UnimplementedError(
+      'setPostCallBehavior() has not been implemented.',
     );
   }
 

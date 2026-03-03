@@ -87,6 +87,7 @@ class CallNotificationManager(
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setOngoing(true)
             .setAutoCancel(false)
+            .setContentIntent(fullScreenIntent)
             .setFullScreenIntent(fullScreenIntent, true)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

@@ -48,6 +48,40 @@ class CallwaveMethodHandler(
                 result.success(null)
             }
 
+            "acceptCall" -> {
+                val callId = call.argument<String>(CallwaveConstants.EXTRA_CALL_ID)
+                if (callId.isNullOrBlank()) {
+                    result.error("invalid_call_id", "callId is required", null)
+                    return
+                }
+                if (!callManager.acceptCall(callId)) {
+                    result.error(
+                        "invalid_call_id",
+                        "No active incoming call found for callId=$callId",
+                        null,
+                    )
+                    return
+                }
+                result.success(null)
+            }
+
+            "declineCall" -> {
+                val callId = call.argument<String>(CallwaveConstants.EXTRA_CALL_ID)
+                if (callId.isNullOrBlank()) {
+                    result.error("invalid_call_id", "callId is required", null)
+                    return
+                }
+                if (!callManager.declineCall(callId)) {
+                    result.error(
+                        "invalid_call_id",
+                        "No active incoming call found for callId=$callId",
+                        null,
+                    )
+                    return
+                }
+                result.success(null)
+            }
+
             "markMissed" -> {
                 val callId = call.argument<String>(CallwaveConstants.EXTRA_CALL_ID)
                 if (callId.isNullOrBlank()) {
@@ -68,6 +102,12 @@ class CallwaveMethodHandler(
 
             "requestFullScreenIntentPermission" -> {
                 callManager.requestFullScreenIntentPermission(activity)
+                result.success(null)
+            }
+
+            "setPostCallBehavior" -> {
+                val behavior = call.argument<String>(CallwaveConstants.EXTRA_POST_CALL_BEHAVIOR)
+                callManager.setPostCallBehavior(behavior)
                 result.success(null)
             }
 

@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import '../call_screen_controller.dart';
 import 'call_action_button.dart';
 
-/// Composes the bottom action buttons: Mute, Speaker, End Call
-/// (+ Camera toggle for video calls).
+/// Composes call actions for both incoming (Accept/Decline) and active call
+/// states (Mute/Speaker/End + Camera for video).
 class CallActionsRow extends StatelessWidget {
   const CallActionsRow({
     required this.controller,
@@ -15,6 +15,26 @@ class CallActionsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (controller.status == CallStatus.ringing) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          CallActionButton(
+            icon: Icons.call_end,
+            label: 'Decline',
+            isDestructive: true,
+            onPressed: controller.declineCall,
+          ),
+          CallActionButton(
+            icon: Icons.call,
+            label: 'Accept',
+            isActive: true,
+            onPressed: controller.acceptCall,
+          ),
+        ],
+      );
+    }
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
