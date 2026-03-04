@@ -1,9 +1,10 @@
 import 'dart:async';
 
+import 'package:callwave_flutter/callwave_flutter.dart';
 import 'package:callwave_flutter_platform_interface/callwave_flutter_platform_interface.dart'
     as platform;
 import 'package:callwave_flutter_example/main.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -18,100 +19,39 @@ void main() {
     await fakePlatform.dispose();
   });
 
-  testWidgets('cold-start accepted opens joined call UI safely', (
-    tester,
-  ) async {
-    fakePlatform.initialEventTypes = <platform.CallEventType>[
-      platform.CallEventType.accepted,
-    ];
-
-    await tester.pumpWidget(const CallwaveExampleApp());
-    await _pumpToJoinedFlowFrame(tester);
-
-    expect(tester.takeException(), isNull);
-    expect(find.text('Mute'), findsOneWidget);
-    expect(find.text('Callwave Example'), findsNothing);
-    await _disposeRenderedApp(tester);
-  });
-
-  testWidgets('queued incoming then accepted opens one joined-flow screen', (
-    tester,
-  ) async {
-    fakePlatform.initialEventTypes = <platform.CallEventType>[
-      platform.CallEventType.incoming,
-      platform.CallEventType.accepted,
-    ];
-
-    await tester.pumpWidget(const CallwaveExampleApp());
-    await _pumpToJoinedFlowFrame(tester);
-
-    expect(tester.takeException(), isNull);
-    expect(find.text('Mute'), findsOneWidget);
-    expect(find.text('Ringing...'), findsNothing);
-    await _disposeRenderedApp(tester);
-  });
-
-  testWidgets('accepted after first frame still opens joined call UI', (
-    tester,
-  ) async {
+  testWidgets('app boots to home screen', (tester) async {
     await tester.pumpWidget(const CallwaveExampleApp());
     await tester.pump();
 
-    fakePlatform.emit(type: platform.CallEventType.accepted);
-    await _pumpToJoinedFlowFrame(tester);
-
-    expect(tester.takeException(), isNull);
-    expect(find.text('Mute'), findsOneWidget);
-    expect(find.text('Callwave Example'), findsNothing);
-    await _disposeRenderedApp(tester);
+    expect(find.text('Callwave Example'), findsOneWidget);
+    expect(find.text('Call ID'), findsOneWidget);
+    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
   });
 
-  testWidgets('active call IDs recover startup joined UI when accepted is late',
-      (
-    tester,
-  ) async {
-    fakePlatform.activeCallIds = <String>[_FakePlatform.callId];
-
-    await tester.pumpWidget(const CallwaveExampleApp());
-    await _pumpToJoinedFlowFrame(tester);
-
-    expect(tester.takeException(), isNull);
-    expect(find.text('Mute'), findsOneWidget);
-    expect(find.text('Callwave Example'), findsNothing);
-    await _disposeRenderedApp(tester);
-  });
-
-  testWidgets('incoming plus active call ID stays ringing until accepted', (
-    tester,
-  ) async {
-    fakePlatform.initialEventTypes = <platform.CallEventType>[
-      platform.CallEventType.incoming,
-    ];
-    fakePlatform.activeCallIds = <String>[_FakePlatform.callId];
-
-    await tester.pumpWidget(const CallwaveExampleApp());
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(tester.takeException(), isNull);
-    expect(find.text('Mute'), findsNothing);
-    final hasRingingUi = find.text('Ringing...').evaluate().isNotEmpty;
-    final hasHomeUi = find.text('Callwave Example').evaluate().isNotEmpty;
-    expect(hasRingingUi || hasHomeUi, isTrue);
-    await _disposeRenderedApp(tester);
-  });
-
-  testWidgets('startup root call transitions to demo after end',
+  testWidgets('accepted event opens session-driven call screen',
       (tester) async {
     fakePlatform.initialEventTypes = <platform.CallEventType>[
       platform.CallEventType.accepted,
     ];
 
     await tester.pumpWidget(const CallwaveExampleApp());
-    await _pumpToJoinedFlowFrame(tester);
+    await _pumpUntilCallScreen(tester);
 
-    expect(find.text('Mute'), findsOneWidget);
-    expect(find.text('Callwave Example'), findsNothing);
+    expect(tester.takeException(), isNull);
+    expect(find.byType(CallScreen), findsOneWidget);
+    fakePlatform.emit(type: platform.CallEventType.ended);
+    await tester.pump();
+    await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
+  });
+
+  testWidgets('ended event returns from call screen to home', (tester) async {
+    fakePlatform.initialEventTypes = <platform.CallEventType>[
+      platform.CallEventType.accepted,
+    ];
+
+    await tester.pumpWidget(const CallwaveExampleApp());
+    await _pumpUntilCallScreen(tester);
+    expect(find.byType(CallScreen), findsOneWidget);
 
     fakePlatform.emit(type: platform.CallEventType.ended);
     await tester.pump();
@@ -119,33 +59,24 @@ void main() {
     await tester.pump();
 
     expect(find.text('Callwave Example'), findsOneWidget);
-    await _disposeRenderedApp(tester);
-  });
-
-  testWidgets('startup without call resolves to demo screen', (tester) async {
-    await tester.pumpWidget(const CallwaveExampleApp());
-    await tester.pump();
-
-    expect(find.text('Callwave Example'), findsOneWidget);
-    expect(find.text('Joining call...'), findsNothing);
-
-    await tester.pump(const Duration(milliseconds: 1500));
-    await tester.pump();
-
-    expect(find.text('Callwave Example'), findsOneWidget);
-    expect(find.text('Joining call...'), findsNothing);
-    await _disposeRenderedApp(tester);
+    await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
   });
 }
 
-Future<void> _pumpToJoinedFlowFrame(WidgetTester tester) async {
-  await tester.pump();
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 650));
+Future<void> _pumpUntilCallScreen(WidgetTester tester) async {
+  for (var i = 0; i < 20; i += 1) {
+    await tester.pump(const Duration(milliseconds: 100));
+    if (find.byType(CallScreen).evaluate().isNotEmpty) {
+      return;
+    }
+  }
 }
 
-Future<void> _disposeRenderedApp(WidgetTester tester) async {
-  await tester.pump(const Duration(seconds: 1));
+Future<void> _disposeRenderedApp(
+  WidgetTester tester, {
+  required Duration wait,
+}) async {
+  await tester.pump(wait);
   await tester.pumpWidget(const SizedBox.shrink());
   await tester.pump();
 }

@@ -1,0 +1,365 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+
+import '../enums/call_event_type.dart';
+import '../enums/call_session_state.dart';
+import '../models/call_data.dart';
+import '../models/call_event.dart';
+import 'callwave_engine.dart';
+
+typedef _CallwaveEngineProvider = CallwaveEngine? Function();
+typedef _CallIdAction = Future<void> Function(String callId);
+typedef _OutgoingStartAction = Future<void> Function(CallData callData);
+
+/// Single source of truth for one call's UI state.
+///
+/// Apps receive [CallSession] from [CallwaveFlutter.sessions] or
+/// [CallwaveFlutter.getSession]. Do not construct directly.
+///
+/// Lifecycle: idle → ringing → connecting → connected → ended/failed.
+/// Use [state], [elapsed], [isMuted], etc. to drive [CallScreen].
+/// Call [reportConnected], [reportEnded], etc. from your [CallwaveEngine]
+/// to update state.
+class CallSession extends ChangeNotifier {
+  CallSession({
+    required CallData callData,
+    required this.isOutgoing,
+    CallSessionState initialState = CallSessionState.idle,
+    _CallwaveEngineProvider? engineProvider,
+    _CallIdAction? acceptNative,
+    _CallIdAction? declineNative,
+    _CallIdAction? endNative,
+    _OutgoingStartAction? startOutgoingNative,
+  })  : _callData = callData,
+        _state = initialState,
+        _engineProvider = engineProvider ?? _defaultEngineProvider,
+        _acceptNative = acceptNative ?? _defaultCallIdAction,
+        _declineNative = declineNative ?? _defaultCallIdAction,
+        _endNative = endNative ?? _defaultCallIdAction,
+        _startOutgoingNative = startOutgoingNative ?? _defaultOutgoingAction {
+    if (_state == CallSessionState.connected) {
+      _connectedAt = DateTime.now();
+      _startTimerIfNeeded();
+    }
+  }
+
+  static CallwaveEngine? _defaultEngineProvider() => null;
+
+  static Future<void> _defaultCallIdAction(String _) async {}
+
+  static Future<void> _defaultOutgoingAction(CallData _) async {}
+
+  final bool isOutgoing;
+  final _CallwaveEngineProvider _engineProvider;
+  final _CallIdAction _acceptNative;
+  final _CallIdAction _declineNative;
+  final _CallIdAction _endNative;
+  final _OutgoingStartAction _startOutgoingNative;
+
+  CallData _callData;
+  CallSessionState _state;
+  DateTime? _connectedAt;
+  Duration _elapsed = Duration.zero;
+  bool _isMuted = false;
+  bool _isSpeakerOn = false;
+  bool _isCameraOn = true;
+  Object? _error;
+  Timer? _timer;
+
+  bool _acceptRequested = false;
+  bool _declineRequested = false;
+  bool _endRequested = false;
+  bool _startRequested = false;
+  bool _answerEngineInvoked = false;
+  bool _startEngineInvoked = false;
+  bool _endEngineInvoked = false;
+  bool _declineEngineInvoked = false;
+  bool _disposed = false;
+
+  String get callId => _callData.callId;
+  CallData get callData => _callData;
+  CallSessionState get state => _state;
+  bool get isMuted => _isMuted;
+  bool get isSpeakerOn => _isSpeakerOn;
+  bool get isCameraOn => _isCameraOn;
+  DateTime? get connectedAt => _connectedAt;
+  Duration get elapsed => _elapsed;
+  Object? get error => _error;
+  bool get isEnded =>
+      _state == CallSessionState.ended || _state == CallSessionState.failed;
+
+  void updateCallData(CallData next) {
+    if (next.callId != callId) {
+      return;
+    }
+    _callData = next;
+    notifyListeners();
+  }
+
+  Future<void> accept() async {
+    if (isEnded || _acceptRequested) {
+      return;
+    }
+    _acceptRequested = true;
+    try {
+      await _acceptNative(callId);
+    } catch (error, stackTrace) {
+      _logError('accept', error, stackTrace);
+      reportFailed(error);
+    }
+  }
+
+  Future<void> decline() async {
+    if (isEnded || _declineRequested) {
+      return;
+    }
+    _declineRequested = true;
+    try {
+      await _declineNative(callId);
+      await _invokeDeclineEngineOnce();
+    } catch (error, stackTrace) {
+      _logError('decline', error, stackTrace);
+      reportFailed(error);
+    }
+  }
+
+  Future<void> end() async {
+    if (isEnded || _endRequested) {
+      return;
+    }
+    _endRequested = true;
+    try {
+      await _endNative(callId);
+    } catch (error, stackTrace) {
+      _logError('end', error, stackTrace);
+      reportFailed(error);
+    }
+  }
+
+  Future<void> start() async {
+    if (isEnded || _startRequested || !isOutgoing) {
+      return;
+    }
+    _startRequested = true;
+    try {
+      await _startOutgoingNative(_callData);
+      reportConnecting();
+    } catch (error, stackTrace) {
+      _logError('start', error, stackTrace);
+      reportFailed(error);
+    }
+  }
+
+  Future<void> toggleMute() async {
+    if (isEnded) {
+      return;
+    }
+    final previous = _isMuted;
+    _isMuted = !_isMuted;
+    notifyListeners();
+    try {
+      await _engineProvider()?.onMuteChanged(this, _isMuted);
+    } catch (error, stackTrace) {
+      _isMuted = previous;
+      notifyListeners();
+      _logError('toggleMute', error, stackTrace);
+    }
+  }
+
+  Future<void> toggleSpeaker() async {
+    if (isEnded) {
+      return;
+    }
+    final previous = _isSpeakerOn;
+    _isSpeakerOn = !_isSpeakerOn;
+    notifyListeners();
+    try {
+      await _engineProvider()?.onSpeakerChanged(this, _isSpeakerOn);
+    } catch (error, stackTrace) {
+      _isSpeakerOn = previous;
+      notifyListeners();
+      _logError('toggleSpeaker', error, stackTrace);
+    }
+  }
+
+  Future<void> toggleCamera() async {
+    if (isEnded) {
+      return;
+    }
+    final previous = _isCameraOn;
+    _isCameraOn = !_isCameraOn;
+    notifyListeners();
+    try {
+      await _engineProvider()?.onCameraChanged(this, _isCameraOn);
+    } catch (error, stackTrace) {
+      _isCameraOn = previous;
+      notifyListeners();
+      _logError('toggleCamera', error, stackTrace);
+    }
+  }
+
+  Future<void> switchCamera() async {
+    if (isEnded) {
+      return;
+    }
+    try {
+      await _engineProvider()?.onCameraSwitch(this);
+    } catch (error, stackTrace) {
+      _logError('switchCamera', error, stackTrace);
+    }
+  }
+
+  Future<void> applyNativeEvent(CallEvent event) async {
+    if (event.callId != callId || isEnded) {
+      return;
+    }
+    switch (event.type) {
+      case CallEventType.incoming:
+        reportRinging();
+        return;
+      case CallEventType.accepted:
+        reportConnecting();
+        await _invokeAnswerEngineOnce();
+        return;
+      case CallEventType.started:
+        reportConnecting();
+        await _invokeStartEngineOnce();
+        return;
+      case CallEventType.ended:
+        reportEnded();
+        return;
+      case CallEventType.declined:
+        await _invokeDeclineEngineOnce();
+        reportEnded();
+        return;
+      case CallEventType.timeout:
+      case CallEventType.missed:
+        if (_state == CallSessionState.idle ||
+            _state == CallSessionState.ringing) {
+          reportEnded();
+        }
+        return;
+      case CallEventType.callback:
+        return;
+    }
+  }
+
+  void reportRinging() => _transitionTo(CallSessionState.ringing);
+
+  void reportConnecting() => _transitionTo(CallSessionState.connecting);
+
+  void reportConnected() => _transitionTo(CallSessionState.connected);
+
+  void reportReconnecting() => _transitionTo(CallSessionState.reconnecting);
+
+  void reportEnded() => _transitionTo(CallSessionState.ended);
+
+  void reportFailed([Object? error]) {
+    _error = error ?? StateError('Call session failed.');
+    _transitionTo(CallSessionState.failed);
+  }
+
+  Future<void> _invokeAnswerEngineOnce() async {
+    if (_answerEngineInvoked || isEnded) {
+      return;
+    }
+    _answerEngineInvoked = true;
+    try {
+      await _engineProvider()?.onAnswerCall(this);
+    } catch (error, stackTrace) {
+      _logError('onAnswerCall', error, stackTrace);
+      reportFailed(error);
+    }
+  }
+
+  Future<void> _invokeStartEngineOnce() async {
+    if (_startEngineInvoked || isEnded) {
+      return;
+    }
+    _startEngineInvoked = true;
+    try {
+      await _engineProvider()?.onStartCall(this);
+    } catch (error, stackTrace) {
+      _logError('onStartCall', error, stackTrace);
+      reportFailed(error);
+    }
+  }
+
+  Future<void> _invokeEndEngineOnce() async {
+    if (_endEngineInvoked) {
+      return;
+    }
+    _endEngineInvoked = true;
+    try {
+      await _engineProvider()?.onEndCall(this);
+    } catch (error, stackTrace) {
+      _logError('onEndCall', error, stackTrace);
+    }
+  }
+
+  Future<void> _invokeDeclineEngineOnce() async {
+    if (_declineEngineInvoked) {
+      return;
+    }
+    _declineEngineInvoked = true;
+    try {
+      await _engineProvider()?.onDeclineCall(this);
+    } catch (error, stackTrace) {
+      _logError('onDeclineCall', error, stackTrace);
+    }
+  }
+
+  void _transitionTo(CallSessionState next) {
+    if (_state == next || isEnded) {
+      return;
+    }
+    _state = next;
+    if (next == CallSessionState.connected) {
+      _connectedAt ??= DateTime.now();
+      _elapsed = DateTime.now().difference(_connectedAt!);
+      _startTimerIfNeeded();
+    }
+    if (next == CallSessionState.ended || next == CallSessionState.failed) {
+      _stopTimer();
+      unawaited(_invokeEndEngineOnce());
+    }
+    notifyListeners();
+  }
+
+  void _startTimerIfNeeded() {
+    _timer ??= Timer.periodic(const Duration(seconds: 1), (_) {
+      final connectedAt = _connectedAt;
+      if (connectedAt == null) {
+        _elapsed = Duration.zero;
+      } else {
+        _elapsed = DateTime.now().difference(connectedAt);
+      }
+      notifyListeners();
+    });
+  }
+
+  void _stopTimer() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  void _logError(String action, Object error, StackTrace stackTrace) {
+    debugPrint('CallSession $action failed for callId=$callId: $error');
+    debugPrintStack(
+      label: 'CallSession $action stack trace',
+      stackTrace: stackTrace,
+    );
+  }
+
+  @override
+  void dispose() {
+    if (_disposed) {
+      return;
+    }
+    _disposed = true;
+    _stopTimer();
+    unawaited(_engineProvider()?.onDispose(this));
+    super.dispose();
+  }
+}

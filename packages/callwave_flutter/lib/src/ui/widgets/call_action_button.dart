@@ -45,16 +45,14 @@ class CallActionButton extends StatelessWidget {
         ? CallScreenTheme.endCallButtonSize
         : CallScreenTheme.actionButtonSize;
 
-    final Color background =
-        backgroundColor ??
+    final Color background = backgroundColor ??
         (isDestructive
             ? CallScreenTheme.endCallColor
             : isActive
                 ? CallScreenTheme.actionButtonActive
                 : CallScreenTheme.actionButtonInactive);
 
-    final Color resolvedIconColor =
-        iconColor ??
+    final Color resolvedIconColor = iconColor ??
         (isDestructive
             ? Colors.white
             : isActive

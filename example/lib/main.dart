@@ -1,25 +1,38 @@
 import 'dart:async';
 
 import 'package:callwave_flutter/callwave_flutter.dart';
+import 'package:callwave_flutter_example/mock_callwave_engine.dart';
 import 'package:flutter/material.dart';
-import 'package:callwave_flutter_example/startup/startup_call_recovery.dart';
-import 'package:callwave_flutter_example/startup/startup_launch_coordinator.dart';
 
 void main() {
   runApp(const CallwaveExampleApp());
 }
 
-class CallwaveExampleApp extends StatelessWidget {
+class CallwaveExampleApp extends StatefulWidget {
   const CallwaveExampleApp({super.key});
+
+  @override
+  State<CallwaveExampleApp> createState() => _CallwaveExampleAppState();
+}
+
+class _CallwaveExampleAppState extends State<CallwaveExampleApp> {
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       title: 'Callwave Example',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
         useMaterial3: true,
       ),
+      builder: (context, child) {
+        return CallwaveScope(
+          navigatorKey: _navigatorKey,
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       home: const CallDemoScreen(),
     );
   }
@@ -33,353 +46,49 @@ class CallDemoScreen extends StatefulWidget {
 }
 
 class _CallDemoScreenState extends State<CallDemoScreen> {
-  static const String _demoSource = 'example';
   static const String _incomingCallerName = 'Ava';
   static const String _incomingHandle = '+1 555 0101';
   static const String _outgoingCallerName = 'Milo';
   static const String _outgoingHandle = '+1 555 0202';
 
+  final MockCallwaveEngine _engine = MockCallwaveEngine();
   final List<String> _eventLog = <String>[];
-  final Map<String, CallData> _callsById = <String, CallData>{};
-  final Set<String> _openScreenCallIds = <String>{};
-  final Set<String> _acceptedCallIds = <String>{};
-  /// Call IDs with an incoming event but not yet accepted. Used to avoid
-  /// recovering "accepted" from active IDs when the call is still ringing.
-  final Set<String> _incomingCallIds = <String>{};
-  final List<CallEvent> _pendingStartupEvents = <CallEvent>[];
-  final Map<String, CallEvent> _pendingIncomingOpens = <String, CallEvent>{};
-  final StartupLaunchCoordinator _startupCoordinator =
-      StartupLaunchCoordinator();
   final TextEditingController _callIdController =
       TextEditingController(text: 'demo-call-001');
   StreamSubscription<CallEvent>? _subscription;
-  bool _isUiReadyForNavigation = false;
-  CallData? _startupJoinedCallData;
 
   @override
   void initState() {
     super.initState();
-    _startupCoordinator.addListener(_onStartupCoordinatorChanged);
+    CallwaveFlutter.instance.setEngine(_engine);
+    unawaited(CallwaveFlutter.instance.restoreActiveSessions());
     _subscription = CallwaveFlutter.instance.events.listen(_onCallEvent);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _markUiReadyForNavigation();
-    });
   }
 
-  void _onStartupCoordinatorChanged() {
-    if (!mounted) {
-      return;
-    }
-    setState(() {});
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    _callIdController.dispose();
+    super.dispose();
   }
 
   void _onCallEvent(CallEvent event) {
-    if (!mounted) return;
-    if (!_isUiReadyForNavigation) {
-      _bufferStartupEvent(event);
-      return;
-    }
-    _processCallEvent(event);
-  }
-
-  void _markUiReadyForNavigation() {
-    if (!mounted || _isUiReadyForNavigation) {
-      return;
-    }
-    _isUiReadyForNavigation = true;
-    _flushPendingStartupEvents();
-    unawaited(_completeStartupResolution());
-  }
-
-  Future<void> _completeStartupResolution() {
-    return _startupCoordinator.completeStartupResolution(
-      restoreActiveCalls: ({required bool force}) =>
-          _restoreActiveCallsIfNeeded(force: force),
-      hasJoinSignal: _hasStartupJoinSignal,
-    );
-  }
-
-  bool _hasStartupJoinSignal() {
-    return _startupCoordinator.startupCallRequested ||
-        _acceptedCallIds.isNotEmpty ||
-        _startupJoinedCallData != null;
-  }
-
-  Future<void> _restoreActiveCallsIfNeeded({bool force = false}) async {
-    if (!mounted || !_isUiReadyForNavigation) {
-      return;
-    }
-    if (!_startupCoordinator.shouldRunRestore(force: force)) {
-      return;
-    }
-
-    final activeCallIds = await CallwaveFlutter.instance.getActiveCallIds();
     if (!mounted) {
       return;
     }
-    final recoveredAcceptedEvents = recoverAcceptedEventsFromActiveIds(
-      activeCallIds: activeCallIds,
-      acceptedCallIds: _acceptedCallIds,
-      incomingCallIds: _incomingCallIds,
-      knownCallsById: _callsById,
-    );
-    for (final event in recoveredAcceptedEvents) {
-      _processCallEvent(event);
-    }
-  }
-
-  void _bufferStartupEvent(CallEvent event) {
-    if (event.type == CallEventType.accepted) {
-      _startupCoordinator.markAcceptedSignal();
-    }
-
-    if (event.type == CallEventType.accepted) {
-      _pendingStartupEvents.removeWhere(
-        (pending) =>
-            pending.callId == event.callId &&
-            pending.type == CallEventType.incoming,
-      );
-    }
-    _pendingStartupEvents.add(event);
-  }
-
-  void _flushPendingStartupEvents() {
-    if (_pendingStartupEvents.isEmpty) {
-      return;
-    }
-    final pending = List<CallEvent>.of(_pendingStartupEvents);
-    _pendingStartupEvents.clear();
-    for (final event in pending) {
-      _processCallEvent(event);
-    }
-  }
-
-  void _processCallEvent(CallEvent event) {
-    if (!_startupCoordinator.startupResolutionComplete &&
-        event.type == CallEventType.accepted) {
-      _startupCoordinator.markAcceptedSignal();
-    }
-
     setState(() {
       _eventLog.insert(
         0,
         '${event.timestamp.toIso8601String()} ${event.callId} ${event.type.name}',
       );
     });
-
-    switch (event.type) {
-      case CallEventType.incoming:
-        _incomingCallIds.add(event.callId);
-        if (_acceptedCallIds.contains(event.callId)) {
-          break;
-        }
-        _scheduleIncomingOpen(event);
-        break;
-      case CallEventType.accepted:
-        _acceptedCallIds.add(event.callId);
-        _incomingCallIds.remove(event.callId);
-        _pendingIncomingOpens.remove(event.callId);
-        _openAcceptedCallScreen(event);
-        break;
-      case CallEventType.ended:
-        _acceptedCallIds.remove(event.callId);
-        _incomingCallIds.remove(event.callId);
-        _pendingIncomingOpens.remove(event.callId);
-        _callsById.remove(event.callId);
-        if (_isStartupJoinedCall(event.callId)) {
-          _showDemoMode();
-        }
-        break;
-      case CallEventType.declined:
-      case CallEventType.timeout:
-      case CallEventType.missed:
-        if (_acceptedCallIds.contains(event.callId)) {
-          // Ignore stale post-accept terminal signals from transport races.
-          break;
-        }
-        _acceptedCallIds.remove(event.callId);
-        _incomingCallIds.remove(event.callId);
-        _pendingIncomingOpens.remove(event.callId);
-        _callsById.remove(event.callId);
-        if (_isStartupJoinedCall(event.callId)) {
-          _showDemoMode();
-        }
-        break;
-      case CallEventType.started:
-      case CallEventType.callback:
-        break;
-    }
-  }
-
-  void _openIncomingLikeCallScreen(CallEvent event) {
-    final callData = _resolveCallDataFromEvent(event);
-    _openCallScreen(callData: callData, isOutgoing: false);
-  }
-
-  void _scheduleIncomingOpen(CallEvent event) {
-    _pendingIncomingOpens[event.callId] = event;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-      final pendingEvent = _pendingIncomingOpens.remove(event.callId);
-      if (pendingEvent == null || _acceptedCallIds.contains(event.callId)) {
-        return;
-      }
-      _openIncomingLikeCallScreen(pendingEvent);
-    });
-  }
-
-  void _openAcceptedCallScreen(CallEvent event) {
-    final callData = _resolveCallDataFromEvent(event);
-    if (_shouldOpenAsStartupJoinedCall()) {
-      _openStartupJoinedCall(callData);
-      return;
-    }
-    _openCallScreen(
-      callData: callData,
-      isOutgoing: false,
-      startInConnecting: true,
-    );
-  }
-
-  bool _shouldOpenAsStartupJoinedCall() {
-    return _startupCoordinator.shouldOpenAsStartupJoinedCall(
-      hasOpenCallScreens: _openScreenCallIds.isNotEmpty,
-    );
-  }
-
-  void _openStartupJoinedCall(CallData callData) {
-    if (_isStartupJoinedCall(callData.callId)) {
-      return;
-    }
-    _startupJoinedCallData = callData;
-    _startupCoordinator.openStartupJoinedCall(callData.callId);
-  }
-
-  bool _isStartupJoinedCall(String callId) {
-    return _startupCoordinator.isStartupJoinedCall(callId);
-  }
-
-  void _onStartupJoinedCallEnded() {
-    final callId = _startupJoinedCallData?.callId;
-    if (callId != null) {
-      _acceptedCallIds.remove(callId);
-      _pendingIncomingOpens.remove(callId);
-      _callsById.remove(callId);
-    }
-    _showDemoMode();
-  }
-
-  void _showDemoMode() {
-    _startupJoinedCallData = null;
-    _startupCoordinator.showDemoMode();
-  }
-
-  @override
-  void dispose() {
-    _subscription?.cancel();
-    _startupCoordinator.removeListener(_onStartupCoordinatorChanged);
-    _startupCoordinator.dispose();
-    _pendingStartupEvents.clear();
-    _pendingIncomingOpens.clear();
-    _incomingCallIds.clear();
-    _callIdController.dispose();
-    super.dispose();
-  }
-
-  void _openCallScreen({
-    required CallData callData,
-    required bool isOutgoing,
-    bool startInConnecting = false,
-  }) {
-    if (_openScreenCallIds.contains(callData.callId)) {
-      return;
-    }
-    _openScreenCallIds.add(callData.callId);
-    Navigator.of(context)
-        .push(
-      MaterialPageRoute<void>(
-        builder: (_) => CallScreen(
-          callData: callData,
-          isOutgoing: isOutgoing,
-          startInConnecting: startInConnecting,
-          onCallEnded: () => _popOpenCallScreen(callData.callId),
-        ),
-      ),
-    )
-        .whenComplete(() {
-      _openScreenCallIds.remove(callData.callId);
-    });
-  }
-
-  void _popOpenCallScreen(String callId) {
-    if (!mounted || !_openScreenCallIds.contains(callId)) {
-      return;
-    }
-    final navigator = Navigator.of(context);
-    if (navigator.canPop()) {
-      navigator.pop();
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_startupCoordinator.launchMode == StartupLaunchMode.loading) {
-      return const Scaffold(
-        body: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: <Color>[Color(0xFF0D4F4F), Color(0xFF0A0E0E)],
-            ),
-          ),
-          child: SafeArea(
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.4,
-                      color: Colors.white,
-                    ),
-                  ),
-                  SizedBox(height: 16),
-                  Text(
-                    'Joining call...',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    final startupJoinedCallData = _startupJoinedCallData;
-    if (_startupCoordinator.launchMode == StartupLaunchMode.startupJoinedCall &&
-        startupJoinedCallData != null) {
-      return CallScreen(
-        callData: startupJoinedCallData,
-        startInConnecting: true,
-        onCallEnded: _onStartupJoinedCallEnded,
-      );
-    }
-
     final callId = _callIdController.text.trim();
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Callwave Example'),
-      ),
+      appBar: AppBar(title: const Text('Callwave Example')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -406,15 +115,6 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                   child: const Text('FullScreen Permission'),
                 ),
                 ElevatedButton(
-                  onPressed: callId.isEmpty ? null : _setPostCallStayOpen,
-                  child: const Text('Stay Open'),
-                ),
-                ElevatedButton(
-                  onPressed:
-                      callId.isEmpty ? null : _setPostCallBackgroundOnEnd,
-                  child: const Text('Bg On End'),
-                ),
-                ElevatedButton(
                   onPressed:
                       callId.isEmpty ? null : () => _showIncoming(callId),
                   child: const Text('Incoming'),
@@ -433,10 +133,6 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                   child: const Text('Missed'),
                 ),
               ],
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Cold-start test: send an incoming call, swipe app away, tap Accept on the incoming UI (native full-screen overlay when killed; custom Flutter UI if app was in background), then reopen app and check logs.',
             ),
             const SizedBox(height: 16),
             const Text('Events'),
@@ -478,32 +174,38 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
     _pushLog('Requested full-screen intent permission screen.');
   }
 
-  Future<void> _setPostCallStayOpen() async {
-    await CallwaveFlutter.instance
-        .setPostCallBehavior(PostCallBehavior.stayOpen);
-    _pushLog('Post-call behavior set to stayOpen.');
-  }
-
-  Future<void> _setPostCallBackgroundOnEnd() async {
-    await CallwaveFlutter.instance.setPostCallBehavior(
-      PostCallBehavior.backgroundOnEnded,
-    );
-    _pushLog('Post-call behavior set to backgroundOnEnded.');
-  }
-
   Future<void> _showIncoming(String callId) async {
-    final callData = _buildIncomingCallData(callId);
-    _callsById[callId] = callData;
-    await CallwaveFlutter.instance.showIncomingCall(callData);
+    await CallwaveFlutter.instance.showIncomingCall(
+      CallData(
+        callId: callId,
+        callerName: _incomingCallerName,
+        handle: _incomingHandle,
+        timeout: const Duration(seconds: 30),
+        callType: CallType.audio,
+        extra: const <String, dynamic>{
+          'callerName': _incomingCallerName,
+          'handle': _incomingHandle,
+          'callType': 'audio',
+        },
+      ),
+    );
   }
 
   Future<void> _showOutgoing(String callId) async {
-    final callData = _buildOutgoingCallData(callId);
-    _callsById[callId] = callData;
-    await CallwaveFlutter.instance.showOutgoingCall(callData);
-    if (mounted) {
-      _openCallScreen(callData: callData, isOutgoing: true);
-    }
+    await CallwaveFlutter.instance.showOutgoingCall(
+      CallData(
+        callId: callId,
+        callerName: _outgoingCallerName,
+        handle: _outgoingHandle,
+        timeout: const Duration(seconds: 30),
+        callType: CallType.video,
+        extra: const <String, dynamic>{
+          'callerName': _outgoingCallerName,
+          'handle': _outgoingHandle,
+          'callType': 'video',
+        },
+      ),
+    );
   }
 
   Future<void> _endCall(String callId) async {
@@ -515,94 +217,11 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
   }
 
   void _pushLog(String value) {
-    if (!mounted) return;
-
+    if (!mounted) {
+      return;
+    }
     setState(() {
       _eventLog.insert(0, '${DateTime.now().toIso8601String()} $value');
     });
-  }
-
-  CallData _buildIncomingCallData(String callId) {
-    return CallData(
-      callId: callId,
-      callerName: _incomingCallerName,
-      handle: _incomingHandle,
-      timeout: const Duration(seconds: 30),
-      callType: CallType.audio,
-      extra: _buildDemoExtra(
-        callerName: _incomingCallerName,
-        handle: _incomingHandle,
-        callType: CallType.audio,
-      ),
-    );
-  }
-
-  CallData _buildOutgoingCallData(String callId) {
-    return CallData(
-      callId: callId,
-      callerName: _outgoingCallerName,
-      handle: _outgoingHandle,
-      timeout: const Duration(seconds: 30),
-      callType: CallType.video,
-      extra: _buildDemoExtra(
-        callerName: _outgoingCallerName,
-        handle: _outgoingHandle,
-        callType: CallType.video,
-      ),
-    );
-  }
-
-  Map<String, dynamic> _buildDemoExtra({
-    required String callerName,
-    required String handle,
-    required CallType callType,
-  }) {
-    return <String, dynamic>{
-      'source': _demoSource,
-      'callerName': callerName,
-      'handle': handle,
-      'callType': callType.name,
-    };
-  }
-
-  CallData _callDataFromEvent(CallEvent event) {
-    final fallback = _buildIncomingCallData(event.callId);
-    final callerName =
-        _readNonEmptyString(event.extra, 'callerName') ?? fallback.callerName;
-    final handle =
-        _readNonEmptyString(event.extra, 'handle') ?? fallback.handle;
-    final callType =
-        _readCallType(event.extra?['callType']) ?? fallback.callType;
-
-    return CallData(
-      callId: event.callId,
-      callerName: callerName,
-      handle: handle,
-      callType: callType,
-      extra: event.extra ?? fallback.extra,
-    );
-  }
-
-  CallData _resolveCallDataFromEvent(CallEvent event) {
-    final callData = _callsById[event.callId] ?? _callDataFromEvent(event);
-    _callsById[event.callId] = callData;
-    return callData;
-  }
-
-  String? _readNonEmptyString(Map<String, dynamic>? map, String key) {
-    final value = map?[key];
-    if (value is! String) return null;
-    final trimmed = value.trim();
-    return trimmed.isEmpty ? null : trimmed;
-  }
-
-  CallType? _readCallType(Object? raw) {
-    if (raw is! String) return null;
-    for (final callType in CallType.values) {
-      if (callType.name == raw) {
-        return callType;
-      }
-    }
-    return null;
   }
 }

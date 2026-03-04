@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/call_data.dart';
+import '../engine/call_session.dart';
 import 'call_screen_controller.dart';
 import 'theme/call_screen_theme.dart';
 import 'widgets/call_actions_row.dart';
@@ -12,28 +12,19 @@ import 'widgets/caller_info.dart';
 /// ```dart
 /// Navigator.of(context).push(
 ///   MaterialPageRoute(
-///     builder: (_) => CallScreen(callData: data),
+///     builder: (_) => CallScreen(session: session),
 ///   ),
 /// );
 /// ```
 class CallScreen extends StatefulWidget {
   const CallScreen({
-    required this.callData,
-    this.isOutgoing = false,
-    this.startInConnecting = false,
+    required this.session,
     this.onCallEnded,
     super.key,
   });
 
-  /// Caller information to display.
-  final CallData callData;
-
-  /// When `true` the initial status label shows "Calling..." instead of
-  /// "Ringing...".
-  final bool isOutgoing;
-
-  /// When `true`, starts in "Connecting..." and auto-advances to connected.
-  final bool startInConnecting;
+  /// Session that owns this call screen.
+  final CallSession session;
 
   /// Invoked after the call ends. If `null` the screen auto-pops after a
   /// brief delay when a previous route exists.
@@ -55,10 +46,7 @@ class _CallScreenState extends State<CallScreen>
     super.initState();
 
     _controller = CallScreenController(
-      callId: widget.callData.callId,
-      callType: widget.callData.callType,
-      isOutgoing: widget.isOutgoing,
-      startInConnecting: widget.startInConnecting,
+      session: widget.session,
     )..addListener(_onControllerChanged);
 
     _fadeController = AnimationController(
@@ -105,6 +93,7 @@ class _CallScreenState extends State<CallScreen>
 
   @override
   Widget build(BuildContext context) {
+    final displayData = widget.session.callData;
     return PopScope(
       canPop: false,
       child: Scaffold(
@@ -119,16 +108,16 @@ class _CallScreenState extends State<CallScreen>
                 children: [
                   const Spacer(flex: 2),
                   CallerAvatar(
-                    callerName: widget.callData.callerName,
-                    avatarUrl: widget.callData.avatarUrl,
+                    callerName: displayData.callerName,
+                    avatarUrl: displayData.avatarUrl,
                     status: _controller.status,
                   ),
                   const SizedBox(height: 32),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 32),
                     child: CallerInfo(
-                      callerName: widget.callData.callerName,
-                      handle: widget.callData.handle,
+                      callerName: displayData.callerName,
+                      handle: displayData.handle,
                       status: _controller.status,
                       elapsed: _controller.elapsed,
                     ),

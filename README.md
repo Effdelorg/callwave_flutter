@@ -13,6 +13,7 @@ MIT-licensed federated Flutter plugin for WhatsApp-style VoIP call UX.
 
 - Shows system-level incoming call UI.
 - Handles accept, decline, timeout, missed, callback, and end events.
+- Exposes a session-first orchestration model via `CallwaveEngine` + `CallSession`.
 - Buffers native events in memory + disk for cold start delivery.
 - Supports Android permission flows for notifications and full-screen intents.
 - Uses iOS CallKit.
@@ -26,19 +27,8 @@ MIT-licensed federated Flutter plugin for WhatsApp-style VoIP call UX.
 ## Quick Example
 
 ```dart
-await CallwaveFlutter.instance.showIncomingCall(
-  const CallData(
-    callId: 'c-100',
-    callerName: 'Ava',
-    handle: '+1 555 0101',
-  ),
-);
-
-CallwaveFlutter.instance.events.listen((event) {
-  if (event.type == CallEventType.accepted) {
-    // Open your in-app call screen.
-  }
-});
+CallwaveFlutter.instance.setEngine(MyCallwaveEngine());
+await CallwaveFlutter.instance.restoreActiveSessions();
 ```
 
 Optional post-call behavior:

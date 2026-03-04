@@ -2,6 +2,8 @@
 
 Federated Flutter plugin for WhatsApp-style VoIP call UX (incoming call UI, accept/decline/timeout, CallKit/Android full-screen intents). No WebRTC/SIP/audio routing.
 
+Always check for race conditions and fix them. 
+
 ## Workspace Structure
 
 | Package | Role |

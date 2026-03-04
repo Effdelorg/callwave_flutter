@@ -60,11 +60,14 @@ abstract final class CallScreenTheme {
 
   /// Green background for the Accept call button.
   static const Color acceptCallColor = Color(0xFF2E7D32);
+
   /// Icon color for the Accept call button.
   static const Color acceptCallIconColor = Colors.white;
   static const Color endCallColor = Color(0xFFEF5350);
+
   /// Maximum rotation angle (radians) for the accept button wiggle animation.
   static const double acceptCallWiggleRadians = 0.22;
+
   /// Duration of one wiggle cycle for the accept button.
   static const Duration acceptCallWiggleDuration = Duration(milliseconds: 380);
 
