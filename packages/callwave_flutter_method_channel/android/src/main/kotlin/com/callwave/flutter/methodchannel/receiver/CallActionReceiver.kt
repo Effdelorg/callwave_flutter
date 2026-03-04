@@ -34,7 +34,12 @@ class CallActionReceiver : BroadcastReceiver() {
     }
 
     private fun launchHostApp(context: Context, sourceIntent: Intent) {
-        val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return
+        val launchIntent = CallwaveRuntime.callManager
+            .hostLaunchIntentForAction(CallwaveConstants.ACTION_ACCEPT_AND_OPEN)
+            ?: run {
+                Log.w(TAG, "Unable to resolve host launch intent after call accept.")
+                return
+            }
         sourceIntent.extras?.let { extras ->
             launchIntent.putExtras(extras)
         }

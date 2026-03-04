@@ -328,8 +328,7 @@ class AndroidCallManager(
     }
 
     private fun fullScreenIntent(payload: CallPayload): PendingIntent {
-        val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
-            action = CallwaveConstants.ACTION_OPEN_INCOMING
+        val launchIntent = hostLaunchIntentForAction(CallwaveConstants.ACTION_OPEN_INCOMING)?.apply {
             putExtra(CallwaveConstants.EXTRA_CALL_ID, payload.callId)
             putExtra(CallwaveConstants.EXTRA_CALLER_NAME, payload.callerName)
             putExtra(CallwaveConstants.EXTRA_HANDLE, payload.handle)
@@ -391,7 +390,7 @@ class AndroidCallManager(
     }
 
     private fun acceptAndOpenIntent(payload: CallPayload): PendingIntent {
-        val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
+        val launchIntent = hostLaunchIntentForAction(CallwaveConstants.ACTION_ACCEPT_AND_OPEN)?.apply {
             putExtra(CallwaveConstants.EXTRA_CALL_ID, payload.callId)
             putExtra(CallwaveConstants.EXTRA_CALLER_NAME, payload.callerName)
             putExtra(CallwaveConstants.EXTRA_HANDLE, payload.handle)
@@ -422,6 +421,48 @@ class AndroidCallManager(
             launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+    }
+
+    fun hostLaunchIntentForAction(action: String): Intent? {
+        val launcherIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        if (launcherIntent != null) {
+            launcherIntent.action = action
+            return launcherIntent
+        }
+
+        val callEntryIntent = Intent(action).apply {
+            `package` = context.packageName
+            addCategory(Intent.CATEGORY_DEFAULT)
+        }
+        val resolved = resolveActivityInfo(callEntryIntent)
+        if (resolved != null) {
+            return Intent(action).apply {
+                setClassName(resolved.packageName, resolved.name)
+            }
+        }
+
+        val mainIntent = Intent(Intent.ACTION_MAIN).apply {
+            `package` = context.packageName
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val mainResolved = resolveActivityInfo(mainIntent) ?: return null
+        return Intent(action).apply {
+            setClassName(mainResolved.packageName, mainResolved.name)
+        }
+    }
+
+    private fun resolveActivityInfo(intent: Intent): android.content.pm.ActivityInfo? {
+        val resolved = context.packageManager.resolveActivity(
+            intent,
+            PackageManager.MATCH_DEFAULT_ONLY,
+        )?.activityInfo
+        if (resolved != null) {
+            return resolved
+        }
+        return context.packageManager.queryIntentActivities(
+            intent,
+            PackageManager.MATCH_DEFAULT_ONLY,
+        ).firstOrNull()?.activityInfo
     }
 
     private fun fallbackPayload(callId: String): CallPayload {

@@ -30,6 +30,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Mute'), findsOneWidget);
+    expect(find.text('Callwave Example'), findsNothing);
     await _disposeRenderedApp(tester);
   });
 
@@ -61,10 +62,11 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Mute'), findsOneWidget);
+    expect(find.text('Callwave Example'), findsNothing);
     await _disposeRenderedApp(tester);
   });
 
-  testWidgets('restores active call on startup when accepted event is missing',
+  testWidgets('active call IDs recover startup joined UI when accepted is late',
       (
     tester,
   ) async {
@@ -75,6 +77,63 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Mute'), findsOneWidget);
+    expect(find.text('Callwave Example'), findsNothing);
+    await _disposeRenderedApp(tester);
+  });
+
+  testWidgets('incoming plus active call ID stays ringing until accepted', (
+    tester,
+  ) async {
+    fakePlatform.initialEventTypes = <platform.CallEventType>[
+      platform.CallEventType.incoming,
+    ];
+    fakePlatform.activeCallIds = <String>[_FakePlatform.callId];
+
+    await tester.pumpWidget(const CallwaveExampleApp());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Mute'), findsNothing);
+    final hasRingingUi = find.text('Ringing...').evaluate().isNotEmpty;
+    final hasHomeUi = find.text('Callwave Example').evaluate().isNotEmpty;
+    expect(hasRingingUi || hasHomeUi, isTrue);
+    await _disposeRenderedApp(tester);
+  });
+
+  testWidgets('startup root call transitions to demo after end',
+      (tester) async {
+    fakePlatform.initialEventTypes = <platform.CallEventType>[
+      platform.CallEventType.accepted,
+    ];
+
+    await tester.pumpWidget(const CallwaveExampleApp());
+    await _pumpToJoinedFlowFrame(tester);
+
+    expect(find.text('Mute'), findsOneWidget);
+    expect(find.text('Callwave Example'), findsNothing);
+
+    fakePlatform.emit(type: platform.CallEventType.ended);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+
+    expect(find.text('Callwave Example'), findsOneWidget);
+    await _disposeRenderedApp(tester);
+  });
+
+  testWidgets('startup without call resolves to demo screen', (tester) async {
+    await tester.pumpWidget(const CallwaveExampleApp());
+    await tester.pump();
+
+    expect(find.text('Callwave Example'), findsOneWidget);
+    expect(find.text('Joining call...'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 1500));
+    await tester.pump();
+
+    expect(find.text('Callwave Example'), findsOneWidget);
+    expect(find.text('Joining call...'), findsNothing);
     await _disposeRenderedApp(tester);
   });
 }
