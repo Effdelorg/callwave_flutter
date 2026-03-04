@@ -238,6 +238,10 @@ class AndroidCallManager(
     }
 
     fun onTimeout(callId: String) {
+        if (acceptedCalls.contains(callId)) {
+            // Ignore stale timeout broadcasts that race with an accepted call.
+            return
+        }
         openedIncomingCalls.remove(callId)
         acceptedCalls.remove(callId)
         val extra = payloadStore[callId]?.extra

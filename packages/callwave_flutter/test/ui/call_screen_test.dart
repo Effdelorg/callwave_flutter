@@ -154,6 +154,28 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     expect(controller.status, isNot(CallStatus.ringing));
   });
+
+  test('timeout and missed after accepted are ignored as stale', () async {
+    final controller = CallScreenController(
+      callId: _FakePlatform.callId,
+      callType: CallType.audio,
+    );
+    addTearDown(controller.dispose);
+
+    expect(controller.status, CallStatus.ringing);
+
+    fakePlatform.emit(type: platform.CallEventType.accepted);
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.status, CallStatus.connecting);
+
+    fakePlatform.emit(type: platform.CallEventType.timeout);
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.status, isNot(CallStatus.ended));
+
+    fakePlatform.emit(type: platform.CallEventType.missed);
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.status, isNot(CallStatus.ended));
+  });
 }
 
 void _pushCallScreen(

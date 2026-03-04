@@ -40,19 +40,124 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
   final List<String> _eventLog = <String>[];
   final Map<String, CallData> _callsById = <String, CallData>{};
   final Set<String> _openScreenCallIds = <String>{};
+  final Set<String> _acceptedCallIds = <String>{};
+  final List<CallEvent> _pendingStartupEvents = <CallEvent>[];
+  final Map<String, CallEvent> _pendingIncomingOpens = <String, CallEvent>{};
   final TextEditingController _callIdController =
       TextEditingController(text: 'demo-call-001');
   StreamSubscription<CallEvent>? _subscription;
+  bool _isUiReadyForNavigation = false;
+  bool _didRestoreActiveCalls = false;
+  bool _startupCallRequested = false;
+  bool _startupResolutionComplete = false;
 
   @override
   void initState() {
     super.initState();
     _subscription = CallwaveFlutter.instance.events.listen(_onCallEvent);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _markUiReadyForNavigation();
+    });
   }
 
   void _onCallEvent(CallEvent event) {
     if (!mounted) return;
+    if (!_isUiReadyForNavigation) {
+      _bufferStartupEvent(event);
+      return;
+    }
+    _processCallEvent(event);
+  }
 
+  void _markUiReadyForNavigation() {
+    if (!mounted || _isUiReadyForNavigation) {
+      return;
+    }
+    _isUiReadyForNavigation = true;
+    _flushPendingStartupEvents();
+    unawaited(_completeStartupResolution());
+  }
+
+  Future<void> _completeStartupResolution() async {
+    try {
+      await _restoreActiveCallsIfNeeded();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _startupResolutionComplete = true;
+        });
+      }
+    }
+  }
+
+  Future<void> _restoreActiveCallsIfNeeded() async {
+    if (!mounted || !_isUiReadyForNavigation || _didRestoreActiveCalls) {
+      return;
+    }
+    _didRestoreActiveCalls = true;
+
+    final activeCallIds = await CallwaveFlutter.instance.getActiveCallIds();
+    if (!mounted) {
+      return;
+    }
+    if (activeCallIds.isNotEmpty) {
+      _markStartupCallRequested();
+    }
+
+    for (final callId in activeCallIds) {
+      if (_acceptedCallIds.contains(callId)) {
+        continue;
+      }
+      _processCallEvent(
+        CallEvent(
+          callId: callId,
+          type: CallEventType.accepted,
+          timestamp: DateTime.now(),
+          extra: _callsById[callId]?.extra,
+        ),
+      );
+    }
+  }
+
+  void _bufferStartupEvent(CallEvent event) {
+    if (event.type == CallEventType.incoming ||
+        event.type == CallEventType.accepted) {
+      _markStartupCallRequested();
+    }
+
+    if (event.type == CallEventType.accepted) {
+      _pendingStartupEvents.removeWhere(
+        (pending) =>
+            pending.callId == event.callId &&
+            pending.type == CallEventType.incoming,
+      );
+    }
+    _pendingStartupEvents.add(event);
+  }
+
+  void _markStartupCallRequested() {
+    if (_startupCallRequested) {
+      return;
+    }
+    _startupCallRequested = true;
+    if (!mounted) {
+      return;
+    }
+    setState(() {});
+  }
+
+  void _flushPendingStartupEvents() {
+    if (_pendingStartupEvents.isEmpty) {
+      return;
+    }
+    final pending = List<CallEvent>.of(_pendingStartupEvents);
+    _pendingStartupEvents.clear();
+    for (final event in pending) {
+      _processCallEvent(event);
+    }
+  }
+
+  void _processCallEvent(CallEvent event) {
     setState(() {
       _eventLog.insert(
         0,
@@ -62,15 +167,30 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
 
     switch (event.type) {
       case CallEventType.incoming:
-        _openIncomingLikeCallScreen(event);
+        if (_acceptedCallIds.contains(event.callId)) {
+          break;
+        }
+        _scheduleIncomingOpen(event);
         break;
       case CallEventType.accepted:
+        _acceptedCallIds.add(event.callId);
+        _pendingIncomingOpens.remove(event.callId);
         _openAcceptedCallScreen(event);
         break;
       case CallEventType.ended:
+        _acceptedCallIds.remove(event.callId);
+        _pendingIncomingOpens.remove(event.callId);
+        _callsById.remove(event.callId);
+        break;
       case CallEventType.declined:
       case CallEventType.timeout:
       case CallEventType.missed:
+        if (_acceptedCallIds.contains(event.callId)) {
+          // Ignore stale post-accept terminal signals from transport races.
+          break;
+        }
+        _acceptedCallIds.remove(event.callId);
+        _pendingIncomingOpens.remove(event.callId);
         _callsById.remove(event.callId);
         break;
       case CallEventType.started:
@@ -83,6 +203,20 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
     final callData = _callsById[event.callId] ?? _callDataFromEvent(event);
     _callsById[event.callId] = callData;
     _openCallScreen(callData: callData, isOutgoing: false);
+  }
+
+  void _scheduleIncomingOpen(CallEvent event) {
+    _pendingIncomingOpens[event.callId] = event;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final pendingEvent = _pendingIncomingOpens.remove(event.callId);
+      if (pendingEvent == null || _acceptedCallIds.contains(event.callId)) {
+        return;
+      }
+      _openIncomingLikeCallScreen(pendingEvent);
+    });
   }
 
   void _openAcceptedCallScreen(CallEvent event) {
@@ -98,6 +232,8 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
   @override
   void dispose() {
     _subscription?.cancel();
+    _pendingStartupEvents.clear();
+    _pendingIncomingOpens.clear();
     _callIdController.dispose();
     super.dispose();
   }
@@ -139,6 +275,46 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_startupCallRequested && !_startupResolutionComplete) {
+      return const Scaffold(
+        body: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: <Color>[Color(0xFF0D4F4F), Color(0xFF0A0E0E)],
+            ),
+          ),
+          child: SafeArea(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.4,
+                      color: Colors.white,
+                    ),
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'Joining call...',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     final callId = _callIdController.text.trim();
     return Scaffold(
       appBar: AppBar(

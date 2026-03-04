@@ -115,10 +115,18 @@ class CallScreenController extends ChangeNotifier {
         }
         break;
       case CallEventType.ended:
+        _transitionTo(CallStatus.ended);
+        break;
       case CallEventType.declined:
+        _transitionTo(CallStatus.ended);
+        break;
       case CallEventType.timeout:
       case CallEventType.missed:
-        _transitionTo(CallStatus.ended);
+        // Timeout/missed are valid while ringing. If they arrive after accept,
+        // treat them as stale transport races and keep joined flow alive.
+        if (_status == CallStatus.ringing) {
+          _transitionTo(CallStatus.ended);
+        }
         break;
       case CallEventType.callback:
         break;
