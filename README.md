@@ -42,6 +42,52 @@ await CallwaveFlutter.instance.setPostCallBehavior(
 `backgroundOnEnded` is applied on Android (moves app task to background after `endCall`).
 On iOS, the setting is accepted but intentionally no-op.
 
+## WebRTC Integration
+
+callwave_flutter is the call UI layer; you provide media and signaling via `CallwaveEngine`. When the user accepts or starts a call, your engine connects WebRTC (e.g. `flutter_webrtc`, `videosdk,realtimekit_core`) and calls `session.reportConnected()` when ready.
+
+**Recommended `CallData.extra` keys** for WebRTC backends — use `CallDataExtraKeys` constants:
+
+| Constant | Example | Used by |
+|----------|---------|---------|
+| `CallDataExtraKeys.roomId` | `"room-abc123"` | LiveKit, Agora, Twilio Rooms |
+| `CallDataExtraKeys.meetingId` | `"meet-xyz"` | Zoom, Google Meet, etc. |
+| `CallDataExtraKeys.peerId` / `remoteUserId` | `"user-xyz"` | Custom signaling, peer-to-peer |
+| `CallDataExtraKeys.signalingUrl` | `"wss://..."` | WebSocket signaling server |
+| `CallDataExtraKeys.token` | JWT or access token | LiveKit, Agora, etc. |
+| `CallDataExtraKeys.sipUri` | `"sip:user@domain"` | SIP-based SDKs |
+
+These are conventions, not required. Different SDKs use different names; `extra` stays flexible.
+
+**Minimal example** wiring `flutter_webrtc` to `onAnswerCall`:
+
+```dart
+class WebRTCEngine extends CallwaveEngine {
+  @override
+  Future<void> onAnswerCall(CallSession session) async {
+    final roomId = session.callData.extra?[CallDataExtraKeys.roomId] as String?;
+    final token = session.callData.extra?[CallDataExtraKeys.token] as String?;
+    if (roomId == null || token == null) return;
+    // Connect to your WebRTC room, then:
+    session.reportConnected();
+  }
+
+  @override
+  Future<void> onStartCall(CallSession session) async {
+    // Same pattern for outgoing
+    session.reportConnected();
+  }
+
+  @override
+  Future<void> onEndCall(CallSession session) async {}
+  @override
+  Future<void> onDeclineCall(CallSession session) async {}
+  // ... other callbacks
+}
+```
+
+**Cold start:** Include WebRTC data (roomId, peerId, token, etc.) in your push payload. When the app is woken by push, parse it and call `showIncomingCall(CallData(..., extra: {...}))` with full `extra` so the engine has connection data when the user accepts.
+
 ## Local Development
 
 1. Install melos (`dart pub global activate melos`).

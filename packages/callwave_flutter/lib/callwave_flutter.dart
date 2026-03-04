@@ -8,6 +8,7 @@ export 'src/enums/call_session_state.dart';
 export 'src/enums/call_type.dart';
 export 'src/enums/post_call_behavior.dart';
 export 'src/models/call_data.dart';
+export 'src/models/call_data_extra_keys.dart';
 export 'src/models/call_event.dart';
 export 'src/ui/call_screen.dart';
 export 'src/ui/callwave_scope.dart';
