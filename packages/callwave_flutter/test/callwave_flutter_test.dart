@@ -94,6 +94,36 @@ void main() {
     expect(engine.answerCount, 1);
   });
 
+  test('open ongoing launch action re-emits existing session for routing',
+      () async {
+    const callId = 'c-open-ongoing';
+    final existing = CallwaveFlutter.instance.createSession(
+      callData: const CallData(
+        callId: callId,
+        callerName: 'Ava',
+        handle: '+1 555 0101',
+      ),
+      isOutgoing: false,
+      initialState: CallSessionState.connecting,
+    );
+
+    final routedSessionFuture = CallwaveFlutter.instance.sessions.first;
+    fakePlatform.emit(
+      platform.CallEventDto(
+        callId: callId,
+        type: platform.CallEventType.accepted,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        extra: const <String, dynamic>{
+          'launchAction':
+              'com.callwave.flutter.methodchannel.ACTION_OPEN_ONGOING',
+        },
+      ),
+    );
+
+    final routedSession = await routedSessionFuture;
+    expect(identical(routedSession, existing), isTrue);
+  });
+
   test('restoreActiveSessions creates connecting session without engine hooks',
       () async {
     final engine = _FakeEngine();

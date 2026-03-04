@@ -10,9 +10,11 @@ object CallwaveConstants {
 
     const val ACTION_ACCEPT = "com.callwave.flutter.methodchannel.ACTION_ACCEPT"
     const val ACTION_DECLINE = "com.callwave.flutter.methodchannel.ACTION_DECLINE"
+    const val ACTION_END = "com.callwave.flutter.methodchannel.ACTION_END"
     const val ACTION_TIMEOUT = "com.callwave.flutter.methodchannel.ACTION_TIMEOUT"
     const val ACTION_CALLBACK = "com.callwave.flutter.methodchannel.ACTION_CALLBACK"
     const val ACTION_OPEN_INCOMING = "com.callwave.flutter.methodchannel.ACTION_OPEN_INCOMING"
+    const val ACTION_OPEN_ONGOING = "com.callwave.flutter.methodchannel.ACTION_OPEN_ONGOING"
     const val ACTION_ACCEPT_AND_OPEN = "com.callwave.flutter.methodchannel.ACTION_ACCEPT_AND_OPEN"
 
     const val EXTRA_CALL_ID = "callId"

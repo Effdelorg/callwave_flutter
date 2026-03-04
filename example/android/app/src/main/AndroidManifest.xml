@@ -27,6 +27,7 @@
             <intent-filter>
                 <action android:name="com.callwave.flutter.methodchannel.ACTION_ACCEPT_AND_OPEN"/>
                 <action android:name="com.callwave.flutter.methodchannel.ACTION_OPEN_INCOMING"/>
+                <action android:name="com.callwave.flutter.methodchannel.ACTION_OPEN_ONGOING"/>
                 <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
         </activity>

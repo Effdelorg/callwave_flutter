@@ -18,6 +18,11 @@ class ActiveCallRegistry {
     }
 
     @Synchronized
+    fun contains(callId: String): Boolean {
+        return activeCalls.contains(callId)
+    }
+
+    @Synchronized
     fun getActiveCallIds(): List<String> {
         return activeCalls.toList()
     }

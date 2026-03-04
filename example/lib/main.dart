@@ -183,7 +183,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                 ),
                 ElevatedButton(
                   onPressed: callId.isEmpty ? null : () => _endCall(callId),
-                  child: const Text('End'),
+                  child: const Text('End call'),
                 ),
                 ElevatedButton(
                   onPressed: callId.isEmpty ? null : () => _markMissed(callId),

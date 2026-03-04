@@ -11,6 +11,7 @@ import 'enums/post_call_behavior.dart';
 import 'enums/call_type.dart';
 import 'models/call_data.dart';
 import 'models/call_event.dart';
+import 'models/call_event_extra_keys.dart';
 import 'models/call_startup_route_decision.dart';
 
 class CallwaveFlutter {
@@ -272,6 +273,9 @@ class CallwaveFlutter {
           initialState: CallSessionState.connecting,
         );
         unawaited(session.applyNativeEvent(event));
+        if (_isOpenOngoingLaunchAction(event.extra)) {
+          _sessionController.add(session);
+        }
         return;
       case CallEventType.started:
         final session = _ensureSessionFromEvent(
@@ -505,6 +509,13 @@ class CallwaveFlutter {
       }
     }
     return null;
+  }
+
+  /// True when [extra] contains [CallEventExtraKeys.launchAction] set to
+  /// [CallEventExtraKeys.launchActionOpenOngoing] (user tapped ongoing notification).
+  bool _isOpenOngoingLaunchAction(Map<String, dynamic>? extra) {
+    return extra?[CallEventExtraKeys.launchAction] ==
+        CallEventExtraKeys.launchActionOpenOngoing;
   }
 
   platform.CallDataDto _toDto(CallData data) {

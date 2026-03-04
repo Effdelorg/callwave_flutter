@@ -219,6 +219,10 @@ class CallSession extends ChangeNotifier {
         reportRinging();
         return;
       case CallEventType.accepted:
+        if (_state == CallSessionState.connected ||
+            _state == CallSessionState.reconnecting) {
+          return;
+        }
         reportConnecting();
         await _invokeAnswerEngineOnce();
         return;

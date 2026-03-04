@@ -46,6 +46,30 @@ void main() {
     await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
   });
 
+  testWidgets('accepted launchAction event opens session-driven call screen',
+      (tester) async {
+    fakePlatform.initialEvents = <platform.CallEventDto>[
+      platform.CallEventDto(
+        callId: _FakePlatform.callId,
+        type: platform.CallEventType.accepted,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        extra: const <String, dynamic>{
+          'launchAction':
+              'com.callwave.flutter.methodchannel.ACTION_OPEN_ONGOING',
+        },
+      ),
+    ];
+
+    await tester.pumpWidget(const CallwaveExampleApp());
+    await _pumpUntilCallScreen(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(CallScreen), findsOneWidget);
+    fakePlatform.emit(type: platform.CallEventType.ended);
+    await tester.pump();
+    await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
+  });
+
   testWidgets('ended event transitions startup-routed session to ended state',
       (tester) async {
     fakePlatform.activeCallIds = <String>[_FakePlatform.callId];
@@ -129,6 +153,7 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
     onListen: _emitInitialEvents,
   );
   List<platform.CallEventType> _initialEventTypes = <platform.CallEventType>[];
+  List<platform.CallEventDto> _initialEvents = <platform.CallEventDto>[];
   List<String> activeCallIds = const <String>[];
   List<platform.CallEventDto> activeCallSnapshots =
       const <platform.CallEventDto>[];
@@ -136,6 +161,16 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
 
   set initialEventTypes(List<platform.CallEventType> value) {
     _initialEventTypes = List<platform.CallEventType>.of(value);
+    _initialEvents = <platform.CallEventDto>[];
+    _didEmitInitialEvents = false;
+    if (_controller.hasListener) {
+      _emitInitialEvents();
+    }
+  }
+
+  set initialEvents(List<platform.CallEventDto> value) {
+    _initialEvents = List<platform.CallEventDto>.of(value);
+    _initialEventTypes = <platform.CallEventType>[];
     _didEmitInitialEvents = false;
     if (_controller.hasListener) {
       _emitInitialEvents();
@@ -154,17 +189,27 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
       return;
     }
     _didEmitInitialEvents = true;
+    if (_initialEvents.isNotEmpty) {
+      for (final event in _initialEvents) {
+        _controller.add(event);
+      }
+      return;
+    }
     for (final type in _initialEventTypes) {
       emit(type: type);
     }
   }
 
-  void emit({required platform.CallEventType type}) {
+  void emit({
+    required platform.CallEventType type,
+    Map<String, dynamic>? extra,
+  }) {
     _controller.add(
       platform.CallEventDto(
         callId: callId,
         type: type,
         timestampMs: DateTime.now().millisecondsSinceEpoch,
+        extra: extra,
       ),
     );
   }

@@ -77,6 +77,30 @@ void main() {
     expect(session.state, CallSessionState.ended);
   });
 
+  test('accepted event does not regress connected session to connecting',
+      () async {
+    final session = CallSession(
+      callData: const CallData(
+        callId: 'c-3b',
+        callerName: 'Ava',
+        handle: '+1',
+      ),
+      isOutgoing: false,
+      initialState: CallSessionState.connected,
+    );
+    addTearDown(session.dispose);
+
+    await session.applyNativeEvent(
+      CallEvent(
+        callId: 'c-3b',
+        type: CallEventType.accepted,
+        timestamp: DateTime.now(),
+      ),
+    );
+
+    expect(session.state, CallSessionState.connected);
+  });
+
   test('accept native failure transitions to failed', () async {
     final session = CallSession(
       callData: const CallData(
