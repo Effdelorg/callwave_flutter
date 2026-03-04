@@ -42,6 +42,23 @@ abstract class CallwaveFlutterPlatform extends PlatformInterface {
 
   Future<List<String>> getActiveCallIds();
 
+  /// Returns a snapshot of active call event state (as opposed to emitting via
+  /// the event stream).
+  ///
+  /// Used by startup restoration to avoid event-stream delivery races.
+  /// Typical entries are `incoming`, `accepted`, or `started`.
+  Future<List<CallEventDto>> getActiveCallEventSnapshots() async {
+    return const <CallEventDto>[];
+  }
+
+  /// Re-emits native snapshots for currently active calls.
+  ///
+  /// Implementations should publish synthetic events (incoming/accepted/started)
+  /// with the latest known payload. Used during cold-start restoration to
+  /// hydrate metadata and replay engine hooks when event delivery raced app
+  /// startup.
+  Future<void> syncActiveCallsToEvents() async {}
+
   Future<bool> requestNotificationPermission();
 
   Future<void> requestFullScreenIntentPermission();
@@ -76,6 +93,14 @@ class _StubCallwaveFlutterPlatform extends CallwaveFlutterPlatform {
   Future<List<String>> getActiveCallIds() {
     throw UnimplementedError('getActiveCallIds() has not been implemented.');
   }
+
+  @override
+  Future<List<CallEventDto>> getActiveCallEventSnapshots() async {
+    return const <CallEventDto>[];
+  }
+
+  @override
+  Future<void> syncActiveCallsToEvents() async {}
 
   @override
   Future<void> initialize() async {}

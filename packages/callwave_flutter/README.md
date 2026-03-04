@@ -2,68 +2,107 @@
 
 Public Flutter API for Callwave VoIP call UX.
 
-This package exposes clean Dart models and methods.
-It does not expose MethodChannel objects directly.
+This package is session-first. You provide a `CallwaveEngine` and the package handles
+call-session orchestration, call-screen state, and navigation hooks.
 
-## Usage
+## Core Flow
 
-```dart
-await CallwaveFlutter.instance.showIncomingCall(
-  const CallData(
-    callId: 'c-42',
-    callerName: 'Alex',
-    handle: '+1 555 0100',
-  ),
-);
-```
-
-Listen to events:
+1. Register your engine.
+2. Resolve startup route (`home` vs `call`) before `runApp`.
+3. Wrap your app with `CallwaveScope`.
 
 ```dart
-CallwaveFlutter.instance.events.listen((event) {
-  if (event.type == CallEventType.incoming) {
-    // open incoming custom call screen with Accept / Decline
+class MyCallwaveEngine extends CallwaveEngine {
+  @override
+  Future<void> onAnswerCall(CallSession session) async {
+    final roomToken = session.callData.extra?['roomToken'];
+    await mySdk.join(roomToken);
+    session.reportConnected();
   }
-  if (event.type == CallEventType.accepted) {
-    // open joined-flow screen (Connecting -> Connected)
-    // e.g. CallScreen(callData: data, startInConnecting: true)
+
+  @override
+  Future<void> onStartCall(CallSession session) async {
+    await mySdk.start(session.callId);
+    session.reportConnected();
   }
-});
-```
 
-`CallEventType.incoming` from notification/full-screen tap is Android behavior.
-On iOS, incoming UI remains CallKit-managed system UI.
+  @override
+  Future<void> onEndCall(CallSession session) async {
+    await mySdk.leave();
+  }
 
-When users tap `Answer` from Android system incoming UI (foreground, background,
-or terminated app), the plugin emits `accepted`, brings the app to the
-foreground, and switches the notification to an ongoing call notification.
-On iOS, CallKit remains system-managed; the plugin emits `accepted` with merged
-caller metadata so apps can restore/open custom UI when active.
-Late/stale `incoming` events after accept are ignored in `CallScreenController`,
-so the UI does not regress back to ringing.
+  @override
+  Future<void> onDeclineCall(CallSession session) async {}
 
-Answer or decline from custom UI:
+  @override
+  Future<void> onMuteChanged(CallSession session, bool muted) async {}
 
-```dart
-try {
-  await CallwaveFlutter.instance.acceptCall('c-42');
-  // or: await CallwaveFlutter.instance.declineCall('c-42');
-} catch (error) {
-  // invalid/expired callId, or call no longer active
+  @override
+  Future<void> onSpeakerChanged(CallSession session, bool speakerOn) async {}
+
+  @override
+  Future<void> onCameraChanged(CallSession session, bool enabled) async {}
+
+  @override
+  Future<void> onCameraSwitch(CallSession session) async {}
+
+  @override
+  Future<void> onDispose(CallSession session) async {}
+}
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  final navKey = GlobalKey<NavigatorState>();
+  CallwaveFlutter.instance.setEngine(MyCallwaveEngine());
+  final startup = await CallwaveFlutter.instance.prepareStartupRouteDecision();
+
+  runApp(
+    MaterialApp(
+      navigatorKey: navKey,
+      initialRoute: startup.shouldOpenCall ? '/call' : '/home',
+      routes: <String, WidgetBuilder>{
+        '/home': (_) => const HomeScreen(),
+        '/call': (_) => StartupCallRoute(callId: startup.callId),
+      },
+      builder: (_, child) => CallwaveScope(
+        navigatorKey: navKey,
+        preRoutedCallIds: startup.callId == null
+            ? const <String>{}
+            : <String>{startup.callId!},
+        child: child!,
+      ),
+    ),
+  );
 }
 ```
 
-`CallScreen` auto-return behavior:
+## Cold Start
 
-- When a call ends (`ended`, `declined`, `missed`, or `timeout`), `CallScreen`
-  auto-returns to the previous screen if one exists.
-- If `CallScreen` is the root route (no previous route), it stays on the
-  current screen and does not force navigation.
+`prepareStartupRouteDecision()` restores active sessions and returns a route
+decision:
 
-Optional post-call behavior:
+- Open call route when a session is `connecting`, `connected`, or `reconnecting`.
+- Stay on home route when sessions are only `ringing`/`idle`, or none exist.
+
+If your app does not use startup routing in `main`, `CallwaveScope` still
+auto-pushes `CallScreen` as fallback.
+
+## CallScreen
+
+`CallScreen` is session-driven: pass a `CallSession`, not raw `CallData`.
 
 ```dart
-await CallwaveFlutter.instance.setPostCallBehavior(
-  PostCallBehavior.backgroundOnEnded,
-);
+CallScreen(session: session, onCallEnded: () => navigator.pop());
 ```
+
+Sessions come from `CallwaveFlutter.sessions` or `CallwaveFlutter.getSession`.
+`CallwaveScope` pushes `CallScreen` automatically when sessions are created.
+
+## Notes
+
+- Native accept/decline/end remains authoritative.
+- `CallSession` is the single source of truth for UI state.
+- `CallwaveScope` auto-pushes one call screen per `callId` and does not auto-pop.
+- `CallwaveScope.navigatorKey` must be the same key used by your app's `MaterialApp`.
+- `CallwaveEngine` must be set before session operations (including `restoreActiveSessions`).

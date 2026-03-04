@@ -28,6 +28,7 @@ class CallActionReceiver : BroadcastReceiver() {
                 }
             }
             CallwaveConstants.ACTION_DECLINE -> CallwaveRuntime.callManager.onDecline(callId, extra)
+            CallwaveConstants.ACTION_END -> CallwaveRuntime.callManager.endCall(callId)
             CallwaveConstants.ACTION_TIMEOUT -> CallwaveRuntime.callManager.onTimeout(callId)
             CallwaveConstants.ACTION_CALLBACK -> CallwaveRuntime.callManager.onCallback(callId, extra)
         }

@@ -51,8 +51,7 @@ abstract final class CallScreenTheme {
   );
 
   // ── Action buttons ────────────────────────────────────────────────────
-  static const double actionButtonSize = 64.0;
-  static const double endCallButtonSize = 72.0;
+  static const double actionButtonSize = 72.0;
   static const Color actionButtonInactive = Color(0x33FFFFFF);
   static const Color actionButtonActive = Colors.white;
   static const Color actionIconInactive = Colors.white;
@@ -60,11 +59,16 @@ abstract final class CallScreenTheme {
 
   /// Green background for the Accept call button.
   static const Color acceptCallColor = Color(0xFF2E7D32);
+
   /// Icon color for the Accept call button.
   static const Color acceptCallIconColor = Colors.white;
-  static const Color endCallColor = Color(0xFFEF5350);
+
+  /// Red background for End/Decline call actions.
+  static const Color endCallColor = Color(0xFFD32F2F);
+
   /// Maximum rotation angle (radians) for the accept button wiggle animation.
   static const double acceptCallWiggleRadians = 0.22;
+
   /// Duration of one wiggle cycle for the accept button.
   static const Duration acceptCallWiggleDuration = Duration(milliseconds: 380);
 

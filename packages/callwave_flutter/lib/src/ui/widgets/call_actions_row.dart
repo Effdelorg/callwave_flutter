@@ -63,9 +63,10 @@ class CallActionsRow extends StatelessWidget {
         ),
         if (controller.isVideo)
           CallActionButton(
-            icon: Icons.videocam,
-            label: 'Camera',
-            onPressed: () {}, // placeholder for camera toggle
+            icon: controller.isCameraOn ? Icons.videocam : Icons.videocam_off,
+            label: controller.isCameraOn ? 'Camera On' : 'Camera Off',
+            isActive: controller.isCameraOn,
+            onPressed: controller.toggleCamera,
           ),
       ],
     );

@@ -151,8 +151,7 @@ class _PulseRingPainter extends CustomPainter {
 
     for (int i = 0; i < _ringCount; i++) {
       final phase = (progress + i / _ringCount) % 1.0;
-      final radius =
-          avatarRadius + (maxRadius - avatarRadius) * phase;
+      final radius = avatarRadius + (maxRadius - avatarRadius) * phase;
       final opacity = (1.0 - phase).clamp(0.0, 1.0);
 
       final paint = Paint()

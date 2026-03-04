@@ -135,8 +135,12 @@ class CallNotificationManager(
         notificationManagerCompat.notify(incomingNotificationId(payload.callId), notification)
     }
 
-    fun showOngoingCall(payload: CallPayload) {
-        val notification = NotificationCompat.Builder(context, CallwaveConstants.NOTIFICATION_CHANNEL_ID_OUTGOING)
+    fun showOngoingCall(
+        payload: CallPayload,
+        openIntent: PendingIntent,
+        endIntent: PendingIntent,
+    ) {
+        val builder = NotificationCompat.Builder(context, CallwaveConstants.NOTIFICATION_CHANNEL_ID_OUTGOING)
             .setSmallIcon(android.R.drawable.sym_call_outgoing)
             .setContentTitle(payload.callerName)
             .setContentText("Ongoing ${payload.callType} call")
@@ -145,9 +149,32 @@ class CallNotificationManager(
             .setSilent(true)
             .setOngoing(true)
             .setAutoCancel(false)
-            .build()
+            .setOnlyAlertOnce(true)
+            .setAllowSystemGeneratedContextualActions(false)
+            .setContentIntent(openIntent)
 
-        notificationManagerCompat.notify(incomingNotificationId(payload.callId), notification)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val caller = Person.Builder()
+                .setName(payload.callerName)
+                .setImportant(true)
+                .build()
+            builder.setStyle(
+                NotificationCompat.CallStyle.forOngoingCall(
+                    caller,
+                    endIntent,
+                ),
+            )
+        } else {
+            builder.addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "End call",
+                endIntent,
+            )
+        }
+
+        val notification = builder.build()
+        val notificationId = incomingNotificationId(payload.callId)
+        CallForegroundService.start(context, notificationId, notification)
     }
 
     fun showMissedCall(payload: CallPayload, callbackIntent: PendingIntent) {
@@ -168,9 +195,11 @@ class CallNotificationManager(
         notificationManagerCompat.notify(missedNotificationId(payload.callId), notification)
     }
 
-    fun dismissIncoming(callId: String) {
+    fun dismissIncoming(callId: String, stopForegroundService: Boolean = true) {
         notificationManagerCompat.cancel(incomingNotificationId(callId))
-        CallForegroundService.stop(context)
+        if (stopForegroundService) {
+            CallForegroundService.stop(context)
+        }
     }
 
     fun dismissMissed(callId: String) {
