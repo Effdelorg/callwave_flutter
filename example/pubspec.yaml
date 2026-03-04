@@ -18,6 +18,8 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  callwave_flutter_platform_interface:
+    path: ../packages/callwave_flutter_platform_interface
 
 flutter:
   uses-material-design: true

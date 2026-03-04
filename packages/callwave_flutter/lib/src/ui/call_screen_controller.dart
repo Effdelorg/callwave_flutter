@@ -22,10 +22,16 @@ class CallScreenController extends ChangeNotifier {
     required this.callId,
     required this.callType,
     bool isOutgoing = false,
-  }) : _status = isOutgoing ? CallStatus.connecting : CallStatus.ringing {
+    bool startInConnecting = false,
+  }) : _status = isOutgoing || startInConnecting
+            ? CallStatus.connecting
+            : CallStatus.ringing {
     _subscription = CallwaveFlutter.instance.events
         .where((e) => e.callId == callId)
         .listen(_onEvent, onError: _onEventStreamError);
+    if (_status == CallStatus.connecting) {
+      _scheduleConnectedTransition();
+    }
   }
 
   final String callId;
@@ -96,23 +102,31 @@ class CallScreenController extends ChangeNotifier {
   void _onEvent(CallEvent event) {
     switch (event.type) {
       case CallEventType.incoming:
-        _transitionTo(CallStatus.ringing);
+        // Ignore late/stale incoming events once past ringing (e.g. after accepted).
+        if (_status == CallStatus.ringing) {
+          _transitionTo(CallStatus.ringing);
+        }
         break;
       case CallEventType.accepted:
       case CallEventType.started:
-        _transitionTo(CallStatus.connecting);
-        // Simulate brief connecting phase then move to connected.
-        Future<void>.delayed(_simulatedConnectingDelay, () {
-          if (_status == CallStatus.connecting) {
-            _transitionTo(CallStatus.connected);
-          }
-        });
+        if (_status != CallStatus.connected && _status != CallStatus.ended) {
+          _transitionTo(CallStatus.connecting);
+          _scheduleConnectedTransition();
+        }
         break;
       case CallEventType.ended:
+        _transitionTo(CallStatus.ended);
+        break;
       case CallEventType.declined:
+        _transitionTo(CallStatus.ended);
+        break;
       case CallEventType.timeout:
       case CallEventType.missed:
-        _transitionTo(CallStatus.ended);
+        // Timeout/missed are valid while ringing. If they arrive after accept,
+        // treat them as stale transport races and keep joined flow alive.
+        if (_status == CallStatus.ringing) {
+          _transitionTo(CallStatus.ended);
+        }
         break;
       case CallEventType.callback:
         break;
@@ -155,6 +169,14 @@ class CallScreenController extends ChangeNotifier {
     }
 
     notifyListeners();
+  }
+
+  void _scheduleConnectedTransition() {
+    Future<void>.delayed(_simulatedConnectingDelay, () {
+      if (_status == CallStatus.connecting) {
+        _transitionTo(CallStatus.connected);
+      }
+    });
   }
 
   // ── Timer ─────────────────────────────────────────────────────────────

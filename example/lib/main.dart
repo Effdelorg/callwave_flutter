@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:callwave_flutter/callwave_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:callwave_flutter_example/startup/startup_call_recovery.dart';
+import 'package:callwave_flutter_example/startup/startup_launch_coordinator.dart';
 
 void main() {
   runApp(const CallwaveExampleApp());
@@ -40,18 +42,123 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
   final List<String> _eventLog = <String>[];
   final Map<String, CallData> _callsById = <String, CallData>{};
   final Set<String> _openScreenCallIds = <String>{};
+  final Set<String> _acceptedCallIds = <String>{};
+  /// Call IDs with an incoming event but not yet accepted. Used to avoid
+  /// recovering "accepted" from active IDs when the call is still ringing.
+  final Set<String> _incomingCallIds = <String>{};
+  final List<CallEvent> _pendingStartupEvents = <CallEvent>[];
+  final Map<String, CallEvent> _pendingIncomingOpens = <String, CallEvent>{};
+  final StartupLaunchCoordinator _startupCoordinator =
+      StartupLaunchCoordinator();
   final TextEditingController _callIdController =
       TextEditingController(text: 'demo-call-001');
   StreamSubscription<CallEvent>? _subscription;
+  bool _isUiReadyForNavigation = false;
+  CallData? _startupJoinedCallData;
 
   @override
   void initState() {
     super.initState();
+    _startupCoordinator.addListener(_onStartupCoordinatorChanged);
     _subscription = CallwaveFlutter.instance.events.listen(_onCallEvent);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _markUiReadyForNavigation();
+    });
+  }
+
+  void _onStartupCoordinatorChanged() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {});
   }
 
   void _onCallEvent(CallEvent event) {
     if (!mounted) return;
+    if (!_isUiReadyForNavigation) {
+      _bufferStartupEvent(event);
+      return;
+    }
+    _processCallEvent(event);
+  }
+
+  void _markUiReadyForNavigation() {
+    if (!mounted || _isUiReadyForNavigation) {
+      return;
+    }
+    _isUiReadyForNavigation = true;
+    _flushPendingStartupEvents();
+    unawaited(_completeStartupResolution());
+  }
+
+  Future<void> _completeStartupResolution() {
+    return _startupCoordinator.completeStartupResolution(
+      restoreActiveCalls: ({required bool force}) =>
+          _restoreActiveCallsIfNeeded(force: force),
+      hasJoinSignal: _hasStartupJoinSignal,
+    );
+  }
+
+  bool _hasStartupJoinSignal() {
+    return _startupCoordinator.startupCallRequested ||
+        _acceptedCallIds.isNotEmpty ||
+        _startupJoinedCallData != null;
+  }
+
+  Future<void> _restoreActiveCallsIfNeeded({bool force = false}) async {
+    if (!mounted || !_isUiReadyForNavigation) {
+      return;
+    }
+    if (!_startupCoordinator.shouldRunRestore(force: force)) {
+      return;
+    }
+
+    final activeCallIds = await CallwaveFlutter.instance.getActiveCallIds();
+    if (!mounted) {
+      return;
+    }
+    final recoveredAcceptedEvents = recoverAcceptedEventsFromActiveIds(
+      activeCallIds: activeCallIds,
+      acceptedCallIds: _acceptedCallIds,
+      incomingCallIds: _incomingCallIds,
+      knownCallsById: _callsById,
+    );
+    for (final event in recoveredAcceptedEvents) {
+      _processCallEvent(event);
+    }
+  }
+
+  void _bufferStartupEvent(CallEvent event) {
+    if (event.type == CallEventType.accepted) {
+      _startupCoordinator.markAcceptedSignal();
+    }
+
+    if (event.type == CallEventType.accepted) {
+      _pendingStartupEvents.removeWhere(
+        (pending) =>
+            pending.callId == event.callId &&
+            pending.type == CallEventType.incoming,
+      );
+    }
+    _pendingStartupEvents.add(event);
+  }
+
+  void _flushPendingStartupEvents() {
+    if (_pendingStartupEvents.isEmpty) {
+      return;
+    }
+    final pending = List<CallEvent>.of(_pendingStartupEvents);
+    _pendingStartupEvents.clear();
+    for (final event in pending) {
+      _processCallEvent(event);
+    }
+  }
+
+  void _processCallEvent(CallEvent event) {
+    if (!_startupCoordinator.startupResolutionComplete &&
+        event.type == CallEventType.accepted) {
+      _startupCoordinator.markAcceptedSignal();
+    }
 
     setState(() {
       _eventLog.insert(
@@ -62,16 +169,41 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
 
     switch (event.type) {
       case CallEventType.incoming:
-        _openIncomingLikeCallScreen(event);
+        _incomingCallIds.add(event.callId);
+        if (_acceptedCallIds.contains(event.callId)) {
+          break;
+        }
+        _scheduleIncomingOpen(event);
         break;
       case CallEventType.accepted:
-        _openIncomingLikeCallScreen(event);
+        _acceptedCallIds.add(event.callId);
+        _incomingCallIds.remove(event.callId);
+        _pendingIncomingOpens.remove(event.callId);
+        _openAcceptedCallScreen(event);
         break;
       case CallEventType.ended:
+        _acceptedCallIds.remove(event.callId);
+        _incomingCallIds.remove(event.callId);
+        _pendingIncomingOpens.remove(event.callId);
+        _callsById.remove(event.callId);
+        if (_isStartupJoinedCall(event.callId)) {
+          _showDemoMode();
+        }
+        break;
       case CallEventType.declined:
       case CallEventType.timeout:
       case CallEventType.missed:
+        if (_acceptedCallIds.contains(event.callId)) {
+          // Ignore stale post-accept terminal signals from transport races.
+          break;
+        }
+        _acceptedCallIds.remove(event.callId);
+        _incomingCallIds.remove(event.callId);
+        _pendingIncomingOpens.remove(event.callId);
         _callsById.remove(event.callId);
+        if (_isStartupJoinedCall(event.callId)) {
+          _showDemoMode();
+        }
         break;
       case CallEventType.started:
       case CallEventType.callback:
@@ -80,14 +212,78 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
   }
 
   void _openIncomingLikeCallScreen(CallEvent event) {
-    final callData = _callsById[event.callId] ?? _callDataFromEvent(event);
-    _callsById[event.callId] = callData;
+    final callData = _resolveCallDataFromEvent(event);
     _openCallScreen(callData: callData, isOutgoing: false);
+  }
+
+  void _scheduleIncomingOpen(CallEvent event) {
+    _pendingIncomingOpens[event.callId] = event;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final pendingEvent = _pendingIncomingOpens.remove(event.callId);
+      if (pendingEvent == null || _acceptedCallIds.contains(event.callId)) {
+        return;
+      }
+      _openIncomingLikeCallScreen(pendingEvent);
+    });
+  }
+
+  void _openAcceptedCallScreen(CallEvent event) {
+    final callData = _resolveCallDataFromEvent(event);
+    if (_shouldOpenAsStartupJoinedCall()) {
+      _openStartupJoinedCall(callData);
+      return;
+    }
+    _openCallScreen(
+      callData: callData,
+      isOutgoing: false,
+      startInConnecting: true,
+    );
+  }
+
+  bool _shouldOpenAsStartupJoinedCall() {
+    return _startupCoordinator.shouldOpenAsStartupJoinedCall(
+      hasOpenCallScreens: _openScreenCallIds.isNotEmpty,
+    );
+  }
+
+  void _openStartupJoinedCall(CallData callData) {
+    if (_isStartupJoinedCall(callData.callId)) {
+      return;
+    }
+    _startupJoinedCallData = callData;
+    _startupCoordinator.openStartupJoinedCall(callData.callId);
+  }
+
+  bool _isStartupJoinedCall(String callId) {
+    return _startupCoordinator.isStartupJoinedCall(callId);
+  }
+
+  void _onStartupJoinedCallEnded() {
+    final callId = _startupJoinedCallData?.callId;
+    if (callId != null) {
+      _acceptedCallIds.remove(callId);
+      _pendingIncomingOpens.remove(callId);
+      _callsById.remove(callId);
+    }
+    _showDemoMode();
+  }
+
+  void _showDemoMode() {
+    _startupJoinedCallData = null;
+    _startupCoordinator.showDemoMode();
   }
 
   @override
   void dispose() {
     _subscription?.cancel();
+    _startupCoordinator.removeListener(_onStartupCoordinatorChanged);
+    _startupCoordinator.dispose();
+    _pendingStartupEvents.clear();
+    _pendingIncomingOpens.clear();
+    _incomingCallIds.clear();
     _callIdController.dispose();
     super.dispose();
   }
@@ -95,6 +291,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
   void _openCallScreen({
     required CallData callData,
     required bool isOutgoing,
+    bool startInConnecting = false,
   }) {
     if (_openScreenCallIds.contains(callData.callId)) {
       return;
@@ -106,6 +303,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
         builder: (_) => CallScreen(
           callData: callData,
           isOutgoing: isOutgoing,
+          startInConnecting: startInConnecting,
           onCallEnded: () => _popOpenCallScreen(callData.callId),
         ),
       ),
@@ -127,6 +325,56 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_startupCoordinator.launchMode == StartupLaunchMode.loading) {
+      return const Scaffold(
+        body: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: <Color>[Color(0xFF0D4F4F), Color(0xFF0A0E0E)],
+            ),
+          ),
+          child: SafeArea(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.4,
+                      color: Colors.white,
+                    ),
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'Joining call...',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final startupJoinedCallData = _startupJoinedCallData;
+    if (_startupCoordinator.launchMode == StartupLaunchMode.startupJoinedCall &&
+        startupJoinedCallData != null) {
+      return CallScreen(
+        callData: startupJoinedCallData,
+        startInConnecting: true,
+        onCallEnded: _onStartupJoinedCallEnded,
+      );
+    }
+
     final callId = _callIdController.text.trim();
     return Scaffold(
       appBar: AppBar(
@@ -333,6 +581,12 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
       callType: callType,
       extra: event.extra ?? fallback.extra,
     );
+  }
+
+  CallData _resolveCallDataFromEvent(CallEvent event) {
+    final callData = _callsById[event.callId] ?? _callDataFromEvent(event);
+    _callsById[event.callId] = callData;
+    return callData;
   }
 
   String? _readNonEmptyString(Map<String, dynamic>? map, String key) {

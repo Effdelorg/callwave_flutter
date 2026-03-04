@@ -61,12 +61,7 @@ class AndroidCallManager(
         notificationManager.showIncomingCall(
             payload = payload,
             fullScreenIntent = fullScreenIntent(payload),
-            acceptIntent = actionIntent(
-                action = CallwaveConstants.ACTION_ACCEPT,
-                callId = payload.callId,
-                extra = payload.extra,
-                payload = payload,
-            ),
+            acceptIntent = acceptAndOpenIntent(payload),
             declineIntent = actionIntent(
                 action = CallwaveConstants.ACTION_DECLINE,
                 callId = payload.callId,
@@ -132,11 +127,27 @@ class AndroidCallManager(
     }
 
     fun handleIncomingCallIntent(intent: Intent?): Boolean {
+        val launchAction = intent?.getStringExtra(CallwaveConstants.EXTRA_LAUNCH_ACTION)
+        if (intent?.action == CallwaveConstants.ACTION_ACCEPT_AND_OPEN ||
+            launchAction == CallwaveConstants.ACTION_ACCEPT_AND_OPEN
+        ) {
+            val callId = intent.getStringExtra(CallwaveConstants.EXTRA_CALL_ID) ?: return false
+            val extraFromIntent = CallPayload.fromIntentExtras(
+                intent.getStringExtra(CallwaveConstants.EXTRA_EXTRA),
+            )
+            val fallbackPayload = payloadFromActionIntent(intent, callId, extraFromIntent)
+            onAccept(callId, extraFromIntent, fallbackPayload)
+            return true
+        }
+
         if (intent?.action != CallwaveConstants.ACTION_OPEN_INCOMING) {
             return false
         }
 
         val callId = intent.getStringExtra(CallwaveConstants.EXTRA_CALL_ID) ?: return false
+        if (acceptedCalls.contains(callId)) {
+            return true
+        }
         if (!openedIncomingCalls.add(callId)) {
             return true
         }
@@ -227,6 +238,10 @@ class AndroidCallManager(
     }
 
     fun onTimeout(callId: String) {
+        if (acceptedCalls.contains(callId)) {
+            // Ignore stale timeout broadcasts that race with an accepted call.
+            return
+        }
         openedIncomingCalls.remove(callId)
         acceptedCalls.remove(callId)
         val extra = payloadStore[callId]?.extra
@@ -313,8 +328,7 @@ class AndroidCallManager(
     }
 
     private fun fullScreenIntent(payload: CallPayload): PendingIntent {
-        val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
-            action = CallwaveConstants.ACTION_OPEN_INCOMING
+        val launchIntent = hostLaunchIntentForAction(CallwaveConstants.ACTION_OPEN_INCOMING)?.apply {
             putExtra(CallwaveConstants.EXTRA_CALL_ID, payload.callId)
             putExtra(CallwaveConstants.EXTRA_CALLER_NAME, payload.callerName)
             putExtra(CallwaveConstants.EXTRA_HANDLE, payload.handle)
@@ -342,7 +356,7 @@ class AndroidCallManager(
 
         return PendingIntent.getActivity(
             context,
-            payload.callId.hashCode() + 10000,
+            payload.callId.hashCode() + PENDING_INTENT_REQUEST_CODE_OFFSET_FULL_SCREEN,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -373,6 +387,82 @@ class AndroidCallManager(
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+    }
+
+    private fun acceptAndOpenIntent(payload: CallPayload): PendingIntent {
+        val launchIntent = hostLaunchIntentForAction(CallwaveConstants.ACTION_ACCEPT_AND_OPEN)?.apply {
+            putExtra(CallwaveConstants.EXTRA_CALL_ID, payload.callId)
+            putExtra(CallwaveConstants.EXTRA_CALLER_NAME, payload.callerName)
+            putExtra(CallwaveConstants.EXTRA_HANDLE, payload.handle)
+            putExtra(CallwaveConstants.EXTRA_AVATAR_URL, payload.avatarUrl)
+            putExtra(CallwaveConstants.EXTRA_TIMEOUT_SECONDS, payload.timeoutSeconds)
+            putExtra(CallwaveConstants.EXTRA_CALL_TYPE, payload.callType)
+            putExtra(CallwaveConstants.EXTRA_EXTRA, toExtraJson(payload.extra))
+            putExtra(CallwaveConstants.EXTRA_LAUNCH_ACTION, CallwaveConstants.ACTION_ACCEPT_AND_OPEN)
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP,
+            )
+        }
+
+        if (launchIntent == null) {
+            return actionIntent(
+                action = CallwaveConstants.ACTION_ACCEPT,
+                callId = payload.callId,
+                extra = payload.extra,
+                payload = payload,
+            )
+        }
+
+        return PendingIntent.getActivity(
+            context,
+            payload.callId.hashCode() + PENDING_INTENT_REQUEST_CODE_OFFSET_ACCEPT_AND_OPEN,
+            launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    fun hostLaunchIntentForAction(action: String): Intent? {
+        val launcherIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        if (launcherIntent != null) {
+            launcherIntent.action = action
+            return launcherIntent
+        }
+
+        val callEntryIntent = Intent(action).apply {
+            `package` = context.packageName
+            addCategory(Intent.CATEGORY_DEFAULT)
+        }
+        val resolved = resolveActivityInfo(callEntryIntent)
+        if (resolved != null) {
+            return Intent(action).apply {
+                setClassName(resolved.packageName, resolved.name)
+            }
+        }
+
+        val mainIntent = Intent(Intent.ACTION_MAIN).apply {
+            `package` = context.packageName
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val mainResolved = resolveActivityInfo(mainIntent) ?: return null
+        return Intent(action).apply {
+            setClassName(mainResolved.packageName, mainResolved.name)
+        }
+    }
+
+    private fun resolveActivityInfo(intent: Intent): android.content.pm.ActivityInfo? {
+        val resolved = context.packageManager.resolveActivity(
+            intent,
+            PackageManager.MATCH_DEFAULT_ONLY,
+        )?.activityInfo
+        if (resolved != null) {
+            return resolved
+        }
+        return context.packageManager.queryIntentActivities(
+            intent,
+            PackageManager.MATCH_DEFAULT_ONLY,
+        ).firstOrNull()?.activityInfo
     }
 
     private fun fallbackPayload(callId: String): CallPayload {
@@ -484,6 +574,8 @@ class AndroidCallManager(
     companion object {
         private const val TAG = "CallwaveFlutter"
         private const val REQUEST_NOTIFICATIONS = 4512
+        private const val PENDING_INTENT_REQUEST_CODE_OFFSET_FULL_SCREEN = 10000
+        private const val PENDING_INTENT_REQUEST_CODE_OFFSET_ACCEPT_AND_OPEN = 30000
     }
 }
 
