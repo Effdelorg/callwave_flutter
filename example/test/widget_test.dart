@@ -13,9 +13,11 @@ void main() {
   setUp(() {
     fakePlatform = _FakePlatform();
     platform.CallwaveFlutterPlatform.instance = fakePlatform;
+    CallwaveFlutter.instance.setEngine(_TestEngine());
   });
 
   tearDown(() async {
+    CallwaveFlutter.instance.setEngine(_TestEngine());
     await fakePlatform.dispose();
   });
 
@@ -44,21 +46,57 @@ void main() {
     await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
   });
 
-  testWidgets('ended event returns from call screen to home', (tester) async {
-    fakePlatform.initialEventTypes = <platform.CallEventType>[
-      platform.CallEventType.accepted,
+  testWidgets('ended event transitions startup-routed session to ended state',
+      (tester) async {
+    fakePlatform.activeCallIds = <String>[_FakePlatform.callId];
+    fakePlatform.activeCallSnapshots = <platform.CallEventDto>[
+      platform.CallEventDto(
+        callId: _FakePlatform.callId,
+        type: platform.CallEventType.accepted,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+      ),
     ];
 
-    await tester.pumpWidget(const CallwaveExampleApp());
+    final startupDecision =
+        await CallwaveFlutter.instance.prepareStartupRouteDecision();
+    await tester.pumpWidget(
+      CallwaveExampleApp(startupDecision: startupDecision),
+    );
     await _pumpUntilCallScreen(tester);
     expect(find.byType(CallScreen), findsOneWidget);
 
     fakePlatform.emit(type: platform.CallEventType.ended);
     await tester.pump();
-    await tester.pump(const Duration(seconds: 1));
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    final session = CallwaveFlutter.instance.getSession(_FakePlatform.callId);
+    expect(session, isNotNull);
+    expect(session!.state, CallSessionState.ended);
+    await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
+  });
 
-    expect(find.text('Callwave Example'), findsOneWidget);
+  testWidgets('startup decision routes accepted cold start directly to call',
+      (tester) async {
+    fakePlatform.activeCallIds = <String>[_FakePlatform.callId];
+    fakePlatform.activeCallSnapshots = <platform.CallEventDto>[
+      platform.CallEventDto(
+        callId: _FakePlatform.callId,
+        type: platform.CallEventType.accepted,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    ];
+
+    final startupDecision =
+        await CallwaveFlutter.instance.prepareStartupRouteDecision();
+    await tester.pumpWidget(
+      CallwaveExampleApp(startupDecision: startupDecision),
+    );
+    await _pumpUntilCallScreen(tester);
+
+    expect(startupDecision.shouldOpenCall, isTrue);
+    expect(find.byType(CallScreen), findsOneWidget);
+    expect(find.text('Call ID'), findsNothing);
+    fakePlatform.emit(type: platform.CallEventType.ended);
+    await tester.pump();
     await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
   });
 }
@@ -92,11 +130,16 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   );
   List<platform.CallEventType> _initialEventTypes = <platform.CallEventType>[];
   List<String> activeCallIds = const <String>[];
+  List<platform.CallEventDto> activeCallSnapshots =
+      const <platform.CallEventDto>[];
   bool _didEmitInitialEvents = false;
 
   set initialEventTypes(List<platform.CallEventType> value) {
     _initialEventTypes = List<platform.CallEventType>.of(value);
     _didEmitInitialEvents = false;
+    if (_controller.hasListener) {
+      _emitInitialEvents();
+    }
   }
 
   Future<void> dispose() async {
@@ -140,6 +183,18 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
       List<String>.of(activeCallIds);
 
   @override
+  Future<List<platform.CallEventDto>> getActiveCallEventSnapshots() async {
+    return List<platform.CallEventDto>.of(activeCallSnapshots);
+  }
+
+  @override
+  Future<void> syncActiveCallsToEvents() async {
+    for (final event in activeCallSnapshots) {
+      _controller.add(event);
+    }
+  }
+
+  @override
   Future<void> initialize() async {}
 
   @override
@@ -159,4 +214,37 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
 
   @override
   Future<void> showOutgoingCall(platform.CallDataDto data) async {}
+}
+
+class _TestEngine extends CallwaveEngine {
+  @override
+  Future<void> onAnswerCall(CallSession session) async {
+    session.reportConnected();
+  }
+
+  @override
+  Future<void> onStartCall(CallSession session) async {
+    session.reportConnected();
+  }
+
+  @override
+  Future<void> onEndCall(CallSession session) async {}
+
+  @override
+  Future<void> onDeclineCall(CallSession session) async {}
+
+  @override
+  Future<void> onMuteChanged(CallSession session, bool muted) async {}
+
+  @override
+  Future<void> onSpeakerChanged(CallSession session, bool speakerOn) async {}
+
+  @override
+  Future<void> onCameraChanged(CallSession session, bool enabled) async {}
+
+  @override
+  Future<void> onCameraSwitch(CallSession session) async {}
+
+  @override
+  Future<void> onDispose(CallSession session) async {}
 }

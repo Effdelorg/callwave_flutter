@@ -30,6 +30,7 @@ class AndroidCallManager(
     private val payloadStore = HashMap<String, CallPayload>()
     private val openedIncomingCalls = HashSet<String>()
     private val acceptedCalls = HashSet<String>()
+    private val outgoingCalls = HashSet<String>()
     var activity: Activity? = null
     private var postCallBehavior = PostCallBehavior.STAY_OPEN
 
@@ -57,6 +58,7 @@ class AndroidCallManager(
         payloadStore[payload.callId] = payload
         openedIncomingCalls.remove(payload.callId)
         acceptedCalls.remove(payload.callId)
+        outgoingCalls.remove(payload.callId)
 
         notificationManager.showIncomingCall(
             payload = payload,
@@ -79,6 +81,7 @@ class AndroidCallManager(
         }
         payloadStore[payload.callId] = payload
         acceptedCalls.remove(payload.callId)
+        outgoingCalls.add(payload.callId)
         notificationManager.showOutgoingCall(payload)
         emitEvent(payload.callId, CallwaveConstants.EVENT_STARTED, payload.extra)
     }
@@ -90,6 +93,7 @@ class AndroidCallManager(
         activeCallRegistry.remove(callId)
         openedIncomingCalls.remove(callId)
         acceptedCalls.remove(callId)
+        outgoingCalls.remove(callId)
         val extra = payloadStore.remove(callId)?.extra
         emitEvent(callId, CallwaveConstants.EVENT_ENDED, extra)
         applyPostCallBehavior()
@@ -102,6 +106,7 @@ class AndroidCallManager(
         activeCallRegistry.remove(callId)
         openedIncomingCalls.remove(callId)
         acceptedCalls.remove(callId)
+        outgoingCalls.remove(callId)
         notificationManager.showMissedCall(
             payload = payload,
             callbackIntent = actionIntent(
@@ -151,6 +156,7 @@ class AndroidCallManager(
         if (!openedIncomingCalls.add(callId)) {
             return true
         }
+        outgoingCalls.remove(callId)
 
         val extraFromIntent = CallPayload.fromIntentExtras(
             intent.getStringExtra(CallwaveConstants.EXTRA_EXTRA),
@@ -196,6 +202,7 @@ class AndroidCallManager(
         val payload = resolvePayloadForAccept(callId, fallbackPayload)
         if (payload == null) {
             acceptedCalls.remove(callId)
+            outgoingCalls.remove(callId)
             if (fallbackPayload != null) {
                 timeoutScheduler.cancel(callId)
                 notificationManager.dismissIncoming(callId)
@@ -215,6 +222,7 @@ class AndroidCallManager(
         timeoutScheduler.cancel(callId)
         notificationManager.dismissIncoming(callId)
         openedIncomingCalls.remove(callId)
+        outgoingCalls.remove(callId)
         notificationManager.showOngoingCall(payload)
         emitEvent(
             callId,
@@ -233,6 +241,7 @@ class AndroidCallManager(
         activeCallRegistry.remove(callId)
         openedIncomingCalls.remove(callId)
         acceptedCalls.remove(callId)
+        outgoingCalls.remove(callId)
         payloadStore.remove(callId)
         emitEvent(callId, CallwaveConstants.EVENT_DECLINED, extra)
     }
@@ -244,6 +253,7 @@ class AndroidCallManager(
         }
         openedIncomingCalls.remove(callId)
         acceptedCalls.remove(callId)
+        outgoingCalls.remove(callId)
         val extra = payloadStore[callId]?.extra
         emitEvent(callId, CallwaveConstants.EVENT_TIMEOUT, extra)
         markMissed(callId)
@@ -266,6 +276,50 @@ class AndroidCallManager(
     }
 
     fun getActiveCallIds(): List<String> = activeCallRegistry.getActiveCallIds()
+
+    fun getActiveCallEventSnapshots(): List<Map<String, Any?>> {
+        val snapshots = mutableListOf<Map<String, Any?>>()
+        val activeCallIds = activeCallRegistry.getActiveCallIds()
+        for (callId in activeCallIds) {
+            val payload = payloadStore[callId]
+            val type = when {
+                acceptedCalls.contains(callId) -> CallwaveConstants.EVENT_ACCEPTED
+                outgoingCalls.contains(callId) -> CallwaveConstants.EVENT_STARTED
+                else -> CallwaveConstants.EVENT_INCOMING
+            }
+            snapshots.add(
+                CallEventPayload.now(
+                    callId = callId,
+                    type = type,
+                    extra = eventExtra(
+                        payload = payload,
+                        fallbackExtra = payload?.extra,
+                    ),
+                ).toMap(),
+            )
+        }
+        return snapshots
+    }
+
+    fun syncActiveCallsToEvents() {
+        val activeCallIds = activeCallRegistry.getActiveCallIds()
+        for (callId in activeCallIds) {
+            val payload = payloadStore[callId]
+            val type = when {
+                acceptedCalls.contains(callId) -> CallwaveConstants.EVENT_ACCEPTED
+                outgoingCalls.contains(callId) -> CallwaveConstants.EVENT_STARTED
+                else -> CallwaveConstants.EVENT_INCOMING
+            }
+            emitEvent(
+                callId,
+                type,
+                eventExtra(
+                    payload = payload,
+                    fallbackExtra = payload?.extra,
+                ),
+            )
+        }
+    }
 
     fun requestNotificationPermission(activity: Activity?): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
@@ -424,21 +478,21 @@ class AndroidCallManager(
     }
 
     fun hostLaunchIntentForAction(action: String): Intent? {
-        val launcherIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-        if (launcherIntent != null) {
-            launcherIntent.action = action
-            return launcherIntent
-        }
-
-        val callEntryIntent = Intent(action).apply {
+        val actionIntent = Intent(action).apply {
             `package` = context.packageName
             addCategory(Intent.CATEGORY_DEFAULT)
         }
-        val resolved = resolveActivityInfo(callEntryIntent)
+        val resolved = resolveActivityInfo(actionIntent)
         if (resolved != null) {
             return Intent(action).apply {
                 setClassName(resolved.packageName, resolved.name)
             }
+        }
+
+        val launcherIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        if (launcherIntent != null) {
+            launcherIntent.action = action
+            return launcherIntent
         }
 
         val mainIntent = Intent(Intent.ACTION_MAIN).apply {

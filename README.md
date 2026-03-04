@@ -27,9 +27,31 @@ MIT-licensed federated Flutter plugin for WhatsApp-style VoIP call UX.
 ## Quick Example
 
 ```dart
-CallwaveFlutter.instance.setEngine(MyCallwaveEngine());
-await CallwaveFlutter.instance.restoreActiveSessions();
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final navKey = GlobalKey<NavigatorState>();
+  CallwaveFlutter.instance.setEngine(MyCallwaveEngine());
+  final startup = await CallwaveFlutter.instance.prepareStartupRouteDecision();
+
+  runApp(
+    MaterialApp(
+      navigatorKey: navKey,
+      initialRoute: startup.shouldOpenCall ? '/call' : '/home',
+      routes: {
+        '/home': (_) => const HomeScreen(),
+        '/call': (_) => StartupCallRoute(callId: startup.callId),
+      },
+      builder: (_, child) => CallwaveScope(
+        navigatorKey: navKey,
+        preRoutedCallIds: startup.callId == null ? const <String>{} : {startup.callId!},
+        child: child!,
+      ),
+    ),
+  );
+}
 ```
+
+See `packages/callwave_flutter/README.md` for full setup and cold-start details.
 
 Optional post-call behavior:
 

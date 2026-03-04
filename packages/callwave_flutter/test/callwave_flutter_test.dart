@@ -107,6 +107,101 @@ void main() {
     expect(session!.state, CallSessionState.connecting);
     expect(engine.answerCount, 0);
     expect(engine.startCount, 0);
+    expect(fakePlatform.getActiveCallEventSnapshotsCalled, isTrue);
+  });
+
+  test('restoreActiveSessions replays native snapshots for accepted calls',
+      () async {
+    final engine = _FakeEngine();
+    fakePlatform.activeCallIds = <String>['c-restore-accepted'];
+    fakePlatform.activeCallSnapshots = <platform.CallEventDto>[
+      platform.CallEventDto(
+        callId: 'c-restore-accepted',
+        type: platform.CallEventType.accepted,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        extra: const <String, dynamic>{
+          'callerName': 'Ava',
+          'handle': '+1 555 0101',
+        },
+      ),
+    ];
+
+    CallwaveFlutter.instance.setEngine(engine);
+    await CallwaveFlutter.instance.restoreActiveSessions();
+    await Future<void>.delayed(Duration.zero);
+
+    final session = CallwaveFlutter.instance.getSession('c-restore-accepted');
+    expect(session, isNotNull);
+    expect(session!.callData.callerName, 'Ava');
+    expect(engine.answerCount, 1);
+  });
+
+  test('restoreActiveSessions keeps incoming session in ringing state',
+      () async {
+    final engine = _FakeEngine();
+    fakePlatform.activeCallIds = <String>['c-restore-incoming'];
+    fakePlatform.activeCallSnapshots = <platform.CallEventDto>[
+      platform.CallEventDto(
+        callId: 'c-restore-incoming',
+        type: platform.CallEventType.incoming,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        extra: const <String, dynamic>{
+          'callerName': 'Ava',
+          'handle': '+1 555 0101',
+        },
+      ),
+    ];
+
+    CallwaveFlutter.instance.setEngine(engine);
+    await CallwaveFlutter.instance.restoreActiveSessions();
+    await Future<void>.delayed(Duration.zero);
+
+    final session = CallwaveFlutter.instance.getSession('c-restore-incoming');
+    expect(session, isNotNull);
+    expect(session!.state, CallSessionState.ringing);
+    expect(engine.answerCount, 0);
+  });
+
+  test('prepareStartupRouteDecision opens call route for accepted startup',
+      () async {
+    final engine = _FakeEngine();
+    fakePlatform.activeCallIds = <String>['c-startup-accepted'];
+    fakePlatform.activeCallSnapshots = <platform.CallEventDto>[
+      platform.CallEventDto(
+        callId: 'c-startup-accepted',
+        type: platform.CallEventType.accepted,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    ];
+
+    CallwaveFlutter.instance.setEngine(engine);
+    final decision =
+        await CallwaveFlutter.instance.prepareStartupRouteDecision();
+
+    expect(decision.shouldOpenCall, isTrue);
+    expect(decision.callId, 'c-startup-accepted');
+    expect(decision.sessionState, CallSessionState.connecting);
+  });
+
+  test('prepareStartupRouteDecision stays on home for ringing-only startup',
+      () async {
+    final engine = _FakeEngine();
+    fakePlatform.activeCallIds = <String>['c-startup-ringing'];
+    fakePlatform.activeCallSnapshots = <platform.CallEventDto>[
+      platform.CallEventDto(
+        callId: 'c-startup-ringing',
+        type: platform.CallEventType.incoming,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    ];
+
+    CallwaveFlutter.instance.setEngine(engine);
+    final decision =
+        await CallwaveFlutter.instance.prepareStartupRouteDecision();
+
+    expect(decision.shouldOpenCall, isFalse);
+    expect(decision.callId, isNull);
+    expect(decision.sessionState, isNull);
   });
 }
 
@@ -115,6 +210,10 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
       StreamController<platform.CallEventDto>.broadcast();
 
   List<String> activeCallIds = const <String>[];
+  List<platform.CallEventDto> activeCallSnapshots =
+      const <platform.CallEventDto>[];
+  bool getActiveCallEventSnapshotsCalled = false;
+  bool syncActiveCallsToEventsCalled = false;
   String? lastIncomingCallId;
   platform.PostCallBehavior postCallBehavior =
       platform.PostCallBehavior.stayOpen;
@@ -141,6 +240,20 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
 
   @override
   Future<List<String>> getActiveCallIds() async => activeCallIds;
+
+  @override
+  Future<List<platform.CallEventDto>> getActiveCallEventSnapshots() async {
+    getActiveCallEventSnapshotsCalled = true;
+    return List<platform.CallEventDto>.of(activeCallSnapshots);
+  }
+
+  @override
+  Future<void> syncActiveCallsToEvents() async {
+    syncActiveCallsToEventsCalled = true;
+    for (final event in activeCallSnapshots) {
+      emit(event);
+    }
+  }
 
   @override
   Future<void> initialize() async {}

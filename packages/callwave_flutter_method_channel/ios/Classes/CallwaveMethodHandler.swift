@@ -92,6 +92,13 @@ final class CallwaveMethodHandler {
     case "getActiveCallIds":
       result(callManager.activeCallIds())
 
+    case "getActiveCallEventSnapshots":
+      result(callManager.activeCallEventSnapshots())
+
+    case "syncActiveCallsToEvents":
+      callManager.syncActiveCallsToEvents()
+      result(nil)
+
     case "requestNotificationPermission":
       result(true)
 

@@ -4,12 +4,29 @@ import 'package:callwave_flutter/callwave_flutter.dart';
 import 'package:callwave_flutter_example/mock_callwave_engine.dart';
 import 'package:flutter/material.dart';
 
-void main() {
-  runApp(const CallwaveExampleApp());
+final MockCallwaveEngine _engine = MockCallwaveEngine();
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  CallwaveFlutter.instance.setEngine(_engine);
+  final startupDecision =
+      await CallwaveFlutter.instance.prepareStartupRouteDecision();
+  runApp(CallwaveExampleApp(startupDecision: startupDecision));
+}
+
+abstract final class _Routes {
+  static const String home = '/home';
+  static const String call = '/call';
 }
 
 class CallwaveExampleApp extends StatefulWidget {
-  const CallwaveExampleApp({super.key});
+  const CallwaveExampleApp({
+    CallStartupRouteDecision? startupDecision,
+    super.key,
+  }) : startupDecision =
+            startupDecision ?? const CallStartupRouteDecision.home();
+
+  final CallStartupRouteDecision startupDecision;
 
   @override
   State<CallwaveExampleApp> createState() => _CallwaveExampleAppState();
@@ -17,6 +34,10 @@ class CallwaveExampleApp extends StatefulWidget {
 
 class _CallwaveExampleAppState extends State<CallwaveExampleApp> {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  late final Set<String> _preRoutedCallIds =
+      widget.startupDecision.callId == null
+          ? const <String>{}
+          : <String>{widget.startupDecision.callId!};
 
   @override
   Widget build(BuildContext context) {
@@ -30,10 +51,49 @@ class _CallwaveExampleAppState extends State<CallwaveExampleApp> {
       builder: (context, child) {
         return CallwaveScope(
           navigatorKey: _navigatorKey,
+          preRoutedCallIds: _preRoutedCallIds,
           child: child ?? const SizedBox.shrink(),
         );
       },
-      home: const CallDemoScreen(),
+      initialRoute:
+          widget.startupDecision.shouldOpenCall ? _Routes.call : _Routes.home,
+      routes: <String, WidgetBuilder>{
+        _Routes.home: (_) => const CallDemoScreen(),
+        _Routes.call: (_) => _StartupCallRoute(
+              startupDecision: widget.startupDecision,
+            ),
+      },
+    );
+  }
+}
+
+class _StartupCallRoute extends StatelessWidget {
+  const _StartupCallRoute({
+    required this.startupDecision,
+  });
+
+  final CallStartupRouteDecision startupDecision;
+
+  @override
+  Widget build(BuildContext context) {
+    final callId = startupDecision.callId;
+    if (callId == null) {
+      return const CallDemoScreen();
+    }
+
+    final session = CallwaveFlutter.instance.getSession(callId);
+    if (session == null || session.isEnded) {
+      return const CallDemoScreen();
+    }
+
+    return InheritedCallSession(
+      session: session,
+      child: CallScreen(
+        session: session,
+        onCallEnded: () {
+          Navigator.of(context).pushReplacementNamed(_Routes.home);
+        },
+      ),
     );
   }
 }
@@ -51,7 +111,6 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
   static const String _outgoingCallerName = 'Milo';
   static const String _outgoingHandle = '+1 555 0202';
 
-  final MockCallwaveEngine _engine = MockCallwaveEngine();
   final List<String> _eventLog = <String>[];
   final TextEditingController _callIdController =
       TextEditingController(text: 'demo-call-001');
@@ -60,8 +119,6 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
   @override
   void initState() {
     super.initState();
-    CallwaveFlutter.instance.setEngine(_engine);
-    unawaited(CallwaveFlutter.instance.restoreActiveSessions());
     _subscription = CallwaveFlutter.instance.events.listen(_onCallEvent);
   }
 

@@ -11,6 +11,8 @@ final class IOSCallManager {
   private var payloadStore: [String: CallPayload] = [:]
   private var uuidByCallId: [String: UUID] = [:]
   private var callIdByUuid: [UUID: String] = [:]
+  private var acceptedCallIds: Set<String> = []
+  private var outgoingCallIds: Set<String> = []
   private var timeoutItems: [String: DispatchWorkItem] = [:]
   private var postCallBehavior: PostCallBehavior = .stayOpen
 
@@ -37,6 +39,8 @@ final class IOSCallManager {
     }
 
     payloadStore[payload.callId] = payload
+    acceptedCallIds.remove(payload.callId)
+    outgoingCallIds.remove(payload.callId)
     let uuid = uuidByCallId[payload.callId] ?? UUID()
     uuidByCallId[payload.callId] = uuid
     callIdByUuid[uuid] = payload.callId
@@ -62,6 +66,8 @@ final class IOSCallManager {
     }
 
     payloadStore[payload.callId] = payload
+    acceptedCallIds.remove(payload.callId)
+    outgoingCallIds.insert(payload.callId)
     let uuid = UUID()
     uuidByCallId[payload.callId] = uuid
     callIdByUuid[uuid] = payload.callId
@@ -120,12 +126,46 @@ final class IOSCallManager {
     } else {
       activeCallRegistry.remove(callId: callId)
       payloadStore.removeValue(forKey: callId)
+      acceptedCallIds.remove(callId)
+      outgoingCallIds.remove(callId)
     }
     emit(callId: callId, type: "missed", extra: payload?.extra)
   }
 
   func activeCallIds() -> [String] {
     activeCallRegistry.activeCallIds()
+  }
+
+  func activeCallEventSnapshots() -> [[String: Any]] {
+    activeCallRegistry.activeCallIds().map { callId in
+      let payload = payloadStore[callId]
+      let type: String
+      if acceptedCallIds.contains(callId) {
+        type = "accepted"
+      } else if outgoingCallIds.contains(callId) {
+        type = "started"
+      } else {
+        type = "incoming"
+      }
+      return CallEventPayload.now(
+        callId: callId,
+        type: type,
+        extra: eventExtra(payload: payload)
+      ).toDictionary()
+    }
+  }
+
+  func syncActiveCallsToEvents() {
+    for callId in activeCallRegistry.activeCallIds() {
+      let payload = payloadStore[callId]
+      if acceptedCallIds.contains(callId) {
+        emit(callId: callId, type: "accepted", extra: eventExtra(payload: payload))
+      } else if outgoingCallIds.contains(callId) {
+        emit(callId: callId, type: "started", extra: eventExtra(payload: payload))
+      } else {
+        emit(callId: callId, type: "incoming", extra: eventExtra(payload: payload))
+      }
+    }
   }
 
   func setPostCallBehavior(rawValue: String?) {
@@ -136,10 +176,12 @@ final class IOSCallManager {
     guard let callId = callIdByUuid[uuid] else { return }
     let payload = payloadStore[callId]
     cancelTimeout(callId: callId)
+    acceptedCallIds.insert(callId)
+    outgoingCallIds.remove(callId)
     emit(
       callId: callId,
       type: "accepted",
-      extra: acceptedEventExtra(payload: payload)
+      extra: eventExtra(payload: payload)
     )
   }
 
@@ -168,6 +210,8 @@ final class IOSCallManager {
     payloadStore.removeAll()
     uuidByCallId.removeAll()
     callIdByUuid.removeAll()
+    acceptedCallIds.removeAll()
+    outgoingCallIds.removeAll()
   }
 
   private func cleanup(callId: String, uuid: UUID) {
@@ -176,6 +220,8 @@ final class IOSCallManager {
     payloadStore.removeValue(forKey: callId)
     uuidByCallId.removeValue(forKey: callId)
     callIdByUuid.removeValue(forKey: uuid)
+    acceptedCallIds.remove(callId)
+    outgoingCallIds.remove(callId)
   }
 
   private func emit(callId: String, type: String, extra: [String: Any]?) {
@@ -215,7 +261,7 @@ final class IOSCallManager {
     }
   }
 
-  private func acceptedEventExtra(payload: CallPayload?) -> [String: Any] {
+  private func eventExtra(payload: CallPayload?) -> [String: Any] {
     var merged = payload?.extra ?? [:]
     merged["callerName"] = payload?.callerName ?? (merged["callerName"] as? String ?? "Unknown")
     merged["handle"] = payload?.handle ?? (merged["handle"] as? String ?? "")

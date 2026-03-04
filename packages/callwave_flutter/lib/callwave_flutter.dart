@@ -10,6 +10,7 @@ export 'src/enums/post_call_behavior.dart';
 export 'src/models/call_data.dart';
 export 'src/models/call_data_extra_keys.dart';
 export 'src/models/call_event.dart';
+export 'src/models/call_startup_route_decision.dart';
 export 'src/ui/call_screen.dart';
 export 'src/ui/callwave_scope.dart';
 export 'src/ui/inherited_call_session.dart';

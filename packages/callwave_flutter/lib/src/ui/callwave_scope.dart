@@ -12,6 +12,11 @@ typedef CallScreenBuilder = Widget Function(
   CallSession session,
 );
 
+typedef CallSessionRouteHandler = bool Function(
+  BuildContext context,
+  CallSession session,
+);
+
 /// Listens to [CallwaveFlutter.sessions] and auto-pushes [CallScreen] per call.
 ///
 /// Place in [MaterialApp.builder], passing the same [navigatorKey] used by
@@ -24,6 +29,8 @@ class CallwaveScope extends StatefulWidget {
     required this.navigatorKey,
     required this.child,
     this.callScreenBuilder,
+    this.preRoutedCallIds = const <String>{},
+    this.onRouteSession,
     super.key,
   });
 
@@ -31,6 +38,12 @@ class CallwaveScope extends StatefulWidget {
   final GlobalKey<NavigatorState> navigatorKey;
   final Widget child;
   final CallScreenBuilder? callScreenBuilder;
+
+  /// Sessions that were already routed by app startup logic.
+  final Set<String> preRoutedCallIds;
+
+  /// Optional app-level route hook. Return `true` to skip auto-push.
+  final CallSessionRouteHandler? onRouteSession;
 
   @override
   State<CallwaveScope> createState() => _CallwaveScopeState();
@@ -41,6 +54,7 @@ class _CallwaveScopeState extends State<CallwaveScope> {
   final Set<String> _openedCallIds = <String>{};
   StreamSubscription<CallSession>? _subscription;
   bool _flushScheduled = false;
+  bool _readyToPush = false;
 
   @override
   void initState() {
@@ -49,10 +63,32 @@ class _CallwaveScopeState extends State<CallwaveScope> {
       _onSession,
       onError: _onSessionStreamError,
     );
+    _hydrateExistingSessions();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _readyToPush = true;
+      if (_pendingByCallId.isNotEmpty) {
+        _scheduleFlush();
+      }
+    });
+  }
+
+  void _hydrateExistingSessions() {
+    final existingSessions = CallwaveFlutter.instance.activeSessions;
+    for (final session in existingSessions) {
+      _pendingByCallId[session.callId] = session;
+    }
+    if (existingSessions.isNotEmpty) {
+      _scheduleFlush();
+    }
   }
 
   void _onSession(CallSession session) {
     if (session.isEnded) {
+      _pendingByCallId.remove(session.callId);
+      _openedCallIds.remove(session.callId);
       return;
     }
     _pendingByCallId[session.callId] = session;
@@ -60,6 +96,9 @@ class _CallwaveScopeState extends State<CallwaveScope> {
   }
 
   void _scheduleFlush() {
+    if (!_readyToPush) {
+      return;
+    }
     if (_flushScheduled) {
       return;
     }
@@ -88,9 +127,21 @@ class _CallwaveScopeState extends State<CallwaveScope> {
     _pendingByCallId.clear();
 
     for (final session in pending) {
-      if (session.isEnded || _openedCallIds.contains(session.callId)) {
+      if (session.isEnded ||
+          _openedCallIds.contains(session.callId) ||
+          widget.preRoutedCallIds.contains(session.callId)) {
         continue;
       }
+
+      final routeHandler = widget.onRouteSession;
+      if (routeHandler != null) {
+        final handled = routeHandler(navigator.context, session);
+        if (handled) {
+          _openedCallIds.add(session.callId);
+          continue;
+        }
+      }
+
       _openedCallIds.add(session.callId);
       navigator.push<void>(
         MaterialPageRoute<void>(
@@ -124,6 +175,7 @@ class _CallwaveScopeState extends State<CallwaveScope> {
     _pendingByCallId.clear();
     _openedCallIds.clear();
     _flushScheduled = false;
+    _readyToPush = false;
     super.dispose();
   }
 

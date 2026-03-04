@@ -8,7 +8,7 @@ call-session orchestration, call-screen state, and navigation hooks.
 ## Core Flow
 
 1. Register your engine.
-2. Restore active sessions on startup.
+2. Resolve startup route (`home` vs `call`) before `runApp`.
 3. Wrap your app with `CallwaveScope`.
 
 ```dart
@@ -50,27 +50,43 @@ class MyCallwaveEngine extends CallwaveEngine {
   Future<void> onDispose(CallSession session) async {}
 }
 
-final navKey = GlobalKey<NavigatorState>();
-CallwaveFlutter.instance.setEngine(MyCallwaveEngine());
-await CallwaveFlutter.instance.restoreActiveSessions();
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
 
-MaterialApp(
-  navigatorKey: navKey,
-  builder: (_, child) => CallwaveScope(
-    navigatorKey: navKey,
-    child: child!,
-  ),
-);
+  final navKey = GlobalKey<NavigatorState>();
+  CallwaveFlutter.instance.setEngine(MyCallwaveEngine());
+  final startup = await CallwaveFlutter.instance.prepareStartupRouteDecision();
+
+  runApp(
+    MaterialApp(
+      navigatorKey: navKey,
+      initialRoute: startup.shouldOpenCall ? '/call' : '/home',
+      routes: <String, WidgetBuilder>{
+        '/home': (_) => const HomeScreen(),
+        '/call': (_) => StartupCallRoute(callId: startup.callId),
+      },
+      builder: (_, child) => CallwaveScope(
+        navigatorKey: navKey,
+        preRoutedCallIds: startup.callId == null
+            ? const <String>{}
+            : <String>{startup.callId!},
+        child: child!,
+      ),
+    ),
+  );
+}
 ```
 
 ## Cold Start
 
-When the app launches from a cold start (e.g. user tapped Accept on the native
-full-screen UI while the app was killed), call `restoreActiveSessions()` early in
-startup. It fetches active call IDs from the platform and creates sessions in
-`connecting` state. Call metadata may be minimal (e.g. `callerName: 'Unknown'`)
-until events arrive; store richer data in `CallData.extra` if you need it on
-restore.
+`prepareStartupRouteDecision()` restores active sessions and returns a route
+decision:
+
+- Open call route when a session is `connecting`, `connected`, or `reconnecting`.
+- Stay on home route when sessions are only `ringing`/`idle`, or none exist.
+
+If your app does not use startup routing in `main`, `CallwaveScope` still
+auto-pushes `CallScreen` as fallback.
 
 ## CallScreen
 

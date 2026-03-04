@@ -96,6 +96,15 @@ class CallwaveMethodHandler(
                 result.success(callManager.getActiveCallIds())
             }
 
+            "getActiveCallEventSnapshots" -> {
+                result.success(callManager.getActiveCallEventSnapshots())
+            }
+
+            "syncActiveCallsToEvents" -> {
+                callManager.syncActiveCallsToEvents()
+                result.success(null)
+            }
+
             "requestNotificationPermission" -> {
                 result.success(callManager.requestNotificationPermission(activity))
             }

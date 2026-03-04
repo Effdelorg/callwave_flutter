@@ -11,6 +11,7 @@ import 'enums/post_call_behavior.dart';
 import 'enums/call_type.dart';
 import 'models/call_data.dart';
 import 'models/call_event.dart';
+import 'models/call_startup_route_decision.dart';
 
 class CallwaveFlutter {
   CallwaveFlutter._();
@@ -61,6 +62,16 @@ class CallwaveFlutter {
 
   CallSession? getSession(String callId) => _sessions[callId];
 
+  /// Snapshot of non-terminal sessions currently tracked in memory.
+  ///
+  /// Useful for startup hydration when listeners attach after sessions were
+  /// created (for example, cold-start restore before widget tree mount).
+  List<CallSession> get activeSessions {
+    return _sessions.values.where((session) => !session.isEnded).toList(
+          growable: false,
+        );
+  }
+
   CallSession createSession({
     required CallData callData,
     required bool isOutgoing,
@@ -93,13 +104,34 @@ class CallwaveFlutter {
     return session;
   }
 
+  /// Restores active sessions from native state (syncs events, creates sessions).
+  ///
+  /// Prefer [prepareStartupRouteDecision] in `main()` before `runApp()` — it
+  /// calls this and returns a route decision. If you call this directly, pass
+  /// [CallwaveScope.preRoutedCallIds] for any call you route yourself to avoid
+  /// double navigation (startup route + auto-push).
   Future<void> restoreActiveSessions() async {
     _requireEngineConfigured();
+    final snapshots = await _platform.getActiveCallEventSnapshots();
+    if (snapshots.isNotEmpty) {
+      final orderedSnapshots = snapshots.toList(growable: false)
+        ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+      for (final snapshot in orderedSnapshots) {
+        await _applySnapshotEvent(snapshot);
+      }
+    } else {
+      // Fallback for platform implementations that only support event replay.
+      await _platform.syncActiveCallsToEvents();
+      await Future<void>.delayed(Duration.zero);
+    }
+
     final activeCallIds = await getActiveCallIds();
     for (final callId in activeCallIds) {
       final existing = _sessions[callId];
       if (existing != null) {
-        _reconcileSessionState(existing, CallSessionState.connecting);
+        if (existing.state == CallSessionState.idle) {
+          _reconcileSessionState(existing, CallSessionState.connecting);
+        }
         continue;
       }
       createSession(
@@ -108,6 +140,64 @@ class CallwaveFlutter {
         initialState: CallSessionState.connecting,
       );
     }
+  }
+
+  Future<void> _applySnapshotEvent(platform.CallEventDto snapshot) async {
+    final event = CallEvent(
+      callId: snapshot.callId,
+      type: _eventTypeFromDto(snapshot.type),
+      timestamp: DateTime.fromMillisecondsSinceEpoch(snapshot.timestampMs),
+      extra: snapshot.extra,
+    );
+
+    switch (event.type) {
+      case CallEventType.incoming:
+        final session = _ensureSessionFromEvent(
+          event: event,
+          isOutgoing: false,
+          initialState: CallSessionState.ringing,
+        );
+        await session.applyNativeEvent(event);
+        return;
+      case CallEventType.accepted:
+        final session = _ensureSessionFromEvent(
+          event: event,
+          isOutgoing: false,
+          initialState: CallSessionState.connecting,
+        );
+        await session.applyNativeEvent(event);
+        return;
+      case CallEventType.started:
+        final session = _ensureSessionFromEvent(
+          event: event,
+          isOutgoing: true,
+          initialState: CallSessionState.connecting,
+        );
+        await session.applyNativeEvent(event);
+        return;
+      case CallEventType.declined:
+      case CallEventType.ended:
+      case CallEventType.timeout:
+      case CallEventType.missed:
+      case CallEventType.callback:
+        return;
+    }
+  }
+
+  /// Restores active sessions and returns startup route recommendation.
+  ///
+  /// Intended for `main()` before `runApp()` to decide initial route.
+  Future<CallStartupRouteDecision> prepareStartupRouteDecision() async {
+    await restoreActiveSessions();
+    final startupSession = _selectStartupRouteSession(activeSessions);
+    if (startupSession == null ||
+        !_shouldOpenStartupCall(startupSession.state)) {
+      return const CallStartupRouteDecision.home();
+    }
+    return CallStartupRouteDecision.call(
+      callId: startupSession.callId,
+      sessionState: startupSession.state,
+    );
   }
 
   Future<void> showIncomingCall(CallData data) {
@@ -311,6 +401,41 @@ class CallwaveFlutter {
         session.reportFailed();
         return;
     }
+  }
+
+  CallSession? _selectStartupRouteSession(List<CallSession> sessions) {
+    CallSession? selected;
+    var selectedPriority = -1;
+    for (final session in sessions) {
+      final priority = _startupRoutePriority(session.state);
+      if (priority > selectedPriority) {
+        selected = session;
+        selectedPriority = priority;
+      }
+    }
+    return selected;
+  }
+
+  int _startupRoutePriority(CallSessionState state) {
+    switch (state) {
+      case CallSessionState.connected:
+        return 4;
+      case CallSessionState.reconnecting:
+        return 3;
+      case CallSessionState.connecting:
+        return 2;
+      case CallSessionState.ringing:
+      case CallSessionState.idle:
+      case CallSessionState.ended:
+      case CallSessionState.failed:
+        return 1;
+    }
+  }
+
+  bool _shouldOpenStartupCall(CallSessionState state) {
+    return state == CallSessionState.connecting ||
+        state == CallSessionState.connected ||
+        state == CallSessionState.reconnecting;
   }
 
   CallData _callDataFromEvent(

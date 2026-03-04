@@ -100,6 +100,39 @@ class MethodChannelCallwaveFlutter extends CallwaveFlutterPlatform {
   }
 
   @override
+  Future<List<CallEventDto>> getActiveCallEventSnapshots() async {
+    await initialize();
+    final raw = await _methodChannel.invokeMethod<List<dynamic>>(
+      'getActiveCallEventSnapshots',
+    );
+    if (raw == null) {
+      return const <CallEventDto>[];
+    }
+
+    final snapshots = <CallEventDto>[];
+    for (final item in raw) {
+      if (item is! Map) {
+        continue;
+      }
+      final normalized =
+          item.map<String, dynamic>((dynamic key, dynamic value) {
+        return MapEntry(key.toString(), value);
+      });
+      final dto = PayloadCodec.safeCallEventFromMap(normalized);
+      if (dto != null) {
+        snapshots.add(dto);
+      }
+    }
+    return snapshots;
+  }
+
+  @override
+  Future<void> syncActiveCallsToEvents() async {
+    await initialize();
+    await _methodChannel.invokeMethod<void>('syncActiveCallsToEvents');
+  }
+
+  @override
   Future<bool> requestNotificationPermission() async {
     await initialize();
     final granted = await _methodChannel.invokeMethod<bool>(
