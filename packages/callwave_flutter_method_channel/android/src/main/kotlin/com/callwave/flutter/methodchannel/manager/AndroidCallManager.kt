@@ -478,6 +478,19 @@ class AndroidCallManager(
     }
 
     fun hostLaunchIntentForAction(action: String): Intent? {
+        // Reuse the currently bound host activity when the app process is alive.
+        // This avoids spinning up a second FlutterActivity/engine for accept/open.
+        val boundActivityIntent = activity
+            ?.takeUnless { it.isFinishing || it.isDestroyed }
+            ?.let { currentActivity ->
+                Intent(action).apply {
+                    setClassName(currentActivity.packageName, currentActivity.javaClass.name)
+                }
+            }
+        if (boundActivityIntent != null) {
+            return boundActivityIntent
+        }
+
         val actionIntent = Intent(action).apply {
             `package` = context.packageName
             addCategory(Intent.CATEGORY_DEFAULT)
