@@ -11,7 +11,7 @@ Always check for race conditions in the code and fix them.
 | `packages/callwave_flutter` | Public API for app developers |
 | `packages/callwave_flutter_platform_interface` | Shared contracts, DTOs, codec |
 | `packages/callwave_flutter_method_channel` | MethodChannel + Android (Kotlin) / iOS (Swift) |
-| `example` | Demo app for manual testing |
+| `packages/callwave_flutter/example` | Demo app for manual testing |
 
 ## Conventions
 

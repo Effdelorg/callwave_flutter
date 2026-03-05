@@ -20,7 +20,7 @@ If you're building video or voice calls with WebRTC, callwave_flutter gives you 
 - `packages/callwave_flutter`: Public API for app developers.
 - `packages/callwave_flutter_platform_interface`: Shared contracts and DTOs.
 - `packages/callwave_flutter_method_channel`: Internal MethodChannel + native Android/iOS implementations.
-- `example`: Demo app for manual call flow testing.
+- `packages/callwave_flutter/example`: Demo app for manual call flow testing.
 
 ## What This Plugin Does
 

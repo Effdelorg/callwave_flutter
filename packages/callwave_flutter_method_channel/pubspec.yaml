@@ -1,10 +1,10 @@
 name: callwave_flutter_method_channel
-description: MethodChannel implementation for callwave_flutter.
+description: MethodChannel implementation for callwave_flutter. Provides native Android (Kotlin) and iOS (Swift) integration for VoIP call notifications and CallKit/full-screen intent support.
 version: 0.1.0
 homepage: https://github.com/Effdelorg/callwave_flutter
 repository: https://github.com/Effdelorg/callwave_flutter
 issue_tracker: https://github.com/Effdelorg/callwave_flutter/issues
-license: MIT
+license: BSD-3-Clause
 resolution: workspace
 
 environment:

@@ -1,10 +1,10 @@
 name: callwave_flutter
-description: Flutter plugin for WhatsApp-style VoIP call UX.
+description: Flutter plugin for WhatsApp-style VoIP call UX. Shows incoming/outgoing call notifications, accept/decline/timeout handling, and CallKit/Android full-screen intents. Use with your own signaling and media stack.
 version: 0.1.0
 homepage: https://github.com/Effdelorg/callwave_flutter
 repository: https://github.com/Effdelorg/callwave_flutter
 issue_tracker: https://github.com/Effdelorg/callwave_flutter/issues
-license: MIT
+license: BSD-3-Clause
 resolution: workspace
 
 environment:
