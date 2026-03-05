@@ -115,6 +115,9 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
   final TextEditingController _callIdController =
       TextEditingController(text: 'demo-call-001');
   StreamSubscription<CallEvent>? _subscription;
+  bool _isCallActionInFlight = false;
+  String? _previewCallId;
+  int _speakerCursor = 0;
 
   @override
   void initState() {
@@ -132,6 +135,13 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
   void _onCallEvent(CallEvent event) {
     if (!mounted) {
       return;
+    }
+    if (_previewCallId == event.callId &&
+        (event.type == CallEventType.ended ||
+            event.type == CallEventType.declined ||
+            event.type == CallEventType.timeout ||
+            event.type == CallEventType.missed)) {
+      _previewCallId = null;
     }
     setState(() {
       _eventLog.insert(
@@ -172,14 +182,44 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                   child: const Text('FullScreen Permission'),
                 ),
                 ElevatedButton(
-                  onPressed:
-                      callId.isEmpty ? null : () => _showIncoming(callId),
-                  child: const Text('Incoming'),
+                  onPressed: callId.isEmpty || _isCallActionInFlight
+                      ? null
+                      : () => _showCall(
+                            callId: callId,
+                            isIncoming: true,
+                            callType: CallType.audio,
+                          ),
+                  child: const Text('Incoming Audio'),
                 ),
                 ElevatedButton(
-                  onPressed:
-                      callId.isEmpty ? null : () => _showOutgoing(callId),
-                  child: const Text('Outgoing'),
+                  onPressed: callId.isEmpty || _isCallActionInFlight
+                      ? null
+                      : () => _showCall(
+                            callId: callId,
+                            isIncoming: true,
+                            callType: CallType.video,
+                          ),
+                  child: const Text('Incoming Video'),
+                ),
+                ElevatedButton(
+                  onPressed: callId.isEmpty || _isCallActionInFlight
+                      ? null
+                      : () => _showCall(
+                            callId: callId,
+                            isIncoming: false,
+                            callType: CallType.audio,
+                          ),
+                  child: const Text('Outgoing Audio'),
+                ),
+                ElevatedButton(
+                  onPressed: callId.isEmpty || _isCallActionInFlight
+                      ? null
+                      : () => _showCall(
+                            callId: callId,
+                            isIncoming: false,
+                            callType: CallType.video,
+                          ),
+                  child: const Text('Outgoing Video'),
                 ),
                 ElevatedButton(
                   onPressed: callId.isEmpty ? null : () => _endCall(callId),
@@ -188,6 +228,17 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                 ElevatedButton(
                   onPressed: callId.isEmpty ? null : () => _markMissed(callId),
                   child: const Text('Missed'),
+                ),
+                ElevatedButton(
+                  onPressed: callId.isEmpty
+                      ? null
+                      : () => _openConferencePreview(callId),
+                  child: const Text('Conference Preview'),
+                ),
+                ElevatedButton(
+                  onPressed:
+                      _previewCallId == null ? null : _cycleConferenceSpeaker,
+                  child: const Text('Cycle Speaker'),
                 ),
               ],
             ),
@@ -231,37 +282,64 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
     _pushLog('Requested full-screen intent permission screen.');
   }
 
-  Future<void> _showIncoming(String callId) async {
-    await CallwaveFlutter.instance.showIncomingCall(
-      CallData(
-        callId: callId,
-        callerName: _incomingCallerName,
-        handle: _incomingHandle,
-        timeout: const Duration(seconds: 30),
-        callType: CallType.audio,
-        extra: const <String, dynamic>{
-          'callerName': _incomingCallerName,
-          'handle': _incomingHandle,
-          'callType': 'audio',
-        },
-      ),
-    );
+  Future<void> _showCall({
+    required String callId,
+    required bool isIncoming,
+    required CallType callType,
+  }) async {
+    if (_isCallActionInFlight) {
+      return;
+    }
+    setState(() {
+      _isCallActionInFlight = true;
+    });
+
+    final callData = isIncoming
+        ? _buildCallData(
+            callId: callId,
+            callerName: _incomingCallerName,
+            handle: _incomingHandle,
+            callType: callType,
+          )
+        : _buildCallData(
+            callId: callId,
+            callerName: _outgoingCallerName,
+            handle: _outgoingHandle,
+            callType: callType,
+          );
+
+    try {
+      if (isIncoming) {
+        await CallwaveFlutter.instance.showIncomingCall(callData);
+      } else {
+        await CallwaveFlutter.instance.showOutgoingCall(callData);
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCallActionInFlight = false;
+        });
+      }
+    }
   }
 
-  Future<void> _showOutgoing(String callId) async {
-    await CallwaveFlutter.instance.showOutgoingCall(
-      CallData(
-        callId: callId,
-        callerName: _outgoingCallerName,
-        handle: _outgoingHandle,
-        timeout: const Duration(seconds: 30),
-        callType: CallType.video,
-        extra: const <String, dynamic>{
-          'callerName': _outgoingCallerName,
-          'handle': _outgoingHandle,
-          'callType': 'video',
-        },
-      ),
+  CallData _buildCallData({
+    required String callId,
+    required String callerName,
+    required String handle,
+    required CallType callType,
+  }) {
+    return CallData(
+      callId: callId,
+      callerName: callerName,
+      handle: handle,
+      timeout: const Duration(seconds: 30),
+      callType: callType,
+      extra: <String, dynamic>{
+        'callerName': callerName,
+        'handle': handle,
+        'callType': callType.name,
+      },
     );
   }
 
@@ -271,6 +349,87 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
 
   Future<void> _markMissed(String callId) async {
     await CallwaveFlutter.instance.markMissed(callId);
+  }
+
+  void _openConferencePreview(String callIdSeed) {
+    final callId =
+        '$callIdSeed-conference-${DateTime.now().millisecondsSinceEpoch}';
+    final session = CallwaveFlutter.instance.createSession(
+      callData: CallData(
+        callId: callId,
+        callerName: 'Conference',
+        handle: 'group room',
+        timeout: const Duration(seconds: 45),
+        callType: CallType.video,
+        extra: const <String, dynamic>{
+          'callerName': 'Conference',
+          'handle': 'group room',
+          'callType': 'video',
+        },
+      ),
+      isOutgoing: true,
+      initialState: CallSessionState.connected,
+    );
+
+    _previewCallId = callId;
+    _speakerCursor = 0;
+    session.updateConferenceState(_buildPreviewConferenceState(updatedAtMs: 1));
+    _pushLog('Conference preview started for $callId');
+    setState(() {});
+  }
+
+  void _cycleConferenceSpeaker() {
+    final callId = _previewCallId;
+    if (callId == null) {
+      return;
+    }
+    final session = CallwaveFlutter.instance.getSession(callId);
+    if (session == null || session.isEnded) {
+      _pushLog('Conference preview session is not active.');
+      return;
+    }
+    _speakerCursor += 1;
+    final updatedAtMs = DateTime.now().millisecondsSinceEpoch;
+    session.updateConferenceState(
+      _buildPreviewConferenceState(updatedAtMs: updatedAtMs),
+    );
+    _pushLog('Conference speaker changed.');
+  }
+
+  ConferenceState _buildPreviewConferenceState({required int updatedAtMs}) {
+    const participants = <CallParticipant>[
+      CallParticipant(
+        participantId: 'speaker-1',
+        displayName: 'Ava',
+        isVideoOn: true,
+        sortOrder: 1,
+      ),
+      CallParticipant(
+        participantId: 'speaker-2',
+        displayName: 'Milo',
+        isVideoOn: true,
+        sortOrder: 2,
+      ),
+      CallParticipant(
+        participantId: 'speaker-3',
+        displayName: 'Nora',
+        isVideoOn: true,
+        sortOrder: 3,
+      ),
+      CallParticipant(
+        participantId: 'local-you',
+        displayName: 'You',
+        isLocal: true,
+        isVideoOn: true,
+        sortOrder: 4,
+      ),
+    ];
+    final activeSpeaker = participants[_speakerCursor % 3].participantId;
+    return ConferenceState(
+      participants: participants,
+      activeSpeakerId: activeSpeaker,
+      updatedAtMs: updatedAtMs,
+    );
   }
 
   void _pushLog(String value) {

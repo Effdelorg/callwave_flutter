@@ -120,6 +120,82 @@ void main() {
     expect(session.state, CallSessionState.failed);
     expect(session.error, isNotNull);
   });
+
+  test('conference updates ignore stale timestamps and dedupe by participantId',
+      () {
+    final session = CallSession(
+      callData: const CallData(
+        callId: 'c-5',
+        callerName: 'Ava',
+        handle: '+1',
+      ),
+      isOutgoing: false,
+    );
+    addTearDown(session.dispose);
+
+    session.updateConferenceState(
+      ConferenceState(
+        updatedAtMs: 10,
+        activeSpeakerId: 'p-1',
+        participants: const [
+          CallParticipant(
+            participantId: 'p-1',
+            displayName: 'Ava',
+          ),
+          CallParticipant(
+            participantId: 'p-2',
+            displayName: 'Milo',
+          ),
+          CallParticipant(
+            participantId: 'p-1',
+            displayName: 'Ava (latest)',
+            isMuted: true,
+          ),
+        ],
+      ),
+    );
+
+    expect(session.participantCount, 2);
+    expect(
+        session.conferenceState.participants.first.displayName, 'Ava (latest)');
+    expect(session.conferenceState.participants.first.isMuted, isTrue);
+
+    session.updateConferenceState(
+      const ConferenceState(
+        updatedAtMs: 9,
+        participants: [
+          CallParticipant(participantId: 'p-3', displayName: 'Nora'),
+        ],
+      ),
+    );
+
+    expect(session.participantCount, 2);
+    expect(session.conferenceState.updatedAtMs, 10);
+  });
+
+  test('conference updates are ignored after terminal state', () {
+    final session = CallSession(
+      callData: const CallData(
+        callId: 'c-6',
+        callerName: 'Ava',
+        handle: '+1',
+      ),
+      isOutgoing: false,
+    );
+    addTearDown(session.dispose);
+
+    session.reportEnded();
+    session.updateConferenceState(
+      const ConferenceState(
+        updatedAtMs: 11,
+        participants: [
+          CallParticipant(participantId: 'p-9', displayName: 'Late User'),
+        ],
+      ),
+    );
+
+    expect(session.participantCount, 0);
+  });
 }
 
 class _FakeEngine extends CallwaveEngine {

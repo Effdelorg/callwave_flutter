@@ -96,8 +96,76 @@ auto-pushes `CallScreen` as fallback.
 CallScreen(session: session, onCallEnded: () => navigator.pop());
 ```
 
+For standalone usage outside `CallwaveScope`, you can pass `theme` directly:
+
+```dart
+CallScreen(
+  session: session,
+  theme: const CallwaveThemeData(),
+)
+```
+
 Sessions come from `CallwaveFlutter.sessions` or `CallwaveFlutter.getSession`.
 `CallwaveScope` pushes `CallScreen` automatically when sessions are created.
+
+## Conference UI (Current Style)
+
+`CallScreen` automatically switches to conference mode when
+`session.participantCount > 1`.
+
+- Keeps the current Callwave visual style (same gradient/action-button language).
+- Uses a plain bottom control row in `SafeArea` (no rounded dock container).
+- Default conference controls: `Mic`, `Speaker`, `Cam`, `End`.
+- One-to-one UI remains unchanged for `participantCount <= 1`.
+
+### Conference State API
+
+Use `CallSession.updateConferenceState` to provide participants and speaker data.
+
+```dart
+session.updateConferenceState(
+  ConferenceState(
+    participants: const [
+      CallParticipant(participantId: 'p-1', displayName: 'Ava'),
+      CallParticipant(participantId: 'p-2', displayName: 'Milo'),
+      CallParticipant(participantId: 'local', displayName: 'You', isLocal: true),
+    ],
+    activeSpeakerId: 'p-1',
+    updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+  ),
+);
+```
+
+Race-safety rules:
+
+- Older `updatedAtMs` snapshots are ignored.
+- Updates are ignored once the session is ended/failed.
+- Duplicate `participantId` entries are deduped (latest entry wins).
+
+### Optional Builders
+
+`CallwaveScope` provides conference customization hooks:
+
+```dart
+CallwaveScope(
+  navigatorKey: navKey,
+  participantTileBuilder: (context, session, participant, isPrimary) {
+    // Inject your RTC view for this participant.
+    return ColoredBox(
+      color: isPrimary ? const Color(0xFF0D4F4F) : const Color(0xFF1A6B6B),
+      child: Center(child: Text(participant.displayName)),
+    );
+  },
+  conferenceControlsBuilder: (context, session) {
+    // Optional: override the default Mic/Speaker/Cam/End row.
+    return const SizedBox.shrink();
+  },
+  child: child!,
+)
+```
+
+You can also replace the entire conference surface with
+`conferenceScreenBuilder`.
 
 ## Notes
 

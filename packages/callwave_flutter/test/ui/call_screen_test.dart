@@ -169,6 +169,57 @@ void main() {
     expect(declineDecoration.color, CallScreenTheme.endCallColor);
     expect(acceptDecoration.color, CallScreenTheme.acceptCallColor);
   });
+
+  testWidgets('conference mode renders bottom row controls without dock', (
+    tester,
+  ) async {
+    final session = _buildSession();
+    addTearDown(session.dispose);
+    session.updateConferenceState(
+      const ConferenceState(
+        updatedAtMs: 1,
+        participants: [
+          CallParticipant(participantId: 'p-1', displayName: 'Ava'),
+          CallParticipant(participantId: 'p-2', displayName: 'Milo'),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CallScreen(session: session),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+        find.byKey(const ValueKey<String>('conference-view')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('conference-controls-row')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('conference-controls-dock')),
+      findsNothing,
+    );
+
+    final micButton = find.byWidgetPredicate(
+      (widget) => widget is CallActionButton && widget.label == 'Mic',
+    );
+    final speakerButton = find.byWidgetPredicate(
+      (widget) => widget is CallActionButton && widget.label == 'Speaker',
+    );
+    final camButton = find.byWidgetPredicate(
+      (widget) => widget is CallActionButton && widget.label == 'Cam',
+    );
+    final endButton = find.byWidgetPredicate(
+      (widget) => widget is CallActionButton && widget.label == 'End',
+    );
+    expect(micButton, findsOneWidget);
+    expect(speakerButton, findsOneWidget);
+    expect(camButton, findsOneWidget);
+    expect(endButton, findsOneWidget);
+  });
 }
 
 CallSession _buildSession({

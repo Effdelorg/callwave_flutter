@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../engine/call_session.dart';
+import 'call_screen_builders.dart';
 import 'call_screen_controller.dart';
+import 'theme/callwave_theme.dart';
 import 'theme/call_screen_theme.dart';
+import 'theme/callwave_theme_data.dart';
 import 'widgets/call_actions_row.dart';
+import 'widgets/conference_call_view.dart';
 import 'widgets/caller_avatar.dart';
 import 'widgets/caller_info.dart';
 
@@ -20,6 +24,10 @@ class CallScreen extends StatefulWidget {
   const CallScreen({
     required this.session,
     this.onCallEnded,
+    this.conferenceScreenBuilder,
+    this.participantTileBuilder,
+    this.conferenceControlsBuilder,
+    this.theme,
     super.key,
   });
 
@@ -29,6 +37,10 @@ class CallScreen extends StatefulWidget {
   /// Invoked after the call ends. If `null` the screen auto-pops after a
   /// brief delay when a previous route exists.
   final VoidCallback? onCallEnded;
+  final ConferenceScreenBuilder? conferenceScreenBuilder;
+  final ParticipantTileBuilder? participantTileBuilder;
+  final ConferenceControlsBuilder? conferenceControlsBuilder;
+  final CallwaveThemeData? theme;
 
   @override
   State<CallScreen> createState() => _CallScreenState();
@@ -94,43 +106,60 @@ class _CallScreenState extends State<CallScreen>
   @override
   Widget build(BuildContext context) {
     final displayData = widget.session.callData;
+    final themeData = widget.theme ??
+        CallwaveTheme.maybeOf(context) ??
+        const CallwaveThemeData();
+    final isConference = widget.session.participantCount > 1;
+    final conferenceScreenBuilder = widget.conferenceScreenBuilder;
     return PopScope(
       canPop: false,
       child: Scaffold(
         body: DecoratedBox(
-          decoration: const BoxDecoration(
-            gradient: CallScreenTheme.backgroundGradient,
+          decoration: BoxDecoration(
+            gradient: themeData.backgroundGradient,
           ),
           child: FadeTransition(
             opacity: _fadeAnimation,
-            child: SafeArea(
-              child: Column(
-                children: [
-                  const Spacer(flex: 2),
-                  CallerAvatar(
-                    callerName: displayData.callerName,
-                    avatarUrl: displayData.avatarUrl,
-                    status: _controller.status,
-                  ),
-                  const SizedBox(height: 32),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32),
-                    child: CallerInfo(
-                      callerName: displayData.callerName,
-                      handle: displayData.handle,
-                      status: _controller.status,
-                      elapsed: _controller.elapsed,
+            child: isConference
+                ? (conferenceScreenBuilder != null
+                    ? conferenceScreenBuilder(context, widget.session)
+                    : SafeArea(
+                        child: ConferenceCallView(
+                          session: widget.session,
+                          controller: _controller,
+                          participantTileBuilder: widget.participantTileBuilder,
+                          conferenceControlsBuilder:
+                              widget.conferenceControlsBuilder,
+                        ),
+                      ))
+                : SafeArea(
+                    child: Column(
+                      children: [
+                        const Spacer(flex: 2),
+                        CallerAvatar(
+                          callerName: displayData.callerName,
+                          avatarUrl: displayData.avatarUrl,
+                          status: _controller.status,
+                        ),
+                        const SizedBox(height: 32),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 32),
+                          child: CallerInfo(
+                            callerName: displayData.callerName,
+                            handle: displayData.handle,
+                            status: _controller.status,
+                            elapsed: _controller.elapsed,
+                          ),
+                        ),
+                        const Spacer(flex: 3),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: CallActionsRow(controller: _controller),
+                        ),
+                        const SizedBox(height: 48),
+                      ],
                     ),
                   ),
-                  const Spacer(flex: 3),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: CallActionsRow(controller: _controller),
-                  ),
-                  const SizedBox(height: 48),
-                ],
-              ),
-            ),
           ),
         ),
       ),

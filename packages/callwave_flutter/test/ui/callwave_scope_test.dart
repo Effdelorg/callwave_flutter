@@ -150,6 +150,53 @@ void main() {
 
     expect(find.byType(CallScreen), findsOneWidget);
   });
+
+  testWidgets(
+      'conference updates switch layout in-place without pushing another route',
+      (tester) async {
+    final session = CallwaveFlutter.instance.createSession(
+      callData: const CallData(
+        callId: 'conference-switch',
+        callerName: 'Ava',
+        handle: '+1 555 0101',
+      ),
+      isOutgoing: false,
+      initialState: CallSessionState.connecting,
+    );
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        builder: (context, child) {
+          return CallwaveScope(
+            navigatorKey: navigatorKey,
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
+        home: const Scaffold(body: SizedBox.shrink()),
+      ),
+    );
+
+    await _pumpUntilCallScreen(tester);
+    expect(find.byType(CallScreen), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('conference-view')), findsNothing);
+
+    session.updateConferenceState(
+      const ConferenceState(
+        updatedAtMs: 42,
+        participants: [
+          CallParticipant(participantId: 'p-1', displayName: 'Ava'),
+          CallParticipant(participantId: 'p-2', displayName: 'Milo'),
+        ],
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(CallScreen), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey<String>('conference-view')), findsOneWidget);
+  });
 }
 
 Future<void> _pumpUntilCallScreen(WidgetTester tester) async {

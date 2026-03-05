@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 
@@ -6,6 +7,8 @@ import '../enums/call_event_type.dart';
 import '../enums/call_session_state.dart';
 import '../models/call_data.dart';
 import '../models/call_event.dart';
+import '../models/call_participant.dart';
+import '../models/conference_state.dart';
 import 'callwave_engine.dart';
 
 typedef _CallwaveEngineProvider = CallwaveEngine? Function();
@@ -26,6 +29,7 @@ class CallSession extends ChangeNotifier {
     required CallData callData,
     required this.isOutgoing,
     CallSessionState initialState = CallSessionState.idle,
+    ConferenceState initialConferenceState = ConferenceState.empty,
     _CallwaveEngineProvider? engineProvider,
     _CallIdAction? acceptNative,
     _CallIdAction? declineNative,
@@ -33,6 +37,7 @@ class CallSession extends ChangeNotifier {
     _OutgoingStartAction? startOutgoingNative,
   })  : _callData = callData,
         _state = initialState,
+        _conferenceState = _normalizeConferenceState(initialConferenceState),
         _engineProvider = engineProvider ?? _defaultEngineProvider,
         _acceptNative = acceptNative ?? _defaultCallIdAction,
         _declineNative = declineNative ?? _defaultCallIdAction,
@@ -65,6 +70,7 @@ class CallSession extends ChangeNotifier {
   bool _isSpeakerOn = false;
   bool _isCameraOn = true;
   Object? _error;
+  ConferenceState _conferenceState;
   Timer? _timer;
 
   bool _acceptRequested = false;
@@ -86,6 +92,8 @@ class CallSession extends ChangeNotifier {
   DateTime? get connectedAt => _connectedAt;
   Duration get elapsed => _elapsed;
   Object? get error => _error;
+  ConferenceState get conferenceState => _conferenceState;
+  int get participantCount => _conferenceState.participants.length;
   bool get isEnded =>
       _state == CallSessionState.ended || _state == CallSessionState.failed;
 
@@ -94,6 +102,18 @@ class CallSession extends ChangeNotifier {
       return;
     }
     _callData = next;
+    notifyListeners();
+  }
+
+  void updateConferenceState(ConferenceState next) {
+    if (isEnded) {
+      return;
+    }
+    final normalized = _normalizeConferenceState(next);
+    if (normalized.updatedAtMs < _conferenceState.updatedAtMs) {
+      return;
+    }
+    _conferenceState = normalized;
     notifyListeners();
   }
 
@@ -353,6 +373,46 @@ class CallSession extends ChangeNotifier {
     debugPrintStack(
       label: 'CallSession $action stack trace',
       stackTrace: stackTrace,
+    );
+  }
+
+  static ConferenceState _normalizeConferenceState(ConferenceState state) {
+    final deduped = LinkedHashMap<String, CallParticipant>();
+    for (final participant in state.participants) {
+      final id = participant.participantId.trim();
+      if (id.isEmpty) {
+        continue;
+      }
+      deduped.remove(id);
+      deduped[id] = participant;
+    }
+
+    final participants = deduped.values.toList(growable: false)
+      ..sort((a, b) {
+        final orderA = a.sortOrder ?? 1 << 30;
+        final orderB = b.sortOrder ?? 1 << 30;
+        if (orderA != orderB) {
+          return orderA.compareTo(orderB);
+        }
+        return a.displayName
+            .toLowerCase()
+            .compareTo(b.displayName.toLowerCase());
+      });
+
+    final participantIds = participants.map((p) => p.participantId).toSet();
+    final pinnedParticipantId =
+        participantIds.contains(state.pinnedParticipantId)
+            ? state.pinnedParticipantId
+            : null;
+    final activeSpeakerId = participantIds.contains(state.activeSpeakerId)
+        ? state.activeSpeakerId
+        : null;
+
+    return ConferenceState(
+      participants: participants,
+      activeSpeakerId: activeSpeakerId,
+      pinnedParticipantId: pinnedParticipantId,
+      updatedAtMs: state.updatedAtMs,
     );
   }
 

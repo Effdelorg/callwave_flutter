@@ -5,7 +5,10 @@ import 'package:flutter/material.dart';
 import '../callwave_flutter_impl.dart';
 import '../engine/call_session.dart';
 import 'call_screen.dart';
+import 'call_screen_builders.dart';
 import 'inherited_call_session.dart';
+import 'theme/callwave_theme.dart';
+import 'theme/callwave_theme_data.dart';
 
 typedef CallScreenBuilder = Widget Function(
   BuildContext context,
@@ -29,6 +32,10 @@ class CallwaveScope extends StatefulWidget {
     required this.navigatorKey,
     required this.child,
     this.callScreenBuilder,
+    this.conferenceScreenBuilder,
+    this.participantTileBuilder,
+    this.conferenceControlsBuilder,
+    this.theme,
     this.preRoutedCallIds = const <String>{},
     this.onRouteSession,
     super.key,
@@ -38,6 +45,10 @@ class CallwaveScope extends StatefulWidget {
   final GlobalKey<NavigatorState> navigatorKey;
   final Widget child;
   final CallScreenBuilder? callScreenBuilder;
+  final ConferenceScreenBuilder? conferenceScreenBuilder;
+  final ParticipantTileBuilder? participantTileBuilder;
+  final ConferenceControlsBuilder? conferenceControlsBuilder;
+  final CallwaveThemeData? theme;
 
   /// Sessions that were already routed by app startup logic.
   final Set<String> preRoutedCallIds;
@@ -148,7 +159,14 @@ class _CallwaveScopeState extends State<CallwaveScope> {
           builder: (context) {
             final callScreen =
                 widget.callScreenBuilder?.call(context, session) ??
-                    CallScreen(session: session);
+                    CallScreen(
+                      session: session,
+                      conferenceScreenBuilder: widget.conferenceScreenBuilder,
+                      participantTileBuilder: widget.participantTileBuilder,
+                      conferenceControlsBuilder:
+                          widget.conferenceControlsBuilder,
+                      theme: widget.theme,
+                    );
             return InheritedCallSession(
               session: session,
               child: callScreen,
@@ -181,6 +199,9 @@ class _CallwaveScopeState extends State<CallwaveScope> {
 
   @override
   Widget build(BuildContext context) {
-    return widget.child;
+    return CallwaveTheme(
+      data: widget.theme ?? const CallwaveThemeData(),
+      child: widget.child,
+    );
   }
 }

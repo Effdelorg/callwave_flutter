@@ -30,6 +30,86 @@ void main() {
     await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
   });
 
+  testWidgets('demo renders explicit incoming/outgoing audio-video buttons',
+      (tester) async {
+    await tester.pumpWidget(const CallwaveExampleApp());
+    await tester.pump();
+
+    expect(find.text('Incoming Audio'), findsOneWidget);
+    expect(find.text('Incoming Video'), findsOneWidget);
+    expect(find.text('Outgoing Audio'), findsOneWidget);
+    expect(find.text('Outgoing Video'), findsOneWidget);
+    expect(find.text('Conference Preview'), findsOneWidget);
+    expect(find.text('Cycle Speaker'), findsOneWidget);
+
+    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+  });
+
+  testWidgets('conference preview opens conference call UI', (tester) async {
+    await tester.pumpWidget(const CallwaveExampleApp());
+    await tester.pump();
+
+    await tester.tap(find.text('Conference Preview'));
+    await _pumpUntilCallScreen(tester);
+
+    expect(find.byType(CallScreen), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey<String>('conference-view')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('conference-controls-row')),
+        findsOneWidget);
+    expect(find.text('Mic'), findsOneWidget);
+    expect(find.text('Speaker'), findsOneWidget);
+    expect(find.text('Cam'), findsOneWidget);
+    expect(find.text('End'), findsOneWidget);
+
+    for (final session in CallwaveFlutter.instance.activeSessions) {
+      session.reportEnded();
+    }
+    await tester.pump(const Duration(seconds: 4));
+    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+  });
+
+  testWidgets('demo sends selected call types to platform', (tester) async {
+    await tester.pumpWidget(const CallwaveExampleApp());
+    await tester.pump();
+
+    await tester.tap(find.text('Incoming Video'));
+    await tester.pump();
+    expect(fakePlatform.lastIncomingCallData, isNotNull);
+    expect(
+        fakePlatform.lastIncomingCallData!.callType, platform.CallType.video);
+    expect(fakePlatform.lastIncomingCallData!.callId, _FakePlatform.callId);
+
+    await tester.tap(find.text('Outgoing Audio'));
+    await tester.pump();
+    expect(fakePlatform.lastOutgoingCallData, isNotNull);
+    expect(
+        fakePlatform.lastOutgoingCallData!.callType, platform.CallType.audio);
+    expect(fakePlatform.lastOutgoingCallData!.callId, _FakePlatform.callId);
+
+    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+  });
+
+  testWidgets('in-flight guard prevents duplicate call launch taps',
+      (tester) async {
+    fakePlatform.pendingIncomingCallCompleter = Completer<void>();
+
+    await tester.pumpWidget(const CallwaveExampleApp());
+    await tester.pump();
+
+    await tester.tap(find.text('Incoming Video'));
+    await tester.tap(find.text('Incoming Video'));
+    await tester.pump();
+
+    expect(fakePlatform.incomingCallCount, 1);
+
+    fakePlatform.pendingIncomingCallCompleter?.complete();
+    await tester.pump();
+    await tester.pump();
+
+    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+  });
+
   testWidgets('accepted event opens session-driven call screen',
       (tester) async {
     fakePlatform.initialEventTypes = <platform.CallEventType>[
@@ -157,6 +237,12 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   List<String> activeCallIds = const <String>[];
   List<platform.CallEventDto> activeCallSnapshots =
       const <platform.CallEventDto>[];
+  platform.CallDataDto? lastIncomingCallData;
+  platform.CallDataDto? lastOutgoingCallData;
+  int incomingCallCount = 0;
+  int outgoingCallCount = 0;
+  Completer<void>? pendingIncomingCallCompleter;
+  Completer<void>? pendingOutgoingCallCompleter;
   bool _didEmitInitialEvents = false;
 
   set initialEventTypes(List<platform.CallEventType> value) {
@@ -255,10 +341,24 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   Future<void> setPostCallBehavior(platform.PostCallBehavior behavior) async {}
 
   @override
-  Future<void> showIncomingCall(platform.CallDataDto data) async {}
+  Future<void> showIncomingCall(platform.CallDataDto data) async {
+    lastIncomingCallData = data;
+    incomingCallCount += 1;
+    final completer = pendingIncomingCallCompleter;
+    if (completer != null) {
+      await completer.future;
+    }
+  }
 
   @override
-  Future<void> showOutgoingCall(platform.CallDataDto data) async {}
+  Future<void> showOutgoingCall(platform.CallDataDto data) async {
+    lastOutgoingCallData = data;
+    outgoingCallCount += 1;
+    final completer = pendingOutgoingCallCompleter;
+    if (completer != null) {
+      await completer.future;
+    }
+  }
 }
 
 class _TestEngine extends CallwaveEngine {
