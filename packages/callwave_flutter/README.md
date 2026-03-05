@@ -6,11 +6,11 @@ Public Flutter API for Callwave VoIP call UX.
 
 | Incoming call | Native plugin |
 |:---:|:---:|
-| ![Incoming call](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/Incoming_call_ui.png) | ![Native plugin](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/Incoming_call_native_plugin_UI.png) |
+| ![Incoming call](screenshots/Incoming_call_ui.png) | ![Native plugin](screenshots/Incoming_call_native_plugin_UI.png) |
 
 | Missed call | Video conference |
 |:---:|:---:|
-| ![Missed call](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/Missed_call_ui.png) | ![Video conference](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/Video_conference_call_ui.png) |
+| ![Missed call](screenshots/Missed_call_ui.png) | ![Video conference](screenshots/Video_conference_call_ui.png) |
 
 ## Why callwave_flutter?
 
