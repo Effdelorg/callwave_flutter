@@ -10,17 +10,25 @@ class ExampleVideoCallScreen extends StatefulWidget {
   const ExampleVideoCallScreen({
     required this.session,
     required this.cameraController,
+    this.oneToOneRemoteVideoBuilder,
+    this.oneToOneLocalVideoBuilder,
     this.onCallEnded,
     super.key,
   });
 
   final CallSession session;
   final ExampleCameraHandle cameraController;
+  final OneToOneRemoteVideoBuilder? oneToOneRemoteVideoBuilder;
+  final OneToOneLocalVideoBuilder? oneToOneLocalVideoBuilder;
   final VoidCallback? onCallEnded;
 
   @override
   State<ExampleVideoCallScreen> createState() => _ExampleVideoCallScreenState();
 }
+
+enum _OneToOneLayoutMode { split, pip }
+
+enum _OneToOnePrimarySource { remote, local }
 
 class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
   bool _dismissed = false;
@@ -28,6 +36,8 @@ class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
   int _bindOperationVersion = 0;
   late bool _lastCameraOn = widget.session.isCameraOn;
   late CallScreenController _callScreenController;
+  _OneToOneLayoutMode _layoutMode = _OneToOneLayoutMode.split;
+  _OneToOnePrimarySource _primarySource = _OneToOnePrimarySource.remote;
 
   @override
   void initState() {
@@ -48,6 +58,7 @@ class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
     if (oldWidget.session != widget.session) {
       _callScreenController.dispose();
       _callScreenController = CallScreenController(session: widget.session);
+      _resetConnectedLayout();
     }
     oldWidget.session.removeListener(_onSessionChanged);
     oldWidget.cameraController.removeListener(_onCameraControllerChanged);
@@ -124,10 +135,19 @@ class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
       _dismissed = true;
       Future<void>.delayed(const Duration(seconds: 3), _dismiss);
     }
+    if (session.state != CallSessionState.connected &&
+        _layoutMode != _OneToOneLayoutMode.split) {
+      _resetConnectedLayout();
+    }
 
     if (mounted) {
       setState(() {});
     }
+  }
+
+  void _resetConnectedLayout() {
+    _layoutMode = _OneToOneLayoutMode.split;
+    _primarySource = _OneToOnePrimarySource.remote;
   }
 
   void _onCameraControllerChanged() {
@@ -208,6 +228,9 @@ class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
 
   Widget _buildOneToOneVideoCall() {
     final session = widget.session;
+    if (_callScreenController.status == CallStatus.connected) {
+      return _buildConnectedOneToOneVideoCall();
+    }
     final theme = Theme.of(context);
     final isIncoming = session.state == CallSessionState.idle ||
         session.state == CallSessionState.ringing;
@@ -217,9 +240,10 @@ class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
         children: [
           Positioned.fill(
             child: _shouldShowPreview
-                ? _CoverFittedMedia(
+                ? VideoViewport(
                     key: const ValueKey<String>('video-preview-fit-one-to-one'),
                     aspectRatio: widget.cameraController.previewAspectRatio,
+                    fit: BoxFit.contain,
                     child: widget.cameraController.buildPreview(
                       key: const ValueKey<String>('video-preview-one-to-one'),
                     ),
@@ -298,6 +322,366 @@ class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
     );
   }
 
+  Widget _buildConnectedOneToOneVideoCall() {
+    final session = widget.session;
+    final theme = Theme.of(context);
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          const Positioned.fill(child: OneToOneStageBackground()),
+          Positioned.fill(
+            child: AnimatedSwitcher(
+              duration: CallScreenTheme.oneToOneLayoutSwitchDuration,
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              child: _layoutMode == _OneToOneLayoutMode.split
+                  ? _buildConnectedSplitView()
+                  : _buildConnectedPipView(),
+            ),
+          ),
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: CallScreenTheme.oneToOneConnectedOverlayGradient,
+                ),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              child: Column(
+                children: [
+                  _CallHeader(
+                    callerName: session.callData.callerName,
+                    handle: session.callData.handle,
+                    statusLabel: _statusLabel,
+                    statusStyle: theme.textTheme.bodyLarge?.copyWith(
+                      color: Colors.white70,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (_shouldShowPermissionCard)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _PermissionCard(
+                        message: _permissionMessage,
+                        onRetry: () {
+                          unawaited(
+                            widget.cameraController
+                                .retryPermission(session.callId),
+                          );
+                        },
+                        onOpenSettings: () {
+                          unawaited(
+                              widget.cameraController.openSystemSettings());
+                        },
+                        showSettingsButton: widget.cameraController.state ==
+                            ExampleCameraState.errorPermissionDenied,
+                      ),
+                    ),
+                  ConferenceControlsRow(controller: _callScreenController),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildConnectedSplitView() {
+    final remote = _resolveConnectedSource(_OneToOnePrimarySource.remote);
+    final local = _resolveConnectedSource(_OneToOnePrimarySource.local);
+    return LayoutBuilder(
+      key: const ValueKey<String>('one-to-one-video-split-view'),
+      builder: (context, constraints) {
+        final stageInsets = _oneToOneStageInsets;
+        final stageWidth = math.max(
+          0.0,
+          constraints.maxWidth - stageInsets.horizontal,
+        );
+        final stageHeight = math.max(
+          0.0,
+          constraints.maxHeight - stageInsets.vertical,
+        );
+        final squareSize = CallScreenTheme.oneToOneSplitSquareSizeFor(
+          stageWidth: stageWidth,
+          stageHeight: stageHeight,
+        );
+        if (squareSize <= 0) {
+          return const SizedBox.shrink();
+        }
+        return Padding(
+          padding: stageInsets,
+          child: Center(
+            child: SizedBox(
+              width: squareSize,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox.square(
+                    dimension: squareSize,
+                    child: GestureDetector(
+                      key: const ValueKey<String>(
+                        'one-to-one-video-split-remote-tap',
+                      ),
+                      onTap: () => _promoteToPip(_OneToOnePrimarySource.remote),
+                      child: _buildOneToOneVideoSurface(
+                        key: const ValueKey<String>(
+                          'one-to-one-video-split-remote-surface',
+                        ),
+                        surface: remote,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: CallScreenTheme.oneToOneSplitGap),
+                  SizedBox.square(
+                    dimension: squareSize,
+                    child: GestureDetector(
+                      key: const ValueKey<String>(
+                        'one-to-one-video-split-local-tap',
+                      ),
+                      onTap: () => _promoteToPip(_OneToOnePrimarySource.local),
+                      child: _buildOneToOneVideoSurface(
+                        key: const ValueKey<String>(
+                          'one-to-one-video-split-local-surface',
+                        ),
+                        surface: local,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildConnectedPipView() {
+    final primary = _primarySource;
+    final secondary = primary == _OneToOnePrimarySource.remote
+        ? _OneToOnePrimarySource.local
+        : _OneToOnePrimarySource.remote;
+    final primarySurface = _resolveConnectedSource(primary);
+    final secondarySurface = _resolveConnectedSource(secondary);
+    return LayoutBuilder(
+      key: const ValueKey<String>('one-to-one-video-pip-view'),
+      builder: (context, constraints) {
+        final stageInsets = _oneToOnePipStageInsets;
+        final stageWidth = math.max(
+          0.0,
+          constraints.maxWidth - stageInsets.horizontal,
+        );
+        final stageHeight = math.max(
+          0.0,
+          constraints.maxHeight - stageInsets.vertical,
+        );
+        const primaryLeadingInset =
+            CallScreenTheme.oneToOnePipPrimaryLeadingInset;
+        const detachedGap = CallScreenTheme.oneToOnePipDetachedGap;
+        final primarySize =
+            CallScreenTheme.oneToOnePrimarySquareSizeForDetachedPip(
+          stageWidth: stageWidth,
+          stageHeight: stageHeight,
+          primaryLeadingInset: primaryLeadingInset,
+          detachedGap: detachedGap,
+        );
+        if (primarySize <= 0) {
+          return const SizedBox.shrink();
+        }
+        final pipSize = CallScreenTheme.oneToOnePipSquareSizeFor(primarySize);
+        final footprintWidth = math.max(
+          primaryLeadingInset + primarySize,
+          pipSize,
+        );
+        final footprintHeight = primarySize + detachedGap + pipSize;
+        return Padding(
+          padding: stageInsets,
+          child: Align(
+            alignment: Alignment.bottomRight,
+            child: SizedBox(
+              key: const ValueKey<String>('one-to-one-video-pip-cluster'),
+              width: footprintWidth,
+              height: footprintHeight,
+              child: Stack(
+                children: [
+                  Positioned(
+                    top: 0,
+                    left: primaryLeadingInset,
+                    width: primarySize,
+                    height: primarySize,
+                    child: GestureDetector(
+                      key: const ValueKey<String>(
+                        'one-to-one-video-primary-tap-target',
+                      ),
+                      onTap: _returnToSplit,
+                      child: _buildOneToOneVideoSurface(
+                        key: const ValueKey<String>(
+                          'one-to-one-video-primary-surface',
+                        ),
+                        surface: primarySurface,
+                      ),
+                    ),
+                  ),
+                  if (pipSize > 0)
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      width: pipSize,
+                      height: pipSize,
+                      child: GestureDetector(
+                        key: const ValueKey<String>(
+                          'one-to-one-video-pip-tap-target',
+                        ),
+                        onTap: _swapPrimarySource,
+                        child: _buildOneToOneVideoSurface(
+                          key: const ValueKey<String>(
+                            'one-to-one-video-pip-surface',
+                          ),
+                          borderRadius: BorderRadius.circular(
+                            CallScreenTheme.oneToOnePipBorderRadius,
+                          ),
+                          surface: secondarySurface,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  EdgeInsets get _oneToOnePipStageInsets {
+    return const EdgeInsets.fromLTRB(
+      CallScreenTheme.oneToOnePipStageHorizontalPadding,
+      CallScreenTheme.oneToOnePipStageTopPadding,
+      CallScreenTheme.oneToOnePipStageHorizontalPadding,
+      CallScreenTheme.oneToOnePipStageBottomPadding,
+    );
+  }
+
+  EdgeInsets get _oneToOneStageInsets {
+    return const EdgeInsets.fromLTRB(
+      CallScreenTheme.oneToOneStageHorizontalPadding,
+      CallScreenTheme.oneToOneStageTopPadding,
+      CallScreenTheme.oneToOneStageHorizontalPadding,
+      CallScreenTheme.oneToOneStageBottomPadding,
+    );
+  }
+
+  Widget _buildOneToOneVideoSurface({
+    required _ExampleOneToOneSurface surface,
+    Key? key,
+    BorderRadius? borderRadius,
+  }) {
+    final content = surface.isCustomBuilder
+        ? VideoViewport(
+            aspectRatio: CallScreenTheme.oneToOneMediaAspectRatio,
+            fit: BoxFit.cover,
+            backgroundColor: CallScreenTheme.oneToOneTileMatteColor,
+            child: surface.widget,
+          )
+        : surface.widget;
+    final resolvedBorderRadius = borderRadius ??
+        BorderRadius.circular(CallScreenTheme.oneToOneDefaultBorderRadius);
+    return VideoPanel(
+      key: key,
+      borderRadius: resolvedBorderRadius,
+      child: content,
+    );
+  }
+
+  void _promoteToPip(_OneToOnePrimarySource source) {
+    if (_layoutMode == _OneToOneLayoutMode.pip && _primarySource == source) {
+      return;
+    }
+    setState(() {
+      _primarySource = source;
+      _layoutMode = _OneToOneLayoutMode.pip;
+    });
+  }
+
+  void _swapPrimarySource() {
+    setState(() {
+      _primarySource = _primarySource == _OneToOnePrimarySource.remote
+          ? _OneToOnePrimarySource.local
+          : _OneToOnePrimarySource.remote;
+    });
+  }
+
+  void _returnToSplit() {
+    setState(_resetConnectedLayout);
+  }
+
+  _ExampleOneToOneSurface _resolveConnectedSource(
+      _OneToOnePrimarySource source) {
+    switch (source) {
+      case _OneToOnePrimarySource.remote:
+        final remoteBuilder = widget.oneToOneRemoteVideoBuilder;
+        if (remoteBuilder != null) {
+          return _ExampleOneToOneSurface(
+            widget: remoteBuilder(context, widget.session),
+            isCustomBuilder: true,
+          );
+        }
+        return _ExampleOneToOneSurface(
+          widget: _buildFallbackSurface(
+              callerName: widget.session.callData.callerName),
+          isCustomBuilder: false,
+        );
+      case _OneToOnePrimarySource.local:
+        final localBuilder = widget.oneToOneLocalVideoBuilder;
+        if (localBuilder != null) {
+          return _ExampleOneToOneSurface(
+            widget: localBuilder(context, widget.session),
+            isCustomBuilder: true,
+          );
+        }
+        return _ExampleOneToOneSurface(
+          widget: _buildLocalSource(),
+          isCustomBuilder: false,
+        );
+    }
+  }
+
+  Widget _buildLocalSource() {
+    if (_shouldShowPreview) {
+      return VideoViewport(
+        key: const ValueKey<String>('video-preview-fit-one-to-one'),
+        aspectRatio: widget.cameraController.previewAspectRatio,
+        fit: BoxFit.cover,
+        backgroundColor: CallScreenTheme.oneToOneTileMatteColor,
+        child: widget.cameraController.buildPreview(
+          key: const ValueKey<String>('video-preview-one-to-one'),
+        ),
+      );
+    }
+    return _buildLocalFallbackSurface();
+  }
+
+  Widget _buildLocalFallbackSurface() {
+    final localNameRaw =
+        widget.session.callData.extra?[CallDataExtraKeys.localDisplayName];
+    // Accept only non-empty strings; any other type safely falls back to "You".
+    final localName = switch (localNameRaw) {
+      final String name when name.trim().isNotEmpty => name,
+      _ => 'You',
+    };
+    return LocalVideoFallback(
+      displayName: localName,
+      cameraOn: widget.session.isCameraOn,
+    );
+  }
+
   bool get _shouldShowPreview {
     return widget.session.isCameraOn &&
         widget.cameraController.state == ExampleCameraState.ready &&
@@ -365,6 +749,16 @@ class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
       ),
     );
   }
+}
+
+class _ExampleOneToOneSurface {
+  const _ExampleOneToOneSurface({
+    required this.widget,
+    required this.isCustomBuilder,
+  });
+
+  final Widget widget;
+  final bool isCustomBuilder;
 }
 
 class _CallHeader extends StatelessWidget {
@@ -592,11 +986,12 @@ class _ExampleConferenceParticipantTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final shouldShowLocalPreview = shouldShowPreview && participant.isLocal;
     final content = shouldShowLocalPreview
-        ? _CoverFittedMedia(
+        ? VideoViewport(
             key: ValueKey<String>(
               'video-preview-fit-conference-${participant.participantId}',
             ),
             aspectRatio: previewAspectRatio,
+            fit: BoxFit.contain,
             child: cameraController.buildPreview(
               key: ValueKey<String>(
                 'video-preview-conference-${participant.participantId}',
@@ -663,65 +1058,5 @@ class _ConferenceFallbackTile extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _CoverFittedMedia extends StatelessWidget {
-  const _CoverFittedMedia({
-    required this.child,
-    this.aspectRatio,
-    super.key,
-  });
-
-  final Widget child;
-  final double? aspectRatio;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        final height = constraints.maxHeight;
-        if (!width.isFinite || !height.isFinite || width <= 0 || height <= 0) {
-          return child;
-        }
-        final resolvedAspectRatio = _resolveAspectRatio(width, height);
-        final frame = _containFrame(
-          boxWidth: width,
-          boxHeight: height,
-          aspectRatio: resolvedAspectRatio,
-        );
-        return ColoredBox(
-          color: Colors.black,
-          child: Center(
-            child: SizedBox(
-              width: frame.width,
-              height: frame.height,
-              child: child,
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  double _resolveAspectRatio(double width, double height) {
-    final ratio = aspectRatio;
-    if (ratio != null && ratio.isFinite && ratio > 0) {
-      return ratio;
-    }
-    return width / height;
-  }
-
-  Size _containFrame({
-    required double boxWidth,
-    required double boxHeight,
-    required double aspectRatio,
-  }) {
-    final boxRatio = boxWidth / boxHeight;
-    if (boxRatio < aspectRatio) {
-      return Size(boxWidth, boxWidth / aspectRatio);
-    }
-    return Size(boxHeight * aspectRatio, boxHeight);
   }
 }

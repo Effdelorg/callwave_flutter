@@ -25,4 +25,7 @@ abstract final class CallDataExtraKeys {
 
   /// SIP URI for SIP-based SDKs.
   static const String sipUri = 'sipUri';
+
+  /// Preferred local/self participant display name for fallback tiles.
+  static const String localDisplayName = 'localDisplayName';
 }

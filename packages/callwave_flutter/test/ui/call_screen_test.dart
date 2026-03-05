@@ -1,5 +1,6 @@
+import 'dart:math' as math;
+
 import 'package:callwave_flutter/callwave_flutter.dart';
-import 'package:callwave_flutter/src/ui/theme/call_screen_theme.dart';
 import 'package:callwave_flutter/src/ui/widgets/call_action_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -172,7 +173,10 @@ void main() {
   testWidgets('one-to-one video mode renders built-in video surface', (
     tester,
   ) async {
-    final session = _buildSession(callType: CallType.video);
+    final session = _buildSession(
+      callType: CallType.video,
+      initialState: CallSessionState.connected,
+    );
     addTearDown(session.dispose);
 
     await tester.pumpWidget(
@@ -186,12 +190,271 @@ void main() {
       find.byKey(const ValueKey<String>('one-to-one-video-view')),
       findsOneWidget,
     );
-    expect(_actionButtonFinder('Accept'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('one-to-one-video-split-view')),
+      findsOneWidget,
+    );
+    final splitRemoteSurface = find.byKey(
+      const ValueKey<String>('one-to-one-video-split-remote-surface'),
+    );
+    final splitLocalSurface = find.byKey(
+      const ValueKey<String>('one-to-one-video-split-local-surface'),
+    );
+    expect(splitRemoteSurface, findsOneWidget);
+    expect(splitLocalSurface, findsOneWidget);
+    _expectSquare(tester, splitRemoteSurface);
+    _expectSquare(tester, splitLocalSurface);
+    expect(
+      find.byKey(const ValueKey<String>('conference-controls-row')),
+      findsOneWidget,
+    );
+    expect(_actionButtonFinder('Mic'), findsOneWidget);
+    expect(_actionButtonFinder('Speaker'), findsOneWidget);
+    expect(_actionButtonFinder('Cam'), findsOneWidget);
+    expect(_actionButtonFinder('Camera On'), findsNothing);
+    final splitRemoteRect = tester.getRect(splitRemoteSurface);
 
-    session.reportConnected();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('one-to-one-video-split-local-tap')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('one-to-one-video-primary-surface')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('one-to-one-video-pip-surface')),
+      findsOneWidget,
+    );
+    final primaryRect = tester.getRect(
+      find.byKey(const ValueKey<String>('one-to-one-video-primary-surface')),
+    );
+    final pipRect = tester.getRect(
+      find.byKey(const ValueKey<String>('one-to-one-video-pip-surface')),
+    );
+    final clusterRect = tester.getRect(
+      find.byKey(const ValueKey<String>('one-to-one-video-pip-cluster')),
+    );
+    final controlsRect = tester.getRect(
+      find.byKey(const ValueKey<String>('conference-controls-row')),
+    );
+    final screenRect = tester.getRect(
+      find.byKey(const ValueKey<String>('one-to-one-video-view')),
+    );
+    expect(primaryRect.width, greaterThan(splitRemoteRect.width));
+    _expectDetachedPipLayout(
+      primaryRect: primaryRect,
+      pipRect: pipRect,
+      clusterRect: clusterRect,
+      screenRect: screenRect,
+      controlsRect: controlsRect,
+    );
+    _expectPrimaryNearMaxForPip(
+      primaryRect: primaryRect,
+      screenRect: screenRect,
+    );
+    _expectSquare(
+      tester,
+      find.byKey(const ValueKey<String>('one-to-one-video-primary-surface')),
+    );
+    _expectSquare(
+      tester,
+      find.byKey(const ValueKey<String>('one-to-one-video-pip-surface')),
+    );
+    session.dispose();
+  });
+
+  testWidgets('custom one-to-one builders support split to pip swapping', (
+    tester,
+  ) async {
+    final session = _buildSession(
+      callType: CallType.video,
+      initialState: CallSessionState.connected,
+    );
+    addTearDown(session.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CallScreen(
+          session: session,
+          oneToOneRemoteVideoBuilder: (_, __) => const ColoredBox(
+            color: Colors.green,
+            child: Center(child: Text('REMOTE')),
+          ),
+          oneToOneLocalVideoBuilder: (_, __) => const ColoredBox(
+            color: Colors.blue,
+            child: Center(child: Text('LOCAL')),
+          ),
+        ),
+      ),
+    );
     await tester.pump();
-    expect(_actionButtonFinder('Camera On'), findsOneWidget);
 
+    expect(
+      find.byKey(const ValueKey<String>('one-to-one-video-split-view')),
+      findsOneWidget,
+    );
+    expect(find.text('REMOTE'), findsOneWidget);
+    expect(find.text('LOCAL'), findsOneWidget);
+    _expectSquare(
+      tester,
+      find.byKey(
+          const ValueKey<String>('one-to-one-video-split-remote-surface')),
+    );
+    _expectSquare(
+      tester,
+      find.byKey(
+          const ValueKey<String>('one-to-one-video-split-local-surface')),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('one-to-one-video-split-local-tap')),
+    );
+    await tester.pumpAndSettle();
+
+    final primarySurface = find.byKey(
+      const ValueKey<String>('one-to-one-video-primary-surface'),
+    );
+    final pipSurface = find.byKey(
+      const ValueKey<String>('one-to-one-video-pip-surface'),
+    );
+    expect(primarySurface, findsOneWidget);
+    expect(pipSurface, findsOneWidget);
+    expect(
+      find.descendant(of: primarySurface, matching: find.text('LOCAL')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: pipSurface, matching: find.text('REMOTE')),
+      findsOneWidget,
+    );
+    _expectSquare(tester, primarySurface);
+    _expectSquare(tester, pipSurface);
+    final primaryRect = tester.getRect(primarySurface);
+    final pipRect = tester.getRect(pipSurface);
+    final clusterRect = tester.getRect(
+      find.byKey(const ValueKey<String>('one-to-one-video-pip-cluster')),
+    );
+    final controlsRect = tester.getRect(
+      find.byKey(const ValueKey<String>('conference-controls-row')),
+    );
+    final screenRect = tester.getRect(
+      find.byKey(const ValueKey<String>('one-to-one-video-view')),
+    );
+    _expectDetachedPipLayout(
+      primaryRect: primaryRect,
+      pipRect: pipRect,
+      clusterRect: clusterRect,
+      screenRect: screenRect,
+      controlsRect: controlsRect,
+    );
+    _expectPrimaryNearMaxForPip(
+      primaryRect: primaryRect,
+      screenRect: screenRect,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('one-to-one-video-pip-tap-target')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: primarySurface, matching: find.text('REMOTE')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('one-to-one-video-primary-tap-target')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('one-to-one-video-split-view')),
+      findsOneWidget,
+    );
+    session.dispose();
+  });
+
+  testWidgets('connected one-to-one fallback rendering stays safe', (
+    tester,
+  ) async {
+    final session = _buildSession(
+      callType: CallType.video,
+      initialState: CallSessionState.connected,
+    );
+    addTearDown(session.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CallScreen(session: session),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('one-to-one-video-split-view')),
+      findsOneWidget,
+    );
+    _expectSquare(
+      tester,
+      find.byKey(
+          const ValueKey<String>('one-to-one-video-split-remote-surface')),
+    );
+    _expectSquare(
+      tester,
+      find.byKey(
+          const ValueKey<String>('one-to-one-video-split-local-surface')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('one-to-one-video-split-remote-tap')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('one-to-one-video-primary-surface')),
+      findsOneWidget,
+    );
+    _expectSquare(
+      tester,
+      find.byKey(const ValueKey<String>('one-to-one-video-primary-surface')),
+    );
+    _expectSquare(
+      tester,
+      find.byKey(const ValueKey<String>('one-to-one-video-pip-surface')),
+    );
+    expect(tester.takeException(), isNull);
+    session.dispose();
+  });
+
+  testWidgets('non-string local display name extra falls back safely', (
+    tester,
+  ) async {
+    final session = _buildSession(
+      callType: CallType.video,
+      initialState: CallSessionState.connected,
+      extra: const <String, Object?>{
+        CallDataExtraKeys.localDisplayName: 123,
+      },
+    );
+    addTearDown(session.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CallScreen(session: session),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('one-to-one-video-split-view')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('one-to-one-video-split-local-tap')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('one-to-one-video-primary-surface')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
     session.dispose();
   });
 
@@ -331,6 +594,8 @@ CallSession _buildSession({
   Future<void> Function(String callId)? acceptNative,
   Future<void> Function(String callId)? endNative,
   CallType callType = CallType.audio,
+  CallSessionState initialState = CallSessionState.idle,
+  Map<String, Object?>? extra,
 }) {
   return CallSession(
     callData: CallData(
@@ -338,8 +603,10 @@ CallSession _buildSession({
       callerName: 'Ava',
       handle: '+1 555 0101',
       callType: callType,
+      extra: extra,
     ),
     isOutgoing: false,
+    initialState: initialState,
     acceptNative: acceptNative,
     endNative: endNative,
   );
@@ -363,4 +630,59 @@ Finder _actionButtonFinder(String label) {
   return find.byWidgetPredicate(
     (widget) => widget is CallActionButton && widget.label == label,
   );
+}
+
+void _expectSquare(WidgetTester tester, Finder finder) {
+  final size = tester.getSize(finder);
+  expect((size.width - size.height).abs(), lessThan(0.5));
+}
+
+void _expectPrimaryNearMaxForPip({
+  required Rect primaryRect,
+  required Rect screenRect,
+}) {
+  final stageWidth = math.max(
+    0.0,
+    screenRect.width - (CallScreenTheme.oneToOnePipStageHorizontalPadding * 2),
+  );
+  final stageHeight = math.max(
+    0.0,
+    screenRect.height -
+        (CallScreenTheme.oneToOnePipStageTopPadding +
+            CallScreenTheme.oneToOnePipStageBottomPadding),
+  );
+  final expected = CallScreenTheme.oneToOnePrimarySquareSizeForDetachedPip(
+    stageWidth: stageWidth,
+    stageHeight: stageHeight,
+    primaryLeadingInset: CallScreenTheme.oneToOnePipPrimaryLeadingInset,
+    detachedGap: CallScreenTheme.oneToOnePipDetachedGap,
+  );
+  expect(primaryRect.width, closeTo(expected, 0.5));
+}
+
+void _expectDetachedPipLayout({
+  required Rect primaryRect,
+  required Rect pipRect,
+  required Rect clusterRect,
+  required Rect screenRect,
+  required Rect controlsRect,
+}) {
+  const tolerance = 0.5;
+  expect(
+    primaryRect.left - clusterRect.left,
+    closeTo(CallScreenTheme.oneToOnePipPrimaryLeadingInset, tolerance),
+  );
+  expect(
+    pipRect.right,
+    closeTo(primaryRect.right, tolerance),
+  );
+  expect(
+    pipRect.top,
+    greaterThanOrEqualTo(
+      primaryRect.bottom + CallScreenTheme.oneToOnePipDetachedGap - tolerance,
+    ),
+  );
+  expect(pipRect.right, lessThanOrEqualTo(screenRect.right + tolerance));
+  expect(pipRect.bottom, lessThanOrEqualTo(screenRect.bottom + tolerance));
+  expect(pipRect.bottom, lessThanOrEqualTo(controlsRect.top + tolerance));
 }

@@ -137,7 +137,8 @@ Sessions come from `CallwaveFlutter.sessions` or `CallwaveFlutter.getSession`.
 - Uses a plain bottom control row in `SafeArea` (no rounded dock container).
 - Default video conference controls: `Mic`, `Speaker`, `Cam`, `End`.
 - Default audio conference controls: `Mic`, `Speaker`, `End`.
-- One-to-one audio keeps the classic avatar layout; one-to-one video uses a built-in video-style surface with overlay controls.
+- One-to-one audio keeps the classic avatar layout; connected one-to-one video
+  uses square split/PiP surfaces with conference-style controls.
 
 ### Conference State API
 
@@ -187,6 +188,46 @@ CallwaveScope(
 
 You can also replace the entire conference surface with
 `conferenceScreenBuilder`.
+
+### One-to-One Split-to-PiP Builders
+
+For one-to-one connected video, you can inject remote/local RTC widgets:
+
+```dart
+CallwaveScope(
+  navigatorKey: navKey,
+  oneToOneRemoteVideoBuilder: (context, session) {
+    return rtcRemoteView(session.callId);
+  },
+  oneToOneLocalVideoBuilder: (context, session) {
+    return rtcLocalView(session.callId);
+  },
+  child: child!,
+)
+```
+
+Behavior:
+
+- Connected one-to-one starts in a centered `50/50` split with square tiles
+  (remote top, local bottom).
+- Tap a tile to enter large-square + square PiP mode.
+- Tap PiP to swap; tap primary to return to split.
+- Built-in framing is `BoxFit.cover`-style (crop allowed, no stretch) with a
+  matte stage background.
+- If builders are omitted, fallback remote/local surfaces are shown.
+
+To preserve remote/local camera geometry for custom RTC widgets, wrap them in
+`VideoViewport`:
+
+```dart
+oneToOneLocalVideoBuilder: (context, session) {
+  return VideoViewport(
+    aspectRatio: 9 / 16,
+    fit: BoxFit.cover,
+    child: rtcLocalView(session.callId),
+  );
+},
+```
 
 ## Notes
 

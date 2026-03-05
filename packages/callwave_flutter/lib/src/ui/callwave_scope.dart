@@ -33,6 +33,8 @@ class CallwaveScope extends StatefulWidget {
     required this.child,
     this.callScreenBuilder,
     this.conferenceScreenBuilder,
+    this.oneToOneRemoteVideoBuilder,
+    this.oneToOneLocalVideoBuilder,
     this.participantTileBuilder,
     this.conferenceControlsBuilder,
     this.theme,
@@ -46,6 +48,8 @@ class CallwaveScope extends StatefulWidget {
   final Widget child;
   final CallScreenBuilder? callScreenBuilder;
   final ConferenceScreenBuilder? conferenceScreenBuilder;
+  final OneToOneRemoteVideoBuilder? oneToOneRemoteVideoBuilder;
+  final OneToOneLocalVideoBuilder? oneToOneLocalVideoBuilder;
   final ParticipantTileBuilder? participantTileBuilder;
   final ConferenceControlsBuilder? conferenceControlsBuilder;
   final CallwaveThemeData? theme;
@@ -157,16 +161,17 @@ class _CallwaveScopeState extends State<CallwaveScope> {
       navigator.push<void>(
         MaterialPageRoute<void>(
           builder: (context) {
-            final callScreen =
-                widget.callScreenBuilder?.call(context, session) ??
-                    CallScreen(
-                      session: session,
-                      conferenceScreenBuilder: widget.conferenceScreenBuilder,
-                      participantTileBuilder: widget.participantTileBuilder,
-                      conferenceControlsBuilder:
-                          widget.conferenceControlsBuilder,
-                      theme: widget.theme,
-                    );
+            final callScreen = widget.callScreenBuilder
+                    ?.call(context, session) ??
+                CallScreen(
+                  session: session,
+                  conferenceScreenBuilder: widget.conferenceScreenBuilder,
+                  oneToOneRemoteVideoBuilder: widget.oneToOneRemoteVideoBuilder,
+                  oneToOneLocalVideoBuilder: widget.oneToOneLocalVideoBuilder,
+                  participantTileBuilder: widget.participantTileBuilder,
+                  conferenceControlsBuilder: widget.conferenceControlsBuilder,
+                  theme: widget.theme,
+                );
             return InheritedCallSession(
               session: session,
               child: callScreen,
