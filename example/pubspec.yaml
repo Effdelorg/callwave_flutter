@@ -13,6 +13,8 @@ dependencies:
     sdk: flutter
   callwave_flutter:
     path: ../packages/callwave_flutter
+  camera: ^0.11.2+1
+  permission_handler: ^11.4.0
 
 dev_dependencies:
   flutter_test:

@@ -3,15 +3,19 @@ import 'dart:async';
 import 'package:callwave_flutter/callwave_flutter.dart';
 import 'package:callwave_flutter_platform_interface/callwave_flutter_platform_interface.dart'
     as platform;
+import 'package:callwave_flutter_example/example_camera_controller.dart';
+import 'package:callwave_flutter_example/example_video_call_screen.dart';
 import 'package:callwave_flutter_example/main.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   late _FakePlatform fakePlatform;
+  late _FakeCameraHandle fakeCamera;
 
   setUp(() {
     fakePlatform = _FakePlatform();
+    fakeCamera = _FakeCameraHandle();
     platform.CallwaveFlutterPlatform.instance = fakePlatform;
     CallwaveFlutter.instance.setEngine(_TestEngine());
   });
@@ -73,7 +77,7 @@ void main() {
 
   testWidgets('conference video preview opens conference call UI',
       (tester) async {
-    await tester.pumpWidget(const CallwaveExampleApp());
+    await tester.pumpWidget(CallwaveExampleApp(cameraController: fakeCamera));
     await tester.pump();
 
     await tester.tap(find.text('Conference Video'));
@@ -94,6 +98,105 @@ void main() {
     }
     await tester.pump(const Duration(seconds: 4));
     await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+  });
+
+  testWidgets('conference video mirrors local preview across all tiles',
+      (tester) async {
+    await tester.pumpWidget(CallwaveExampleApp(cameraController: fakeCamera));
+    await tester.pump();
+
+    await tester.tap(find.text('Conference Video'));
+    await _pumpUntilCallScreen(tester);
+    expect(find.byType(ExampleVideoCallScreen), findsOneWidget);
+    final renderedScreen = tester
+        .widget<ExampleVideoCallScreen>(find.byType(ExampleVideoCallScreen));
+    expect(identical(renderedScreen.cameraController, fakeCamera), isTrue);
+
+    await tester.tap(find.byIcon(Icons.videocam_off).first);
+    await tester.pump();
+    if (fakeCamera.lastEnabled != true) {
+      await tester.tap(find.byIcon(Icons.videocam_off).first);
+    }
+    await tester.pumpAndSettle(const Duration(milliseconds: 200));
+    expect(fakeCamera.lastEnabled, isTrue);
+    expect(fakeCamera.state, ExampleCameraState.ready);
+    expect(fakeCamera.isPreviewReady, isTrue);
+
+    expect(
+      find.byKey(const ValueKey<String>('video-preview-conference-speaker-1')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-preview-conference-speaker-2')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-preview-conference-speaker-3')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-preview-conference-local-you')),
+      findsOneWidget,
+    );
+    for (final session in CallwaveFlutter.instance.activeSessions) {
+      session.reportEnded();
+    }
+    await tester.pump(const Duration(seconds: 4));
+    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+  });
+
+  testWidgets('conference video shows inline retry card when permission denied',
+      (tester) async {
+    fakeCamera.denyOnEnable = true;
+    await tester.pumpWidget(CallwaveExampleApp(cameraController: fakeCamera));
+    await tester.pump();
+
+    await tester.tap(find.text('Conference Video'));
+    await _pumpUntilCallScreen(tester);
+    expect(find.byType(ExampleVideoCallScreen), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.videocam_off).first);
+    await tester.pump();
+    if (fakeCamera.lastEnabled != true) {
+      await tester.tap(find.byIcon(Icons.videocam_off).first);
+    }
+    await tester.pumpAndSettle(const Duration(milliseconds: 200));
+
+    expect(
+      find.text('Camera permission is needed for video preview.'),
+      findsOneWidget,
+    );
+    expect(find.text('Retry'), findsOneWidget);
+    expect(find.text('Open Settings'), findsOneWidget);
+
+    for (final session in CallwaveFlutter.instance.activeSessions) {
+      session.reportEnded();
+    }
+    await tester.pump(const Duration(seconds: 4));
+    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+  });
+
+  testWidgets('video session detaches camera handle after call ends',
+      (tester) async {
+    await tester.pumpWidget(CallwaveExampleApp(cameraController: fakeCamera));
+    await tester.pump();
+
+    await tester.tap(find.text('Conference Video'));
+    await _pumpUntilCallScreen(tester);
+    expect(find.byType(ExampleVideoCallScreen), findsOneWidget);
+    await tester.pumpAndSettle(const Duration(milliseconds: 200));
+
+    expect(fakeCamera.attachCount, greaterThanOrEqualTo(1));
+    expect(fakeCamera.activeCallIds, isNotEmpty);
+
+    for (final session in CallwaveFlutter.instance.activeSessions) {
+      session.reportEnded();
+    }
+    await tester.pump(const Duration(seconds: 4));
+
+    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+    expect(fakeCamera.detachCount, greaterThanOrEqualTo(1));
+    expect(fakeCamera.activeCallIds, isEmpty);
   });
 
   testWidgets('demo sends selected call types to platform', (tester) async {
@@ -235,7 +338,8 @@ void main() {
 Future<void> _pumpUntilCallScreen(WidgetTester tester) async {
   for (var i = 0; i < 20; i += 1) {
     await tester.pump(const Duration(milliseconds: 100));
-    if (find.byType(CallScreen).evaluate().isNotEmpty) {
+    if (find.byType(CallScreen).evaluate().isNotEmpty ||
+        find.byType(ExampleVideoCallScreen).evaluate().isNotEmpty) {
       return;
     }
   }
@@ -419,4 +523,78 @@ class _TestEngine extends CallwaveEngine {
 
   @override
   Future<void> onDispose(CallSession session) async {}
+}
+
+class _FakeCameraHandle extends ExampleCameraHandle {
+  final Set<String> activeCallIds = <String>{};
+  bool denyOnEnable = false;
+  int attachCount = 0;
+  int detachCount = 0;
+  bool? lastEnabled;
+
+  ExampleCameraState _state = ExampleCameraState.idle;
+  String? _errorMessage;
+  bool _isPreviewReady = false;
+
+  @override
+  ExampleCameraState get state => _state;
+
+  @override
+  bool get isPreviewReady => _isPreviewReady;
+
+  @override
+  String? get errorMessage => _errorMessage;
+
+  @override
+  Future<void> attachSession(String callId) async {
+    attachCount += 1;
+    activeCallIds.add(callId);
+  }
+
+  @override
+  Future<void> detachSession(String callId) async {
+    if (activeCallIds.remove(callId)) {
+      detachCount += 1;
+    }
+  }
+
+  @override
+  Widget buildPreview({Key? key}) {
+    return ColoredBox(
+      key: key,
+      color: const Color(0xFF1565C0),
+    );
+  }
+
+  @override
+  Future<void> openSystemSettings() async {}
+
+  @override
+  Future<void> retryPermission(String callId) async {
+    await setCameraEnabled(callId, true);
+  }
+
+  @override
+  Future<void> setCameraEnabled(String callId, bool enabled) async {
+    activeCallIds.add(callId);
+    lastEnabled = enabled;
+    if (!enabled) {
+      _state = ExampleCameraState.idle;
+      _errorMessage = null;
+      _isPreviewReady = false;
+      notifyListeners();
+      return;
+    }
+    if (denyOnEnable) {
+      _state = ExampleCameraState.errorPermissionDenied;
+      _errorMessage = 'Camera permission is needed for video preview.';
+      _isPreviewReady = false;
+      notifyListeners();
+      return;
+    }
+    _state = ExampleCameraState.ready;
+    _errorMessage = null;
+    _isPreviewReady = true;
+    notifyListeners();
+  }
 }

@@ -1,17 +1,26 @@
 import 'dart:async';
 
 import 'package:callwave_flutter/callwave_flutter.dart';
+import 'package:callwave_flutter_example/example_camera_controller.dart';
+import 'package:callwave_flutter_example/example_video_call_screen.dart';
 import 'package:callwave_flutter_example/mock_callwave_engine.dart';
 import 'package:flutter/material.dart';
 
-final MockCallwaveEngine _engine = MockCallwaveEngine();
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  CallwaveFlutter.instance.setEngine(_engine);
+  final cameraController = ExampleCameraController();
+  CallwaveFlutter.instance.setEngine(
+    MockCallwaveEngine(cameraController: cameraController),
+  );
   final startupDecision =
       await CallwaveFlutter.instance.prepareStartupRouteDecision();
-  runApp(CallwaveExampleApp(startupDecision: startupDecision));
+  runApp(
+    CallwaveExampleApp(
+      startupDecision: startupDecision,
+      cameraController: cameraController,
+      disposeCameraControllerOnDispose: true,
+    ),
+  );
 }
 
 abstract final class _Routes {
@@ -22,11 +31,18 @@ abstract final class _Routes {
 class CallwaveExampleApp extends StatefulWidget {
   const CallwaveExampleApp({
     CallStartupRouteDecision? startupDecision,
+    this.cameraController,
+    this.disposeCameraControllerOnDispose = false,
     super.key,
   }) : startupDecision =
             startupDecision ?? const CallStartupRouteDecision.home();
 
   final CallStartupRouteDecision startupDecision;
+  /// Handle for camera preview in video calls. If null, a default is created.
+  final ExampleCameraHandle? cameraController;
+  /// If true and [cameraController] is provided, the app disposes it when
+  /// disposed. Use when the app creates the controller (e.g. in main).
+  final bool disposeCameraControllerOnDispose;
 
   @override
   State<CallwaveExampleApp> createState() => _CallwaveExampleAppState();
@@ -34,10 +50,22 @@ class CallwaveExampleApp extends StatefulWidget {
 
 class _CallwaveExampleAppState extends State<CallwaveExampleApp> {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  late final ExampleCameraHandle _cameraController =
+      widget.cameraController ?? ExampleCameraController();
+  late final bool _ownsCameraController = widget.cameraController == null ||
+      widget.disposeCameraControllerOnDispose;
   late final Set<String> _preRoutedCallIds =
       widget.startupDecision.callId == null
           ? const <String>{}
           : <String>{widget.startupDecision.callId!};
+
+  @override
+  void dispose() {
+    if (_ownsCameraController) {
+      _cameraController.dispose();
+    }
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +80,12 @@ class _CallwaveExampleAppState extends State<CallwaveExampleApp> {
         return CallwaveScope(
           navigatorKey: _navigatorKey,
           preRoutedCallIds: _preRoutedCallIds,
+          callScreenBuilder: (context, session) {
+            return _buildCallScreen(
+              session: session,
+              cameraController: _cameraController,
+            );
+          },
           child: child ?? const SizedBox.shrink(),
         );
       },
@@ -61,6 +95,7 @@ class _CallwaveExampleAppState extends State<CallwaveExampleApp> {
         _Routes.home: (_) => const CallDemoScreen(),
         _Routes.call: (_) => _StartupCallRoute(
               startupDecision: widget.startupDecision,
+              cameraController: _cameraController,
             ),
       },
     );
@@ -70,9 +105,11 @@ class _CallwaveExampleAppState extends State<CallwaveExampleApp> {
 class _StartupCallRoute extends StatelessWidget {
   const _StartupCallRoute({
     required this.startupDecision,
+    required this.cameraController,
   });
 
   final CallStartupRouteDecision startupDecision;
+  final ExampleCameraHandle cameraController;
 
   @override
   Widget build(BuildContext context) {
@@ -88,14 +125,33 @@ class _StartupCallRoute extends StatelessWidget {
 
     return InheritedCallSession(
       session: session,
-      child: CallScreen(
+      child: _buildCallScreen(
         session: session,
+        cameraController: cameraController,
         onCallEnded: () {
           Navigator.of(context).pushReplacementNamed(_Routes.home);
         },
       ),
     );
   }
+}
+
+Widget _buildCallScreen({
+  required CallSession session,
+  required ExampleCameraHandle cameraController,
+  VoidCallback? onCallEnded,
+}) {
+  if (session.callData.callType != CallType.video) {
+    return CallScreen(
+      session: session,
+      onCallEnded: onCallEnded,
+    );
+  }
+  return ExampleVideoCallScreen(
+    session: session,
+    cameraController: cameraController,
+    onCallEnded: onCallEnded,
+  );
 }
 
 class CallDemoScreen extends StatefulWidget {
