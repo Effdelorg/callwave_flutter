@@ -2,6 +2,16 @@
 
 Public Flutter API for Callwave VoIP call UX.
 
+## Screenshots
+
+| Incoming call | Native plugin |
+|:---:|:---:|
+| ![Incoming call](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/incoming_call.png) | ![Native plugin](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/native_plugin.png) |
+
+| Ongoing call UI | Video conference |
+|:---:|:---:|
+| ![Ongoing call UI](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/ongoing_call_ui.png) | ![Video conference](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/video_conference.png) |
+
 ## Why callwave_flutter?
 
 **Plug-and-play call UI for WebRTC video and audio calls.** Add WhatsApp-style incoming/outgoing call screens to your Flutter app in minutes—no reinventing the wheel.
