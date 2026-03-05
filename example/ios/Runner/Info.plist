@@ -66,5 +66,9 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Camera access is used to preview your video call layout in this demo.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Microphone access is used to preview call permissions in this demo.</string>
 </dict>
 </plist>

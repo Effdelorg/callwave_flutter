@@ -169,17 +169,94 @@ void main() {
     expect(declineDecoration.color, CallScreenTheme.endCallColor);
     expect(acceptDecoration.color, CallScreenTheme.acceptCallColor);
   });
+
+  testWidgets('audio conference mode renders controls without camera', (
+    tester,
+  ) async {
+    final session = _buildSession();
+    addTearDown(session.dispose);
+    session.updateConferenceState(
+      const ConferenceState(
+        updatedAtMs: 1,
+        participants: [
+          CallParticipant(participantId: 'p-1', displayName: 'Ava'),
+          CallParticipant(participantId: 'p-2', displayName: 'Milo'),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CallScreen(session: session),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+        find.byKey(const ValueKey<String>('conference-view')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('conference-controls-row')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('conference-controls-dock')),
+      findsNothing,
+    );
+
+    final micButton = _actionButtonFinder('Mic');
+    final speakerButton = _actionButtonFinder('Speaker');
+    final camButton = _actionButtonFinder('Cam');
+    final endButton = _actionButtonFinder('End');
+    expect(micButton, findsOneWidget);
+    expect(speakerButton, findsOneWidget);
+    expect(camButton, findsNothing);
+    expect(endButton, findsOneWidget);
+  });
+
+  testWidgets('video conference mode renders controls including camera', (
+    tester,
+  ) async {
+    final session = _buildSession(callType: CallType.video);
+    addTearDown(session.dispose);
+    session.updateConferenceState(
+      const ConferenceState(
+        updatedAtMs: 1,
+        participants: [
+          CallParticipant(participantId: 'p-1', displayName: 'Ava'),
+          CallParticipant(participantId: 'p-2', displayName: 'Milo'),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CallScreen(session: session),
+      ),
+    );
+    await tester.pump();
+
+    final micButton = _actionButtonFinder('Mic');
+    final speakerButton = _actionButtonFinder('Speaker');
+    final camButton = _actionButtonFinder('Cam');
+    final endButton = _actionButtonFinder('End');
+    expect(micButton, findsOneWidget);
+    expect(speakerButton, findsOneWidget);
+    expect(camButton, findsOneWidget);
+    expect(endButton, findsOneWidget);
+  });
 }
 
 CallSession _buildSession({
   Future<void> Function(String callId)? acceptNative,
   Future<void> Function(String callId)? endNative,
+  CallType callType = CallType.audio,
 }) {
   return CallSession(
-    callData: const CallData(
+    callData: CallData(
       callId: 'test-call-id',
       callerName: 'Ava',
       handle: '+1 555 0101',
+      callType: callType,
     ),
     isOutgoing: false,
     acceptNative: acceptNative,
@@ -199,4 +276,10 @@ void _pushCallScreen(
 Future<void> _pumpThroughAutoDismiss(WidgetTester tester) async {
   await tester.pump(CallScreenTheme.autoDismissDelay);
   await tester.pump(const Duration(milliseconds: 50));
+}
+
+Finder _actionButtonFinder(String label) {
+  return find.byWidgetPredicate(
+    (widget) => widget is CallActionButton && widget.label == label,
+  );
 }

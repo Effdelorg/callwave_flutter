@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 
@@ -6,11 +7,15 @@ import '../enums/call_event_type.dart';
 import '../enums/call_session_state.dart';
 import '../models/call_data.dart';
 import '../models/call_event.dart';
+import '../models/call_participant.dart';
+import '../models/conference_state.dart';
 import 'callwave_engine.dart';
 
 typedef _CallwaveEngineProvider = CallwaveEngine? Function();
 typedef _CallIdAction = Future<void> Function(String callId);
 typedef _OutgoingStartAction = Future<void> Function(CallData callData);
+
+enum _SessionToggleControl { mute, speaker, camera }
 
 /// Single source of truth for one call's UI state.
 ///
@@ -26,6 +31,7 @@ class CallSession extends ChangeNotifier {
     required CallData callData,
     required this.isOutgoing,
     CallSessionState initialState = CallSessionState.idle,
+    ConferenceState initialConferenceState = ConferenceState.empty,
     _CallwaveEngineProvider? engineProvider,
     _CallIdAction? acceptNative,
     _CallIdAction? declineNative,
@@ -33,6 +39,7 @@ class CallSession extends ChangeNotifier {
     _OutgoingStartAction? startOutgoingNative,
   })  : _callData = callData,
         _state = initialState,
+        _conferenceState = _normalizeConferenceState(initialConferenceState),
         _engineProvider = engineProvider ?? _defaultEngineProvider,
         _acceptNative = acceptNative ?? _defaultCallIdAction,
         _declineNative = declineNative ?? _defaultCallIdAction,
@@ -65,7 +72,10 @@ class CallSession extends ChangeNotifier {
   bool _isSpeakerOn = false;
   bool _isCameraOn = true;
   Object? _error;
+  ConferenceState _conferenceState;
   Timer? _timer;
+  final Map<_SessionToggleControl, int> _toggleOperationVersions =
+      <_SessionToggleControl, int>{};
 
   bool _acceptRequested = false;
   bool _declineRequested = false;
@@ -86,6 +96,8 @@ class CallSession extends ChangeNotifier {
   DateTime? get connectedAt => _connectedAt;
   Duration get elapsed => _elapsed;
   Object? get error => _error;
+  ConferenceState get conferenceState => _conferenceState;
+  int get participantCount => _conferenceState.participants.length;
   bool get isEnded =>
       _state == CallSessionState.ended || _state == CallSessionState.failed;
 
@@ -94,6 +106,18 @@ class CallSession extends ChangeNotifier {
       return;
     }
     _callData = next;
+    notifyListeners();
+  }
+
+  void updateConferenceState(ConferenceState next) {
+    if (isEnded) {
+      return;
+    }
+    final normalized = _normalizeConferenceState(next);
+    if (normalized.updatedAtMs < _conferenceState.updatedAtMs) {
+      return;
+    }
+    _conferenceState = normalized;
     notifyListeners();
   }
 
@@ -152,50 +176,85 @@ class CallSession extends ChangeNotifier {
   }
 
   Future<void> toggleMute() async {
-    if (isEnded) {
-      return;
-    }
-    final previous = _isMuted;
-    _isMuted = !_isMuted;
-    notifyListeners();
-    try {
-      await _engineProvider()?.onMuteChanged(this, _isMuted);
-    } catch (error, stackTrace) {
-      _isMuted = previous;
-      notifyListeners();
-      _logError('toggleMute', error, stackTrace);
-    }
+    await _toggleControl(
+      control: _SessionToggleControl.mute,
+      action: 'toggleMute',
+      onChanged: (enabled) async {
+        await _engineProvider()?.onMuteChanged(this, enabled);
+      },
+    );
   }
 
   Future<void> toggleSpeaker() async {
-    if (isEnded) {
-      return;
-    }
-    final previous = _isSpeakerOn;
-    _isSpeakerOn = !_isSpeakerOn;
-    notifyListeners();
-    try {
-      await _engineProvider()?.onSpeakerChanged(this, _isSpeakerOn);
-    } catch (error, stackTrace) {
-      _isSpeakerOn = previous;
-      notifyListeners();
-      _logError('toggleSpeaker', error, stackTrace);
-    }
+    await _toggleControl(
+      control: _SessionToggleControl.speaker,
+      action: 'toggleSpeaker',
+      onChanged: (enabled) async {
+        await _engineProvider()?.onSpeakerChanged(this, enabled);
+      },
+    );
   }
 
   Future<void> toggleCamera() async {
+    await _toggleControl(
+      control: _SessionToggleControl.camera,
+      action: 'toggleCamera',
+      onChanged: (enabled) async {
+        await _engineProvider()?.onCameraChanged(this, enabled);
+      },
+    );
+  }
+
+  Future<void> _toggleControl({
+    required _SessionToggleControl control,
+    required String action,
+    required Future<void> Function(bool enabled) onChanged,
+  }) async {
     if (isEnded) {
       return;
     }
-    final previous = _isCameraOn;
-    _isCameraOn = !_isCameraOn;
+    final previous = _controlValue(control);
+    final next = !previous;
+    _setControlValue(control, next);
     notifyListeners();
+    final operationVersion = (_toggleOperationVersions[control] ?? 0) + 1;
+    _toggleOperationVersions[control] = operationVersion;
     try {
-      await _engineProvider()?.onCameraChanged(this, _isCameraOn);
+      await onChanged(next);
     } catch (error, stackTrace) {
-      _isCameraOn = previous;
-      notifyListeners();
-      _logError('toggleCamera', error, stackTrace);
+      final latestOperation = _toggleOperationVersions[control] ?? 0;
+      final isLatestOperation = latestOperation == operationVersion;
+      final stateUnchangedSinceRequest = _controlValue(control) == next;
+      if (!isEnded && isLatestOperation && stateUnchangedSinceRequest) {
+        _setControlValue(control, previous);
+        notifyListeners();
+      }
+      _logError(action, error, stackTrace);
+    }
+  }
+
+  bool _controlValue(_SessionToggleControl control) {
+    switch (control) {
+      case _SessionToggleControl.mute:
+        return _isMuted;
+      case _SessionToggleControl.speaker:
+        return _isSpeakerOn;
+      case _SessionToggleControl.camera:
+        return _isCameraOn;
+    }
+  }
+
+  void _setControlValue(_SessionToggleControl control, bool value) {
+    switch (control) {
+      case _SessionToggleControl.mute:
+        _isMuted = value;
+        return;
+      case _SessionToggleControl.speaker:
+        _isSpeakerOn = value;
+        return;
+      case _SessionToggleControl.camera:
+        _isCameraOn = value;
+        return;
     }
   }
 
@@ -353,6 +412,46 @@ class CallSession extends ChangeNotifier {
     debugPrintStack(
       label: 'CallSession $action stack trace',
       stackTrace: stackTrace,
+    );
+  }
+
+  static ConferenceState _normalizeConferenceState(ConferenceState state) {
+    final deduped = LinkedHashMap<String, CallParticipant>();
+    for (final participant in state.participants) {
+      final id = participant.participantId.trim();
+      if (id.isEmpty) {
+        continue;
+      }
+      deduped.remove(id);
+      deduped[id] = participant;
+    }
+
+    final participants = deduped.values.toList(growable: false)
+      ..sort((a, b) {
+        final orderA = a.sortOrder ?? 1 << 30;
+        final orderB = b.sortOrder ?? 1 << 30;
+        if (orderA != orderB) {
+          return orderA.compareTo(orderB);
+        }
+        return a.displayName
+            .toLowerCase()
+            .compareTo(b.displayName.toLowerCase());
+      });
+
+    final participantIds = participants.map((p) => p.participantId).toSet();
+    final pinnedParticipantId =
+        participantIds.contains(state.pinnedParticipantId)
+            ? state.pinnedParticipantId
+            : null;
+    final activeSpeakerId = participantIds.contains(state.activeSpeakerId)
+        ? state.activeSpeakerId
+        : null;
+
+    return ConferenceState(
+      participants: participants,
+      activeSpeakerId: activeSpeakerId,
+      pinnedParticipantId: pinnedParticipantId,
+      updatedAtMs: state.updatedAtMs,
     );
   }
 
