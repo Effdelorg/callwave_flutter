@@ -31,6 +31,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - One-to-one call UI remains unchanged and is still used for
   `participantCount <= 1`
 
+## [0.1.1] - 2026-03-05
+
+### Changed
+
+- Extended pubspec description for pub.dev
+- Example app moved to `packages/callwave_flutter/example` for pub.dev recognition
+- Example imports refactored to relative paths for IDE compatibility
+- Listener function declaration in `callwave_flutter_impl.dart` clarified
+- Deduplication logic in `call_session.dart` simplified with map literal
+- Action button size made constant in `call_action_button.dart`
+- Conference state instantiation in tests updated to use const constructor
+- README enhanced with "Why callwave_flutter?" and platform status details
+
 ## [0.1.0] - 2025-03-04
 
 ### Added
