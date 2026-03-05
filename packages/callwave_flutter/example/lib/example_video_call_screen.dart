@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:callwave_flutter/callwave_flutter.dart';
 import 'package:flutter/material.dart';
@@ -26,10 +27,12 @@ class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
   bool _sessionBindingReady = false;
   int _bindOperationVersion = 0;
   late bool _lastCameraOn = widget.session.isCameraOn;
+  late CallScreenController _callScreenController;
 
   @override
   void initState() {
     super.initState();
+    _callScreenController = CallScreenController(session: widget.session);
     widget.session.addListener(_onSessionChanged);
     widget.cameraController.addListener(_onCameraControllerChanged);
     unawaited(_bindSession());
@@ -41,6 +44,10 @@ class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
     if (oldWidget.session == widget.session &&
         oldWidget.cameraController == widget.cameraController) {
       return;
+    }
+    if (oldWidget.session != widget.session) {
+      _callScreenController.dispose();
+      _callScreenController = CallScreenController(session: widget.session);
     }
     oldWidget.session.removeListener(_onSessionChanged);
     oldWidget.cameraController.removeListener(_onCameraControllerChanged);
@@ -147,6 +154,7 @@ class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
   void dispose() {
     final session = widget.session;
     _bindOperationVersion += 1;
+    _callScreenController.dispose();
     session.removeListener(_onSessionChanged);
     widget.cameraController.removeListener(_onCameraControllerChanged);
     unawaited(widget.cameraController.detachSession(session.callId));
@@ -201,6 +209,8 @@ class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
   Widget _buildOneToOneVideoCall() {
     final session = widget.session;
     final theme = Theme.of(context);
+    final isIncoming = session.state == CallSessionState.idle ||
+        session.state == CallSessionState.ringing;
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
@@ -234,6 +244,16 @@ class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
               ),
             ),
           ),
+          if (isIncoming)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: _IncomingPulseAvatar(
+                    callerName: session.callData.callerName,
+                  ),
+                ),
+              ),
+            ),
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
@@ -268,9 +288,7 @@ class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
                             ExampleCameraState.errorPermissionDenied,
                       ),
                     ),
-                  _CallControls(
-                    session: session,
-                  ),
+                  CallActionsRow(controller: _callScreenController),
                 ],
               ),
             ),
@@ -322,15 +340,7 @@ class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
   }
 
   Widget _buildFallbackSurface({required String callerName}) {
-    final trimmed = callerName.trim();
-    final initials = trimmed.isEmpty
-        ? '?'
-        : trimmed
-            .split(RegExp(r'\s+'))
-            .where((part) => part.isNotEmpty)
-            .take(2)
-            .map((part) => part[0].toUpperCase())
-            .join();
+    final initials = getInitials(callerName);
     return DecoratedBox(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -404,129 +414,97 @@ class _CallHeader extends StatelessWidget {
   }
 }
 
-class _CallControls extends StatelessWidget {
-  const _CallControls({
-    required this.session,
+class _IncomingPulseAvatar extends StatefulWidget {
+  const _IncomingPulseAvatar({
+    required this.callerName,
   });
 
-  final CallSession session;
+  final String callerName;
 
-  bool get _showIncomingControls {
-    return session.state == CallSessionState.idle ||
-        session.state == CallSessionState.ringing;
+  @override
+  State<_IncomingPulseAvatar> createState() => _IncomingPulseAvatarState();
+}
+
+class _IncomingPulseAvatarState extends State<_IncomingPulseAvatar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1500),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_showIncomingControls) {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _RoundActionButton(
-            icon: Icons.call_end,
-            label: 'Decline',
-            backgroundColor: const Color(0xFFB71C1C),
-            onPressed: () {
-              unawaited(session.decline());
-            },
+    const avatarRadius = 56.0;
+    return SizedBox(
+      width: avatarRadius * 3.6,
+      height: avatarRadius * 3.6,
+      child: AnimatedBuilder(
+        animation: _pulseController,
+        builder: (context, child) {
+          return CustomPaint(
+            painter: _PulseRingPainter(
+              progress: _pulseController.value,
+              color: const Color(0x4D26A69A),
+              avatarRadius: avatarRadius,
+            ),
+            child: child,
+          );
+        },
+        child: Center(
+          child: CircleAvatar(
+            radius: avatarRadius,
+            backgroundColor: const Color(0xFF1A6B6B),
+            child: Text(
+              getInitials(widget.callerName),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 36,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
-          _RoundActionButton(
-            icon: Icons.call,
-            label: 'Accept',
-            backgroundColor: const Color(0xFF2E7D32),
-            onPressed: () {
-              unawaited(session.accept());
-            },
-          ),
-        ],
-      );
-    }
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        _RoundActionButton(
-          icon: session.isMuted ? Icons.mic_off : Icons.mic,
-          label: session.isMuted ? 'Unmute' : 'Mute',
-          backgroundColor: session.isMuted
-              ? const Color(0x331B5E20)
-              : const Color(0x33FFFFFF),
-          onPressed: () {
-            unawaited(session.toggleMute());
-          },
         ),
-        _RoundActionButton(
-          icon:
-              session.isSpeakerOn ? Icons.volume_up : Icons.volume_up_outlined,
-          label: 'Speaker',
-          backgroundColor: session.isSpeakerOn
-              ? const Color(0x331565C0)
-              : const Color(0x33FFFFFF),
-          onPressed: () {
-            unawaited(session.toggleSpeaker());
-          },
-        ),
-        _RoundActionButton(
-          icon: Icons.call_end,
-          label: 'End',
-          backgroundColor: const Color(0xFFB71C1C),
-          onPressed: () {
-            unawaited(session.end());
-          },
-        ),
-        _RoundActionButton(
-          icon: session.isCameraOn ? Icons.videocam : Icons.videocam_off,
-          label: 'Cam',
-          backgroundColor: session.isCameraOn
-              ? const Color(0x331E88E5)
-              : const Color(0x33FFFFFF),
-          onPressed: () {
-            unawaited(session.toggleCamera());
-          },
-        ),
-      ],
+      ),
     );
   }
 }
 
-class _RoundActionButton extends StatelessWidget {
-  const _RoundActionButton({
-    required this.icon,
-    required this.label,
-    required this.backgroundColor,
-    required this.onPressed,
+class _PulseRingPainter extends CustomPainter {
+  _PulseRingPainter({
+    required this.progress,
+    required this.color,
+    required this.avatarRadius,
   });
 
-  final IconData icon;
-  final String label;
-  final Color backgroundColor;
-  final VoidCallback onPressed;
+  final double progress;
+  final Color color;
+  final double avatarRadius;
 
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        InkResponse(
-          onTap: onPressed,
-          radius: 34,
-          child: CircleAvatar(
-            radius: 28,
-            backgroundColor: backgroundColor,
-            child: Icon(icon, color: Colors.white),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    );
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final maxRadius = math.min(size.width, size.height) / 2;
+    for (int i = 0; i < 3; i++) {
+      final phase = (progress + i / 3) % 1.0;
+      final radius = avatarRadius + (maxRadius - avatarRadius) * phase;
+      final opacity = (1.0 - phase).clamp(0.0, 1.0);
+      final paint = Paint()
+        ..color = color.withValues(alpha: opacity * 0.6)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0;
+      canvas.drawCircle(center, radius, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_PulseRingPainter oldDelegate) {
+    return oldDelegate.progress != progress || oldDelegate.color != color;
   }
 }
 
@@ -661,8 +639,7 @@ class _ConferenceFallbackTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final trimmed = label.trim();
-    final initial = trimmed.isEmpty ? '?' : trimmed.substring(0, 1);
+    final initial = getInitials(label);
     return DecoratedBox(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -676,7 +653,7 @@ class _ConferenceFallbackTile extends StatelessWidget {
           radius: 24,
           backgroundColor: const Color(0x3326A69A),
           child: Text(
-            initial.toUpperCase(),
+            initial,
             style: const TextStyle(
               color: Colors.white,
               fontSize: 18,

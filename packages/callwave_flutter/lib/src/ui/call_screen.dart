@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../engine/call_session.dart';
+import '../models/call_data.dart';
 import 'call_screen_builders.dart';
 import 'call_screen_controller.dart';
 import 'theme/callwave_theme.dart';
@@ -133,36 +134,111 @@ class _CallScreenState extends State<CallScreen>
                         ),
                       ))
                 : SafeArea(
-                    child: Column(
-                      children: [
-                        const Spacer(flex: 2),
-                        CallerAvatar(
-                          callerName: displayData.callerName,
-                          avatarUrl: displayData.avatarUrl,
-                          status: _controller.status,
-                        ),
-                        const SizedBox(height: 32),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 32),
-                          child: CallerInfo(
-                            callerName: displayData.callerName,
-                            handle: displayData.handle,
-                            status: _controller.status,
-                            elapsed: _controller.elapsed,
-                          ),
-                        ),
-                        const Spacer(flex: 3),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 24),
-                          child: CallActionsRow(controller: _controller),
-                        ),
-                        const SizedBox(height: 48),
-                      ],
-                    ),
+                    child: _controller.isVideo
+                        ? _buildOneToOneVideoView(displayData)
+                        : _buildOneToOneAudioView(displayData),
                   ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildOneToOneAudioView(CallData displayData) {
+    return Column(
+      children: [
+        const Spacer(flex: 2),
+        CallerAvatar(
+          callerName: displayData.callerName,
+          avatarUrl: displayData.avatarUrl,
+          status: _controller.status,
+        ),
+        const SizedBox(height: 32),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: CallerInfo(
+            callerName: displayData.callerName,
+            handle: displayData.handle,
+            status: _controller.status,
+            elapsed: _controller.elapsed,
+          ),
+        ),
+        const Spacer(flex: 3),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: CallActionsRow(controller: _controller),
+        ),
+        const SizedBox(height: 48),
+      ],
+    );
+  }
+
+  Widget _buildOneToOneVideoView(CallData displayData) {
+    return Stack(
+      key: const ValueKey<String>('one-to-one-video-view'),
+      children: [
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: 0.92),
+                  Colors.black.withValues(alpha: 0.8),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Positioned.fill(
+          child: Center(
+            child: CallerAvatar(
+              callerName: displayData.callerName,
+              avatarUrl: displayData.avatarUrl,
+              status: _controller.status,
+            ),
+          ),
+        ),
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: 0.62),
+                  Colors.transparent,
+                  Colors.black.withValues(alpha: 0.58),
+                ],
+                stops: const [0.0, 0.42, 1.0],
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: CallerInfo(
+                  callerName: displayData.callerName,
+                  handle: displayData.handle,
+                  status: _controller.status,
+                  elapsed: _controller.elapsed,
+                ),
+              ),
+              const Spacer(),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: CallActionsRow(controller: _controller),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

@@ -1,5 +1,4 @@
 import 'package:callwave_flutter/callwave_flutter.dart';
-import 'package:callwave_flutter/src/ui/call_screen_controller.dart';
 import 'package:callwave_flutter/src/ui/theme/call_screen_theme.dart';
 import 'package:callwave_flutter/src/ui/widgets/call_action_button.dart';
 import 'package:flutter/material.dart';
@@ -168,6 +167,32 @@ void main() {
 
     expect(declineDecoration.color, CallScreenTheme.endCallColor);
     expect(acceptDecoration.color, CallScreenTheme.acceptCallColor);
+  });
+
+  testWidgets('one-to-one video mode renders built-in video surface', (
+    tester,
+  ) async {
+    final session = _buildSession(callType: CallType.video);
+    addTearDown(session.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CallScreen(session: session),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey<String>('one-to-one-video-view')),
+      findsOneWidget,
+    );
+    expect(_actionButtonFinder('Accept'), findsOneWidget);
+
+    session.reportConnected();
+    await tester.pump();
+    expect(_actionButtonFinder('Camera On'), findsOneWidget);
+
+    session.dispose();
   });
 
   testWidgets('audio conference mode renders controls without camera', (

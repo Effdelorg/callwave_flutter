@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../engine/call_session.dart';
+import '../../utils/initials.dart';
 import '../../enums/call_type.dart';
 import '../../models/call_participant.dart';
 import '../call_screen_builders.dart';
@@ -372,15 +373,7 @@ class _FallbackParticipantSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final trimmedName = participant.displayName.trim();
-    final initials = trimmedName.isEmpty
-        ? '?'
-        : trimmedName
-            .split(RegExp(r'\s+'))
-            .where((part) => part.isNotEmpty)
-            .map((part) => part[0])
-            .take(2)
-            .join();
+    final initials = getInitials(participant.displayName);
     return DecoratedBox(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -397,7 +390,7 @@ class _FallbackParticipantSurface extends StatelessWidget {
           radius: isPrimary ? 44 : 28,
           backgroundColor: const Color(0x3326A69A),
           child: Text(
-            initials.toUpperCase(),
+            initials,
             style: TextStyle(
               fontSize: isPrimary ? 26 : 18,
               fontWeight: FontWeight.w700,

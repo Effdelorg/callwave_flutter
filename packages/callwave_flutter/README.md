@@ -6,11 +6,11 @@ Public Flutter API for Callwave VoIP call UX.
 
 | Incoming call | Native plugin |
 |:---:|:---:|
-| ![Incoming call](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/incoming_call.png) | ![Native plugin](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/native_plugin.png) |
+| ![Incoming call](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/Incoming_call_ui.png) | ![Native plugin](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/Incoming_call_native_plugin_UI.png) |
 
-| Ongoing call UI | Video conference |
+| Missed call | Video conference |
 |:---:|:---:|
-| ![Ongoing call UI](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/ongoing_call_ui.png) | ![Video conference](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/video_conference.png) |
+| ![Missed call](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/Missed_call_ui.png) | ![Video conference](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/Video_conference_call_ui.png) |
 
 ## Why callwave_flutter?
 
@@ -137,7 +137,7 @@ Sessions come from `CallwaveFlutter.sessions` or `CallwaveFlutter.getSession`.
 - Uses a plain bottom control row in `SafeArea` (no rounded dock container).
 - Default video conference controls: `Mic`, `Speaker`, `Cam`, `End`.
 - Default audio conference controls: `Mic`, `Speaker`, `End`.
-- One-to-one UI remains unchanged for `participantCount <= 1`.
+- One-to-one audio keeps the classic avatar layout; one-to-one video uses a built-in video-style surface with overlay controls.
 
 ### Conference State API
 

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../utils/initials.dart';
 import '../call_screen_controller.dart';
 import '../theme/call_screen_theme.dart';
 
@@ -117,14 +118,7 @@ class _CallerAvatarState extends State<CallerAvatar>
     );
   }
 
-  String _initials() {
-    final trimmedName = widget.callerName.trim();
-    if (trimmedName.isEmpty) return '?';
-
-    final parts = trimmedName.split(RegExp(r'\s+'));
-    if (parts.length == 1) return parts.first[0].toUpperCase();
-    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
-  }
+  String _initials() => getInitials(widget.callerName);
 }
 
 class _PulseRingPainter extends CustomPainter {
