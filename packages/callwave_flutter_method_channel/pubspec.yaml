@@ -1,7 +1,7 @@
 name: callwave_flutter_method_channel
 description: MethodChannel implementation for callwave_flutter.
 version: 0.1.0
-homepage: https://github.com/callwave/callwave_flutter
+homepage: https://github.com/Effdelorg/callwave_flutter
 license: MIT
 resolution: workspace
 
