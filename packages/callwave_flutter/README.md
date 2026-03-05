@@ -12,6 +12,10 @@ Public Flutter API for Callwave VoIP call UX.
 |:---:|:---:|
 | ![Missed call](screenshots/Missed_call_ui.png) | ![Video conference](screenshots/Video_conference_call_ui.png) |
 
+| 1-to-1 audio | 1-to-1 video |
+|:---:|:---:|
+| ![1-to-1 audio](screenshots/1to1_ui.png) | ![1-to-1 video](screenshots/1to1_video.png) |
+
 ## Why callwave_flutter?
 
 **Plug-and-play call UI for WebRTC video and audio calls.** Add WhatsApp-style incoming/outgoing call screens to your Flutter app in minutes—no reinventing the wheel.
