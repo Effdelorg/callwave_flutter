@@ -84,6 +84,9 @@ class _NoopCameraHandle extends ExampleCameraHandle {
   bool get isPreviewReady => false;
 
   @override
+  double? get previewAspectRatio => null;
+
+  @override
   String? get errorMessage => null;
 
   @override

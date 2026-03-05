@@ -199,6 +199,18 @@ void main() {
       findsOneWidget,
     );
     expect(
+      find.byKey(const ValueKey<String>('conference-left-column')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('conference-right-rail')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('conference-right-rail-list')),
+      findsOneWidget,
+    );
+    expect(
       find.byKey(const ValueKey<String>('conference-controls-dock')),
       findsNothing,
     );
@@ -243,6 +255,50 @@ void main() {
     expect(speakerButton, findsOneWidget);
     expect(camButton, findsOneWidget);
     expect(endButton, findsOneWidget);
+  });
+
+  testWidgets('conference layout keeps local panel in left column', (
+    tester,
+  ) async {
+    final session = _buildSession(callType: CallType.video);
+    addTearDown(session.dispose);
+    session.updateConferenceState(
+      const ConferenceState(
+        updatedAtMs: 1,
+        activeSpeakerId: 'p-1',
+        participants: [
+          CallParticipant(participantId: 'p-1', displayName: 'Ava'),
+          CallParticipant(participantId: 'p-2', displayName: 'Milo'),
+          CallParticipant(
+            participantId: 'local',
+            displayName: 'You',
+            isLocal: true,
+          ),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CallScreen(session: session),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey<String>('conference-primary-panel')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('conference-local-panel')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('conference-right-rail-list')),
+      findsOneWidget,
+    );
+    expect(find.text('Current Speaker'), findsOneWidget);
+    expect(find.text('Current Speaker - Ava'), findsNothing);
   });
 }
 

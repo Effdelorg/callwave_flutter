@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Conference layout: primary and local panels now in left column; rail on right.
+  Primary panel title simplified to "Current Speaker"
 - Conference mode uses the current Callwave style and keeps controls as a plain
   bottom row with no rounded dock container
 - Default conference controls are now call-type aware:

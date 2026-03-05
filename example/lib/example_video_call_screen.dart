@@ -24,6 +24,7 @@ class ExampleVideoCallScreen extends StatefulWidget {
 class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
   bool _dismissed = false;
   bool _sessionBindingReady = false;
+  int _bindOperationVersion = 0;
   late bool _lastCameraOn = widget.session.isCameraOn;
 
   @override
@@ -45,6 +46,9 @@ class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
     oldWidget.cameraController.removeListener(_onCameraControllerChanged);
     widget.session.addListener(_onSessionChanged);
     widget.cameraController.addListener(_onCameraControllerChanged);
+    _bindOperationVersion += 1;
+    unawaited(
+        oldWidget.cameraController.detachSession(oldWidget.session.callId));
     _lastCameraOn = widget.session.isCameraOn;
     _sessionBindingReady = false;
     unawaited(_bindSession());
@@ -52,19 +56,51 @@ class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
 
   Future<void> _bindSession() async {
     final session = widget.session;
-    await widget.cameraController.attachSession(session.callId);
+    final cameraController = widget.cameraController;
+    final callId = session.callId;
+    final operationVersion = ++_bindOperationVersion;
+    await cameraController.attachSession(callId);
+    if (!_isCurrentBind(
+      operationVersion: operationVersion,
+      session: session,
+      cameraController: cameraController,
+    )) {
+      unawaited(cameraController.detachSession(callId));
+      return;
+    }
 
     if (session.isCameraOn) {
       await session.toggleCamera();
+      if (!_isCurrentBind(
+        operationVersion: operationVersion,
+        session: session,
+        cameraController: cameraController,
+      )) {
+        return;
+      }
     }
     _lastCameraOn = session.isCameraOn;
-    await widget.cameraController
-        .setCameraEnabled(session.callId, _lastCameraOn);
-    if (mounted) {
+    await cameraController.setCameraEnabled(callId, _lastCameraOn);
+    if (_isCurrentBind(
+      operationVersion: operationVersion,
+      session: session,
+      cameraController: cameraController,
+    )) {
       setState(() {
         _sessionBindingReady = true;
       });
     }
+  }
+
+  bool _isCurrentBind({
+    required int operationVersion,
+    required CallSession session,
+    required ExampleCameraHandle cameraController,
+  }) {
+    return mounted &&
+        operationVersion == _bindOperationVersion &&
+        identical(session, widget.session) &&
+        identical(cameraController, widget.cameraController);
   }
 
   void _onSessionChanged() {
@@ -110,6 +146,7 @@ class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
   @override
   void dispose() {
     final session = widget.session;
+    _bindOperationVersion += 1;
     session.removeListener(_onSessionChanged);
     widget.cameraController.removeListener(_onCameraControllerChanged);
     unawaited(widget.cameraController.detachSession(session.callId));
@@ -146,8 +183,9 @@ class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
           participant: participant,
           isPrimary: isPrimary,
           shouldShowPreview: _shouldShowPreview,
+          previewAspectRatio: widget.cameraController.previewAspectRatio,
           cameraController: widget.cameraController,
-          showPermissionCard: isPrimary && _shouldShowPermissionCard,
+          showPermissionCard: participant.isLocal && _shouldShowPermissionCard,
           permissionMessage: _permissionMessage,
           onRetryPermission: () {
             unawaited(widget.cameraController.retryPermission(session.callId));
@@ -169,8 +207,12 @@ class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
         children: [
           Positioned.fill(
             child: _shouldShowPreview
-                ? widget.cameraController.buildPreview(
-                    key: const ValueKey<String>('video-preview-one-to-one'),
+                ? _CoverFittedMedia(
+                    key: const ValueKey<String>('video-preview-fit-one-to-one'),
+                    aspectRatio: widget.cameraController.previewAspectRatio,
+                    child: widget.cameraController.buildPreview(
+                      key: const ValueKey<String>('video-preview-one-to-one'),
+                    ),
                   )
                 : _buildFallbackSurface(
                     callerName: session.callData.callerName,
@@ -550,6 +592,7 @@ class _ExampleConferenceParticipantTile extends StatelessWidget {
     required this.participant,
     required this.isPrimary,
     required this.shouldShowPreview,
+    required this.previewAspectRatio,
     required this.cameraController,
     required this.showPermissionCard,
     required this.permissionMessage,
@@ -560,6 +603,7 @@ class _ExampleConferenceParticipantTile extends StatelessWidget {
   final CallParticipant participant;
   final bool isPrimary;
   final bool shouldShowPreview;
+  final double? previewAspectRatio;
   final ExampleCameraHandle cameraController;
   final bool showPermissionCard;
   final String permissionMessage;
@@ -568,10 +612,17 @@ class _ExampleConferenceParticipantTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final content = shouldShowPreview
-        ? cameraController.buildPreview(
+    final shouldShowLocalPreview = shouldShowPreview && participant.isLocal;
+    final content = shouldShowLocalPreview
+        ? _CoverFittedMedia(
             key: ValueKey<String>(
-              'video-preview-conference-${participant.participantId}',
+              'video-preview-fit-conference-${participant.participantId}',
+            ),
+            aspectRatio: previewAspectRatio,
+            child: cameraController.buildPreview(
+              key: ValueKey<String>(
+                'video-preview-conference-${participant.participantId}',
+              ),
             ),
           )
         : _ConferenceFallbackTile(
@@ -635,5 +686,65 @@ class _ConferenceFallbackTile extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _CoverFittedMedia extends StatelessWidget {
+  const _CoverFittedMedia({
+    required this.child,
+    this.aspectRatio,
+    super.key,
+  });
+
+  final Widget child;
+  final double? aspectRatio;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final height = constraints.maxHeight;
+        if (!width.isFinite || !height.isFinite || width <= 0 || height <= 0) {
+          return child;
+        }
+        final resolvedAspectRatio = _resolveAspectRatio(width, height);
+        final frame = _containFrame(
+          boxWidth: width,
+          boxHeight: height,
+          aspectRatio: resolvedAspectRatio,
+        );
+        return ColoredBox(
+          color: Colors.black,
+          child: Center(
+            child: SizedBox(
+              width: frame.width,
+              height: frame.height,
+              child: child,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  double _resolveAspectRatio(double width, double height) {
+    final ratio = aspectRatio;
+    if (ratio != null && ratio.isFinite && ratio > 0) {
+      return ratio;
+    }
+    return width / height;
+  }
+
+  Size _containFrame({
+    required double boxWidth,
+    required double boxHeight,
+    required double aspectRatio,
+  }) {
+    final boxRatio = boxWidth / boxHeight;
+    if (boxRatio < aspectRatio) {
+      return Size(boxWidth, boxWidth / aspectRatio);
+    }
+    return Size(boxHeight * aspectRatio, boxHeight);
   }
 }
