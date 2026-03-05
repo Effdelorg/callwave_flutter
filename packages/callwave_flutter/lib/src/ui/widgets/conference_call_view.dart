@@ -40,6 +40,8 @@ class ConferenceCallView extends StatelessWidget {
               participant.participantId != local?.participantId,
         )
         .toList(growable: false);
+    final showLocalPanel =
+        local != null && local.participantId != primary.participantId;
 
     return Column(
       key: const ValueKey<String>('conference-view'),
@@ -47,48 +49,51 @@ class ConferenceCallView extends StatelessWidget {
         Expanded(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-            child: Column(
+            child: Row(
               children: [
                 Expanded(
-                  child: Row(
+                  child: Column(
+                    key: const ValueKey<String>('conference-left-column'),
                     children: [
                       Expanded(
                         child: _ParticipantPanel(
+                          key: const ValueKey<String>(
+                            'conference-primary-panel',
+                          ),
                           session: session,
                           participant: primary,
                           index: 0,
                           isPrimary: true,
-                          title: 'Current Speaker - ${primary.displayName}',
+                          title: 'Current Speaker',
                           participantTileBuilder: participantTileBuilder,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      SizedBox(
-                        width: 128,
-                        child: _ParticipantRail(
-                          session: session,
-                          participants: railParticipants,
-                          participantTileBuilder: participantTileBuilder,
+                      if (showLocalPanel) const SizedBox(height: 12),
+                      if (showLocalPanel)
+                        Expanded(
+                          child: _ParticipantPanel(
+                            key: const ValueKey<String>(
+                                'conference-local-panel'),
+                            session: session,
+                            participant: local,
+                            index: 0,
+                            isPrimary: false,
+                            participantTileBuilder: participantTileBuilder,
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                if (local != null &&
-                    local.participantId != primary.participantId)
-                  SizedBox(
-                    height: 190,
-                    width: double.infinity,
-                    child: _ParticipantPanel(
-                      session: session,
-                      participant: local,
-                      index: 0,
-                      isPrimary: false,
-                      title: 'You',
-                      participantTileBuilder: participantTileBuilder,
-                    ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  key: const ValueKey<String>('conference-right-rail'),
+                  width: 128,
+                  child: _ParticipantRail(
+                    session: session,
+                    participants: railParticipants,
+                    participantTileBuilder: participantTileBuilder,
                   ),
+                ),
               ],
             ),
           ),
@@ -220,6 +225,7 @@ class _ParticipantRail extends StatelessWidget {
     }
 
     return ListView.separated(
+      key: const ValueKey<String>('conference-right-rail-list'),
       itemCount: participants.length,
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
@@ -247,6 +253,7 @@ class _ParticipantPanel extends StatelessWidget {
     required this.isPrimary,
     required this.participantTileBuilder,
     this.title,
+    super.key,
   });
 
   final CallSession session;

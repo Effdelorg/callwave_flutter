@@ -100,8 +100,10 @@ void main() {
     await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
   });
 
-  testWidgets('conference video mirrors local preview across all tiles',
+  testWidgets('conference video renders preview only for local tile',
       (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(CallwaveExampleApp(cameraController: fakeCamera));
     await tester.pump();
 
@@ -124,20 +126,46 @@ void main() {
 
     expect(
       find.byKey(const ValueKey<String>('video-preview-conference-speaker-1')),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
       find.byKey(const ValueKey<String>('video-preview-conference-speaker-2')),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
       find.byKey(const ValueKey<String>('video-preview-conference-speaker-3')),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
       find.byKey(const ValueKey<String>('video-preview-conference-local-you')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(
+        const ValueKey<String>('video-preview-fit-conference-local-you'),
+      ),
+      findsOneWidget,
+    );
+    final conferenceFitFinder = find.byKey(
+      const ValueKey<String>('video-preview-fit-conference-local-you'),
+    );
+    final conferencePreviewFinder = find.byKey(
+      const ValueKey<String>('video-preview-conference-local-you'),
+    );
+    final fitSize = tester.getSize(conferenceFitFinder);
+    final previewSize = tester.getSize(conferencePreviewFinder);
+    expect(previewSize.width, lessThanOrEqualTo(fitSize.width));
+    expect(previewSize.height, lessThanOrEqualTo(fitSize.height));
+    expect(
+      previewSize.width / previewSize.height,
+      closeTo(16 / 9, 0.01),
+    );
+    final isWidthBound = (fitSize.width - previewSize.width).abs() < 0.5;
+    final isHeightBound = (fitSize.height - previewSize.height).abs() < 0.5;
+    expect(isWidthBound || isHeightBound, isTrue);
+    expect(find.text('Ava'), findsOneWidget);
+    expect(find.text('Milo'), findsOneWidget);
+    expect(find.text('Nora'), findsOneWidget);
     for (final session in CallwaveFlutter.instance.activeSessions) {
       session.reportEnded();
     }
@@ -174,6 +202,65 @@ void main() {
     }
     await tester.pump(const Duration(seconds: 4));
     await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+  });
+
+  testWidgets('one-to-one video uses fitted preview wrapper without stretch',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final session = CallSession(
+      callData: const CallData(
+        callId: 'one-to-one-video',
+        callerName: 'Ava',
+        handle: '+1 555 0101',
+        callType: CallType.video,
+      ),
+      isOutgoing: false,
+      initialState: CallSessionState.connected,
+    );
+    addTearDown(session.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ExampleVideoCallScreen(
+          session: session,
+          cameraController: fakeCamera,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle(const Duration(milliseconds: 200));
+
+    await tester.tap(find.byIcon(Icons.videocam_off).first);
+    await tester.pump();
+    if (fakeCamera.lastEnabled != true) {
+      await tester.tap(find.byIcon(Icons.videocam_off).first);
+    }
+    await tester.pumpAndSettle(const Duration(milliseconds: 200));
+
+    expect(
+      find.byKey(const ValueKey<String>('video-preview-one-to-one')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-preview-fit-one-to-one')),
+      findsOneWidget,
+    );
+    final fitFinder =
+        find.byKey(const ValueKey<String>('video-preview-fit-one-to-one'));
+    final previewFinder =
+        find.byKey(const ValueKey<String>('video-preview-one-to-one'));
+    final fitSize = tester.getSize(fitFinder);
+    final previewSize = tester.getSize(previewFinder);
+    expect(previewSize.width, closeTo(400, 0.5));
+    expect(previewSize.height, closeTo(225, 0.5));
+    expect(previewSize.height, lessThan(fitSize.height));
+    expect(previewSize.width / previewSize.height, closeTo(16 / 9, 0.01));
+    expect(find.text('Cam'), findsOneWidget);
+    expect(find.text('End'), findsOneWidget);
+
+    session.reportEnded();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 4));
   });
 
   testWidgets('video session detaches camera handle after call ends',
@@ -541,6 +628,9 @@ class _FakeCameraHandle extends ExampleCameraHandle {
 
   @override
   bool get isPreviewReady => _isPreviewReady;
+
+  @override
+  double? get previewAspectRatio => 16 / 9;
 
   @override
   String? get errorMessage => _errorMessage;
