@@ -41,7 +41,7 @@ class CallActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double size = CallScreenTheme.actionButtonSize;
+    const double size = CallScreenTheme.actionButtonSize;
 
     final Color background = backgroundColor ??
         (isDestructive

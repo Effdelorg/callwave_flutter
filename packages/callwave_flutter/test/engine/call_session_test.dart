@@ -136,10 +136,10 @@ void main() {
     addTearDown(session.dispose);
 
     session.updateConferenceState(
-      ConferenceState(
+      const ConferenceState(
         updatedAtMs: 10,
         activeSpeakerId: 'p-1',
-        participants: const [
+        participants: [
           CallParticipant(
             participantId: 'p-1',
             displayName: 'Ava',

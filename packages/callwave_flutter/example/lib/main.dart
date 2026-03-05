@@ -1,10 +1,11 @@
 import 'dart:async';
 
 import 'package:callwave_flutter/callwave_flutter.dart';
-import 'package:callwave_flutter_example/example_camera_controller.dart';
-import 'package:callwave_flutter_example/example_video_call_screen.dart';
-import 'package:callwave_flutter_example/mock_callwave_engine.dart';
 import 'package:flutter/material.dart';
+
+import 'example_camera_controller.dart';
+import 'example_video_call_screen.dart';
+import 'mock_callwave_engine.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

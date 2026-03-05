@@ -1,5 +1,6 @@
+// ignore_for_file: library_private_types_in_public_api
+
 import 'dart:async';
-import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 
@@ -416,7 +417,7 @@ class CallSession extends ChangeNotifier {
   }
 
   static ConferenceState _normalizeConferenceState(ConferenceState state) {
-    final deduped = LinkedHashMap<String, CallParticipant>();
+    final deduped = <String, CallParticipant>{};
     for (final participant in state.participants) {
       final id = participant.participantId.trim();
       if (id.isEmpty) {

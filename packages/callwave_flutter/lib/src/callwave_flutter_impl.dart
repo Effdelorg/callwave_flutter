@@ -98,7 +98,7 @@ class CallwaveFlutter {
     );
 
     _sessions[callData.callId] = session;
-    final listener = () => _onSessionChanged(callData.callId);
+    void listener() => _onSessionChanged(callData.callId);
     _sessionListeners[callData.callId] = listener;
     session.addListener(listener);
     _sessionController.add(session);
