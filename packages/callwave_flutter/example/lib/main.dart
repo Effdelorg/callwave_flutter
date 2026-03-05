@@ -71,6 +71,7 @@ class _CallwaveExampleAppState extends State<CallwaveExampleApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       navigatorKey: _navigatorKey,
       title: 'Callwave Example',
       theme: ThemeData(
