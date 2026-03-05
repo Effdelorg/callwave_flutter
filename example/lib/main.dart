@@ -232,8 +232,14 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                 ElevatedButton(
                   onPressed: callId.isEmpty
                       ? null
-                      : () => _openConferencePreview(callId),
-                  child: const Text('Conference Preview'),
+                      : () => _openConferencePreview(callId, CallType.audio),
+                  child: const Text('Conference Audio'),
+                ),
+                ElevatedButton(
+                  onPressed: callId.isEmpty
+                      ? null
+                      : () => _openConferencePreview(callId, CallType.video),
+                  child: const Text('Conference Video'),
                 ),
                 ElevatedButton(
                   onPressed:
@@ -328,12 +334,13 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
     required String callerName,
     required String handle,
     required CallType callType,
+    Duration timeout = const Duration(seconds: 30),
   }) {
     return CallData(
       callId: callId,
       callerName: callerName,
       handle: handle,
-      timeout: const Duration(seconds: 30),
+      timeout: timeout,
       callType: callType,
       extra: <String, dynamic>{
         'callerName': callerName,
@@ -351,21 +358,16 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
     await CallwaveFlutter.instance.markMissed(callId);
   }
 
-  void _openConferencePreview(String callIdSeed) {
+  void _openConferencePreview(String callIdSeed, CallType callType) {
     final callId =
         '$callIdSeed-conference-${DateTime.now().millisecondsSinceEpoch}';
     final session = CallwaveFlutter.instance.createSession(
-      callData: CallData(
+      callData: _buildCallData(
         callId: callId,
         callerName: 'Conference',
         handle: 'group room',
+        callType: callType,
         timeout: const Duration(seconds: 45),
-        callType: CallType.video,
-        extra: const <String, dynamic>{
-          'callerName': 'Conference',
-          'handle': 'group room',
-          'callType': 'video',
-        },
       ),
       isOutgoing: true,
       initialState: CallSessionState.connected,
@@ -373,8 +375,13 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
 
     _previewCallId = callId;
     _speakerCursor = 0;
-    session.updateConferenceState(_buildPreviewConferenceState(updatedAtMs: 1));
-    _pushLog('Conference preview started for $callId');
+    session.updateConferenceState(
+      _buildPreviewConferenceState(
+        updatedAtMs: 1,
+        callType: callType,
+      ),
+    );
+    _pushLog('Conference ${callType.name} preview started for $callId');
     setState(() {});
   }
 
@@ -390,37 +397,44 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
     }
     _speakerCursor += 1;
     final updatedAtMs = DateTime.now().millisecondsSinceEpoch;
+    final callType = session.callData.callType;
     session.updateConferenceState(
-      _buildPreviewConferenceState(updatedAtMs: updatedAtMs),
+      _buildPreviewConferenceState(
+        updatedAtMs: updatedAtMs,
+        callType: callType,
+      ),
     );
     _pushLog('Conference speaker changed.');
   }
 
-  ConferenceState _buildPreviewConferenceState({required int updatedAtMs}) {
-    const participants = <CallParticipant>[
+  ConferenceState _buildPreviewConferenceState({
+    required int updatedAtMs,
+    required CallType callType,
+  }) {
+    final participants = <CallParticipant>[
       CallParticipant(
         participantId: 'speaker-1',
         displayName: 'Ava',
-        isVideoOn: true,
+        isVideoOn: callType == CallType.video,
         sortOrder: 1,
       ),
       CallParticipant(
         participantId: 'speaker-2',
         displayName: 'Milo',
-        isVideoOn: true,
+        isVideoOn: callType == CallType.video,
         sortOrder: 2,
       ),
       CallParticipant(
         participantId: 'speaker-3',
         displayName: 'Nora',
-        isVideoOn: true,
+        isVideoOn: callType == CallType.video,
         sortOrder: 3,
       ),
       CallParticipant(
         participantId: 'local-you',
         displayName: 'You',
         isLocal: true,
-        isVideoOn: true,
+        isVideoOn: callType == CallType.video,
         sortOrder: 4,
       ),
     ];

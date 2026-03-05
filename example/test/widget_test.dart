@@ -39,17 +39,44 @@ void main() {
     expect(find.text('Incoming Video'), findsOneWidget);
     expect(find.text('Outgoing Audio'), findsOneWidget);
     expect(find.text('Outgoing Video'), findsOneWidget);
-    expect(find.text('Conference Preview'), findsOneWidget);
+    expect(find.text('Conference Audio'), findsOneWidget);
+    expect(find.text('Conference Video'), findsOneWidget);
     expect(find.text('Cycle Speaker'), findsOneWidget);
 
     await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
   });
 
-  testWidgets('conference preview opens conference call UI', (tester) async {
+  testWidgets('conference audio preview opens conference call UI',
+      (tester) async {
     await tester.pumpWidget(const CallwaveExampleApp());
     await tester.pump();
 
-    await tester.tap(find.text('Conference Preview'));
+    await tester.tap(find.text('Conference Audio'));
+    await _pumpUntilCallScreen(tester);
+
+    expect(find.byType(CallScreen), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey<String>('conference-view')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('conference-controls-row')),
+        findsOneWidget);
+    expect(find.text('Mic'), findsOneWidget);
+    expect(find.text('Speaker'), findsOneWidget);
+    expect(find.text('Cam'), findsNothing);
+    expect(find.text('End'), findsOneWidget);
+
+    for (final session in CallwaveFlutter.instance.activeSessions) {
+      session.reportEnded();
+    }
+    await tester.pump(const Duration(seconds: 4));
+    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+  });
+
+  testWidgets('conference video preview opens conference call UI',
+      (tester) async {
+    await tester.pumpWidget(const CallwaveExampleApp());
+    await tester.pump();
+
+    await tester.tap(find.text('Conference Video'));
     await _pumpUntilCallScreen(tester);
 
     expect(find.byType(CallScreen), findsOneWidget);

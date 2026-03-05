@@ -184,12 +184,13 @@ class ConferenceControlsRow extends StatelessWidget {
           isActive: controller.isSpeakerOn,
           onPressed: controller.toggleSpeaker,
         ),
-        CallActionButton(
-          icon: controller.isCameraOn ? Icons.videocam : Icons.videocam_off,
-          label: 'Cam',
-          isActive: controller.isCameraOn,
-          onPressed: controller.toggleCamera,
-        ),
+        if (controller.isVideo)
+          CallActionButton(
+            icon: controller.isCameraOn ? Icons.videocam : Icons.videocam_off,
+            label: 'Cam',
+            isActive: controller.isCameraOn,
+            onPressed: controller.toggleCamera,
+          ),
         CallActionButton(
           icon: Icons.call_end,
           label: 'End',

@@ -15,6 +15,8 @@ typedef _CallwaveEngineProvider = CallwaveEngine? Function();
 typedef _CallIdAction = Future<void> Function(String callId);
 typedef _OutgoingStartAction = Future<void> Function(CallData callData);
 
+enum _SessionToggleControl { mute, speaker, camera }
+
 /// Single source of truth for one call's UI state.
 ///
 /// Apps receive [CallSession] from [CallwaveFlutter.sessions] or
@@ -72,6 +74,8 @@ class CallSession extends ChangeNotifier {
   Object? _error;
   ConferenceState _conferenceState;
   Timer? _timer;
+  final Map<_SessionToggleControl, int> _toggleOperationVersions =
+      <_SessionToggleControl, int>{};
 
   bool _acceptRequested = false;
   bool _declineRequested = false;
@@ -172,50 +176,85 @@ class CallSession extends ChangeNotifier {
   }
 
   Future<void> toggleMute() async {
-    if (isEnded) {
-      return;
-    }
-    final previous = _isMuted;
-    _isMuted = !_isMuted;
-    notifyListeners();
-    try {
-      await _engineProvider()?.onMuteChanged(this, _isMuted);
-    } catch (error, stackTrace) {
-      _isMuted = previous;
-      notifyListeners();
-      _logError('toggleMute', error, stackTrace);
-    }
+    await _toggleControl(
+      control: _SessionToggleControl.mute,
+      action: 'toggleMute',
+      onChanged: (enabled) async {
+        await _engineProvider()?.onMuteChanged(this, enabled);
+      },
+    );
   }
 
   Future<void> toggleSpeaker() async {
-    if (isEnded) {
-      return;
-    }
-    final previous = _isSpeakerOn;
-    _isSpeakerOn = !_isSpeakerOn;
-    notifyListeners();
-    try {
-      await _engineProvider()?.onSpeakerChanged(this, _isSpeakerOn);
-    } catch (error, stackTrace) {
-      _isSpeakerOn = previous;
-      notifyListeners();
-      _logError('toggleSpeaker', error, stackTrace);
-    }
+    await _toggleControl(
+      control: _SessionToggleControl.speaker,
+      action: 'toggleSpeaker',
+      onChanged: (enabled) async {
+        await _engineProvider()?.onSpeakerChanged(this, enabled);
+      },
+    );
   }
 
   Future<void> toggleCamera() async {
+    await _toggleControl(
+      control: _SessionToggleControl.camera,
+      action: 'toggleCamera',
+      onChanged: (enabled) async {
+        await _engineProvider()?.onCameraChanged(this, enabled);
+      },
+    );
+  }
+
+  Future<void> _toggleControl({
+    required _SessionToggleControl control,
+    required String action,
+    required Future<void> Function(bool enabled) onChanged,
+  }) async {
     if (isEnded) {
       return;
     }
-    final previous = _isCameraOn;
-    _isCameraOn = !_isCameraOn;
+    final previous = _controlValue(control);
+    final next = !previous;
+    _setControlValue(control, next);
     notifyListeners();
+    final operationVersion = (_toggleOperationVersions[control] ?? 0) + 1;
+    _toggleOperationVersions[control] = operationVersion;
     try {
-      await _engineProvider()?.onCameraChanged(this, _isCameraOn);
+      await onChanged(next);
     } catch (error, stackTrace) {
-      _isCameraOn = previous;
-      notifyListeners();
-      _logError('toggleCamera', error, stackTrace);
+      final latestOperation = _toggleOperationVersions[control] ?? 0;
+      final isLatestOperation = latestOperation == operationVersion;
+      final stateUnchangedSinceRequest = _controlValue(control) == next;
+      if (!isEnded && isLatestOperation && stateUnchangedSinceRequest) {
+        _setControlValue(control, previous);
+        notifyListeners();
+      }
+      _logError(action, error, stackTrace);
+    }
+  }
+
+  bool _controlValue(_SessionToggleControl control) {
+    switch (control) {
+      case _SessionToggleControl.mute:
+        return _isMuted;
+      case _SessionToggleControl.speaker:
+        return _isSpeakerOn;
+      case _SessionToggleControl.camera:
+        return _isCameraOn;
+    }
+  }
+
+  void _setControlValue(_SessionToggleControl control, bool value) {
+    switch (control) {
+      case _SessionToggleControl.mute:
+        _isMuted = value;
+        return;
+      case _SessionToggleControl.speaker:
+        _isSpeakerOn = value;
+        return;
+      case _SessionToggleControl.camera:
+        _isCameraOn = value;
+        return;
     }
   }
 

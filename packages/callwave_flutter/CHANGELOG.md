@@ -22,7 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Conference mode uses the current Callwave style and keeps controls as a plain
-  bottom row (`Mic`, `Speaker`, `Cam`, `End`) with no rounded dock container
+  bottom row with no rounded dock container
+- Default conference controls are now call-type aware:
+  video calls show `Mic`, `Speaker`, `Cam`, `End`;
+  audio calls show `Mic`, `Speaker`, `End`
 - One-to-one call UI remains unchanged and is still used for
   `participantCount <= 1`
 

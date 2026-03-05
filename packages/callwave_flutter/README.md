@@ -115,7 +115,8 @@ Sessions come from `CallwaveFlutter.sessions` or `CallwaveFlutter.getSession`.
 
 - Keeps the current Callwave visual style (same gradient/action-button language).
 - Uses a plain bottom control row in `SafeArea` (no rounded dock container).
-- Default conference controls: `Mic`, `Speaker`, `Cam`, `End`.
+- Default video conference controls: `Mic`, `Speaker`, `Cam`, `End`.
+- Default audio conference controls: `Mic`, `Speaker`, `End`.
 - One-to-one UI remains unchanged for `participantCount <= 1`.
 
 ### Conference State API

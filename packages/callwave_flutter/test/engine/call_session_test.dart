@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:callwave_flutter/callwave_flutter.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -196,12 +198,163 @@ void main() {
 
     expect(session.participantCount, 0);
   });
+
+  test('stale mute failure does not revert latest successful toggle', () async {
+    final firstGate = Completer<void>();
+    final secondGate = Completer<void>();
+    var requestCount = 0;
+
+    final engine = _FakeEngine(
+      onMuteChangedHandler: (_, __) {
+        requestCount += 1;
+        return requestCount == 1
+            ? _completeAfterGate(
+                firstGate,
+                shouldFail: true,
+                errorMessage: 'late mute failure',
+              )
+            : _completeAfterGate(secondGate);
+      },
+    );
+    final session = CallSession(
+      callData: const CallData(
+        callId: 'c-7',
+        callerName: 'Ava',
+        handle: '+1',
+      ),
+      isOutgoing: false,
+      engineProvider: () => engine,
+    );
+    addTearDown(session.dispose);
+
+    final firstToggle = session.toggleMute();
+    expect(session.isMuted, isTrue);
+    final secondToggle = session.toggleMute();
+    expect(session.isMuted, isFalse);
+
+    secondGate.complete();
+    await secondToggle;
+    firstGate.complete();
+    await firstToggle;
+
+    expect(session.isMuted, isFalse);
+    expect(session.state, isNot(CallSessionState.failed));
+  });
+
+  test('stale speaker failure does not revert latest successful toggle',
+      () async {
+    final firstGate = Completer<void>();
+    final secondGate = Completer<void>();
+    var requestCount = 0;
+
+    final engine = _FakeEngine(
+      onSpeakerChangedHandler: (_, __) {
+        requestCount += 1;
+        return requestCount == 1
+            ? _completeAfterGate(
+                firstGate,
+                shouldFail: true,
+                errorMessage: 'late speaker failure',
+              )
+            : _completeAfterGate(secondGate);
+      },
+    );
+    final session = CallSession(
+      callData: const CallData(
+        callId: 'c-8',
+        callerName: 'Ava',
+        handle: '+1',
+      ),
+      isOutgoing: false,
+      engineProvider: () => engine,
+    );
+    addTearDown(session.dispose);
+
+    final firstToggle = session.toggleSpeaker();
+    expect(session.isSpeakerOn, isTrue);
+    final secondToggle = session.toggleSpeaker();
+    expect(session.isSpeakerOn, isFalse);
+
+    secondGate.complete();
+    await secondToggle;
+    firstGate.complete();
+    await firstToggle;
+
+    expect(session.isSpeakerOn, isFalse);
+    expect(session.state, isNot(CallSessionState.failed));
+  });
+
+  test('stale camera failure does not revert latest successful toggle',
+      () async {
+    final firstGate = Completer<void>();
+    final secondGate = Completer<void>();
+    var requestCount = 0;
+
+    final engine = _FakeEngine(
+      onCameraChangedHandler: (_, __) {
+        requestCount += 1;
+        return requestCount == 1
+            ? _completeAfterGate(
+                firstGate,
+                shouldFail: true,
+                errorMessage: 'late camera failure',
+              )
+            : _completeAfterGate(secondGate);
+      },
+    );
+    final session = CallSession(
+      callData: const CallData(
+        callId: 'c-9',
+        callerName: 'Ava',
+        handle: '+1',
+      ),
+      isOutgoing: false,
+      engineProvider: () => engine,
+    );
+    addTearDown(session.dispose);
+
+    expect(session.isCameraOn, isTrue);
+    final firstToggle = session.toggleCamera();
+    expect(session.isCameraOn, isFalse);
+    final secondToggle = session.toggleCamera();
+    expect(session.isCameraOn, isTrue);
+
+    secondGate.complete();
+    await secondToggle;
+    firstGate.complete();
+    await firstToggle;
+
+    expect(session.isCameraOn, isTrue);
+    expect(session.state, isNot(CallSessionState.failed));
+  });
+}
+
+Future<void> _completeAfterGate(
+  Completer<void> gate, {
+  bool shouldFail = false,
+  String errorMessage = 'request failed',
+}) async {
+  await gate.future;
+  if (shouldFail) {
+    throw StateError(errorMessage);
+  }
 }
 
 class _FakeEngine extends CallwaveEngine {
-  _FakeEngine({this.throwOnMute = false});
+  _FakeEngine({
+    this.throwOnMute = false,
+    this.onMuteChangedHandler,
+    this.onSpeakerChangedHandler,
+    this.onCameraChangedHandler,
+  });
 
   final bool throwOnMute;
+  final Future<void> Function(CallSession session, bool muted)?
+      onMuteChangedHandler;
+  final Future<void> Function(CallSession session, bool speakerOn)?
+      onSpeakerChangedHandler;
+  final Future<void> Function(CallSession session, bool enabled)?
+      onCameraChangedHandler;
   int answerCount = 0;
 
   @override
@@ -211,6 +364,10 @@ class _FakeEngine extends CallwaveEngine {
 
   @override
   Future<void> onMuteChanged(CallSession session, bool muted) async {
+    final handler = onMuteChangedHandler;
+    if (handler != null) {
+      return handler(session, muted);
+    }
     if (throwOnMute) {
       throw StateError('mute failed');
     }
@@ -226,10 +383,20 @@ class _FakeEngine extends CallwaveEngine {
   Future<void> onDeclineCall(CallSession session) async {}
 
   @override
-  Future<void> onSpeakerChanged(CallSession session, bool speakerOn) async {}
+  Future<void> onSpeakerChanged(CallSession session, bool speakerOn) async {
+    final handler = onSpeakerChangedHandler;
+    if (handler != null) {
+      return handler(session, speakerOn);
+    }
+  }
 
   @override
-  Future<void> onCameraChanged(CallSession session, bool enabled) async {}
+  Future<void> onCameraChanged(CallSession session, bool enabled) async {
+    final handler = onCameraChangedHandler;
+    if (handler != null) {
+      return handler(session, enabled);
+    }
+  }
 
   @override
   Future<void> onCameraSwitch(CallSession session) async {}
