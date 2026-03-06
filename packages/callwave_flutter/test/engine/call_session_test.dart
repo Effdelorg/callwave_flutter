@@ -103,6 +103,34 @@ void main() {
     expect(session.state, CallSessionState.connected);
   });
 
+  test(
+      'started event does not regress connected outgoing session to connecting',
+      () async {
+    final engine = _FakeEngine();
+    final session = CallSession(
+      callData: const CallData(
+        callId: 'c-3c',
+        callerName: 'Milo',
+        handle: '+1',
+      ),
+      isOutgoing: true,
+      initialState: CallSessionState.connected,
+      engineProvider: () => engine,
+    );
+    addTearDown(session.dispose);
+
+    await session.applyNativeEvent(
+      CallEvent(
+        callId: 'c-3c',
+        type: CallEventType.started,
+        timestamp: DateTime.now(),
+      ),
+    );
+
+    expect(session.state, CallSessionState.connected);
+    expect(engine.startCount, 0);
+  });
+
   test('accept native failure transitions to failed', () async {
     final session = CallSession(
       callData: const CallData(
@@ -356,6 +384,7 @@ class _FakeEngine extends CallwaveEngine {
   final Future<void> Function(CallSession session, bool enabled)?
       onCameraChangedHandler;
   int answerCount = 0;
+  int startCount = 0;
 
   @override
   Future<void> onAnswerCall(CallSession session) async {
@@ -374,7 +403,9 @@ class _FakeEngine extends CallwaveEngine {
   }
 
   @override
-  Future<void> onStartCall(CallSession session) async {}
+  Future<void> onStartCall(CallSession session) async {
+    startCount += 1;
+  }
 
   @override
   Future<void> onEndCall(CallSession session) async {}
