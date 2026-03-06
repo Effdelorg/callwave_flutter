@@ -1,6 +1,20 @@
 # callwave_flutter
 
-Public Flutter API for Callwave VoIP call UX.
+Public Flutter API for Callwave VoIP/video call UX.
+
+## Screenshots
+
+| Incoming call | Native plugin |
+|:---:|:---:|
+| ![Incoming call](screenshots/Incoming_call_ui.png) | ![Native plugin](screenshots/Incoming_call_native_plugin_UI.png) |
+
+| Missed call | Video conference |
+|:---:|:---:|
+| ![Missed call](screenshots/Missed_call_ui.png) | ![Video conference](screenshots/Video_conference_call_ui.png) |
+
+| 1-to-1 audio | 1-to-1 video |
+|:---:|:---:|
+| ![1-to-1 audio](screenshots/1to1_ui.png) | ![1-to-1 video](screenshots/1to1_video.png) |
 
 ## Why callwave_flutter?
 
@@ -127,7 +141,8 @@ Sessions come from `CallwaveFlutter.sessions` or `CallwaveFlutter.getSession`.
 - Uses a plain bottom control row in `SafeArea` (no rounded dock container).
 - Default video conference controls: `Mic`, `Speaker`, `Cam`, `End`.
 - Default audio conference controls: `Mic`, `Speaker`, `End`.
-- One-to-one UI remains unchanged for `participantCount <= 1`.
+- One-to-one audio keeps the classic avatar layout; connected one-to-one video
+  uses square split/PiP surfaces with conference-style controls.
 
 ### Conference State API
 
@@ -177,6 +192,46 @@ CallwaveScope(
 
 You can also replace the entire conference surface with
 `conferenceScreenBuilder`.
+
+### One-to-One Split-to-PiP Builders
+
+For one-to-one connected video, you can inject remote/local RTC widgets:
+
+```dart
+CallwaveScope(
+  navigatorKey: navKey,
+  oneToOneRemoteVideoBuilder: (context, session) {
+    return rtcRemoteView(session.callId);
+  },
+  oneToOneLocalVideoBuilder: (context, session) {
+    return rtcLocalView(session.callId);
+  },
+  child: child!,
+)
+```
+
+Behavior:
+
+- Connected one-to-one starts in a centered `50/50` split with square tiles
+  (remote top, local bottom).
+- Tap a tile to enter large-square + square PiP mode.
+- Tap PiP to swap; tap primary to return to split.
+- Built-in framing is `BoxFit.cover`-style (crop allowed, no stretch) with a
+  matte stage background.
+- If builders are omitted, fallback remote/local surfaces are shown.
+
+To preserve remote/local camera geometry for custom RTC widgets, wrap them in
+`VideoViewport`:
+
+```dart
+oneToOneLocalVideoBuilder: (context, session) {
+  return VideoViewport(
+    aspectRatio: 9 / 16,
+    fit: BoxFit.cover,
+    child: rtcLocalView(session.callId),
+  );
+},
+```
 
 ## Notes
 

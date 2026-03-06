@@ -1,8 +1,9 @@
 import 'dart:async';
 
 import 'package:callwave_flutter/callwave_flutter.dart';
-import 'package:callwave_flutter_example/example_camera_controller.dart';
 import 'package:flutter/widgets.dart';
+
+import 'example_camera_controller.dart';
 
 class MockCallwaveEngine extends CallwaveEngine {
   MockCallwaveEngine({

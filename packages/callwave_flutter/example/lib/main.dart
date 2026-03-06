@@ -1,10 +1,11 @@
 import 'dart:async';
 
 import 'package:callwave_flutter/callwave_flutter.dart';
-import 'package:callwave_flutter_example/example_camera_controller.dart';
-import 'package:callwave_flutter_example/example_video_call_screen.dart';
-import 'package:callwave_flutter_example/mock_callwave_engine.dart';
 import 'package:flutter/material.dart';
+
+import 'example_camera_controller.dart';
+import 'example_video_call_screen.dart';
+import 'mock_callwave_engine.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,14 +33,20 @@ class CallwaveExampleApp extends StatefulWidget {
   const CallwaveExampleApp({
     CallStartupRouteDecision? startupDecision,
     this.cameraController,
+    this.oneToOneRemoteVideoBuilder,
+    this.oneToOneLocalVideoBuilder,
     this.disposeCameraControllerOnDispose = false,
     super.key,
   }) : startupDecision =
             startupDecision ?? const CallStartupRouteDecision.home();
 
   final CallStartupRouteDecision startupDecision;
+
   /// Handle for camera preview in video calls. If null, a default is created.
   final ExampleCameraHandle? cameraController;
+  final OneToOneRemoteVideoBuilder? oneToOneRemoteVideoBuilder;
+  final OneToOneLocalVideoBuilder? oneToOneLocalVideoBuilder;
+
   /// If true and [cameraController] is provided, the app disposes it when
   /// disposed. Use when the app creates the controller (e.g. in main).
   final bool disposeCameraControllerOnDispose;
@@ -70,6 +77,7 @@ class _CallwaveExampleAppState extends State<CallwaveExampleApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       navigatorKey: _navigatorKey,
       title: 'Callwave Example',
       theme: ThemeData(
@@ -84,6 +92,8 @@ class _CallwaveExampleAppState extends State<CallwaveExampleApp> {
             return _buildCallScreen(
               session: session,
               cameraController: _cameraController,
+              oneToOneRemoteVideoBuilder: widget.oneToOneRemoteVideoBuilder,
+              oneToOneLocalVideoBuilder: widget.oneToOneLocalVideoBuilder,
             );
           },
           child: child ?? const SizedBox.shrink(),
@@ -96,6 +106,8 @@ class _CallwaveExampleAppState extends State<CallwaveExampleApp> {
         _Routes.call: (_) => _StartupCallRoute(
               startupDecision: widget.startupDecision,
               cameraController: _cameraController,
+              oneToOneRemoteVideoBuilder: widget.oneToOneRemoteVideoBuilder,
+              oneToOneLocalVideoBuilder: widget.oneToOneLocalVideoBuilder,
             ),
       },
     );
@@ -106,10 +118,14 @@ class _StartupCallRoute extends StatelessWidget {
   const _StartupCallRoute({
     required this.startupDecision,
     required this.cameraController,
+    this.oneToOneRemoteVideoBuilder,
+    this.oneToOneLocalVideoBuilder,
   });
 
   final CallStartupRouteDecision startupDecision;
   final ExampleCameraHandle cameraController;
+  final OneToOneRemoteVideoBuilder? oneToOneRemoteVideoBuilder;
+  final OneToOneLocalVideoBuilder? oneToOneLocalVideoBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -128,6 +144,8 @@ class _StartupCallRoute extends StatelessWidget {
       child: _buildCallScreen(
         session: session,
         cameraController: cameraController,
+        oneToOneRemoteVideoBuilder: oneToOneRemoteVideoBuilder,
+        oneToOneLocalVideoBuilder: oneToOneLocalVideoBuilder,
         onCallEnded: () {
           Navigator.of(context).pushReplacementNamed(_Routes.home);
         },
@@ -139,17 +157,23 @@ class _StartupCallRoute extends StatelessWidget {
 Widget _buildCallScreen({
   required CallSession session,
   required ExampleCameraHandle cameraController,
+  OneToOneRemoteVideoBuilder? oneToOneRemoteVideoBuilder,
+  OneToOneLocalVideoBuilder? oneToOneLocalVideoBuilder,
   VoidCallback? onCallEnded,
 }) {
   if (session.callData.callType != CallType.video) {
     return CallScreen(
       session: session,
       onCallEnded: onCallEnded,
+      oneToOneRemoteVideoBuilder: oneToOneRemoteVideoBuilder,
+      oneToOneLocalVideoBuilder: oneToOneLocalVideoBuilder,
     );
   }
   return ExampleVideoCallScreen(
     session: session,
     cameraController: cameraController,
+    oneToOneRemoteVideoBuilder: oneToOneRemoteVideoBuilder,
+    oneToOneLocalVideoBuilder: oneToOneLocalVideoBuilder,
     onCallEnded: onCallEnded,
   );
 }

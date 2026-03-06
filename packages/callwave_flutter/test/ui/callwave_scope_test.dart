@@ -151,6 +151,53 @@ void main() {
     expect(find.byType(CallScreen), findsOneWidget);
   });
 
+  testWidgets('forwards one-to-one builders into pushed call screen', (
+    tester,
+  ) async {
+    final session = CallwaveFlutter.instance.createSession(
+      callData: const CallData(
+        callId: 'one-to-one-builder-forward',
+        callerName: 'Ava',
+        handle: '+1 555 0101',
+        callType: CallType.video,
+      ),
+      isOutgoing: false,
+      initialState: CallSessionState.connected,
+    );
+    addTearDown(session.dispose);
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        builder: (context, child) {
+          return CallwaveScope(
+            navigatorKey: navigatorKey,
+            oneToOneRemoteVideoBuilder: (_, __) => const ColoredBox(
+              color: Colors.green,
+              child: Center(child: Text('scope-remote')),
+            ),
+            oneToOneLocalVideoBuilder: (_, __) => const ColoredBox(
+              color: Colors.blue,
+              child: Center(child: Text('scope-local')),
+            ),
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
+        home: const Scaffold(body: SizedBox.shrink()),
+      ),
+    );
+
+    await _pumpUntilCallScreen(tester);
+
+    expect(
+      find.byKey(const ValueKey<String>('one-to-one-video-split-view')),
+      findsOneWidget,
+    );
+    expect(find.text('scope-remote'), findsOneWidget);
+    expect(find.text('scope-local'), findsOneWidget);
+    session.dispose();
+  });
+
   testWidgets(
       'conference updates switch layout in-place without pushing another route',
       (tester) async {

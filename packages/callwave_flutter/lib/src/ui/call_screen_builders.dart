@@ -8,6 +8,16 @@ typedef ConferenceScreenBuilder = Widget Function(
   CallSession session,
 );
 
+typedef OneToOneRemoteVideoBuilder = Widget Function(
+  BuildContext context,
+  CallSession session,
+);
+
+typedef OneToOneLocalVideoBuilder = Widget Function(
+  BuildContext context,
+  CallSession session,
+);
+
 typedef ParticipantTileBuilder = Widget Function(
   BuildContext context,
   CallSession session,

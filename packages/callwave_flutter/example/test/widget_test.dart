@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:callwave_flutter/callwave_flutter.dart';
 import 'package:callwave_flutter_platform_interface/callwave_flutter_platform_interface.dart'
@@ -204,7 +205,7 @@ void main() {
     await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
   });
 
-  testWidgets('one-to-one video uses fitted preview wrapper without stretch',
+  testWidgets('one-to-one connected video defaults to split layout',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(400, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -230,17 +231,23 @@ void main() {
     );
     await tester.pumpAndSettle(const Duration(milliseconds: 200));
 
-    await tester.tap(find.byIcon(Icons.videocam_off).first);
-    await tester.pump();
-    if (fakeCamera.lastEnabled != true) {
-      await tester.tap(find.byIcon(Icons.videocam_off).first);
-    }
+    await session.toggleCamera();
     await tester.pumpAndSettle(const Duration(milliseconds: 200));
 
     expect(
-      find.byKey(const ValueKey<String>('video-preview-one-to-one')),
+      find.byKey(const ValueKey<String>('one-to-one-video-split-view')),
       findsOneWidget,
     );
+    final splitRemoteSurface = find.byKey(
+      const ValueKey<String>('one-to-one-video-split-remote-surface'),
+    );
+    final splitLocalSurface = find.byKey(
+      const ValueKey<String>('one-to-one-video-split-local-surface'),
+    );
+    expect(splitRemoteSurface, findsOneWidget);
+    expect(splitLocalSurface, findsOneWidget);
+    _expectSquareSurface(tester, splitRemoteSurface);
+    _expectSquareSurface(tester, splitLocalSurface);
     expect(
       find.byKey(const ValueKey<String>('video-preview-fit-one-to-one')),
       findsOneWidget,
@@ -251,15 +258,202 @@ void main() {
         find.byKey(const ValueKey<String>('video-preview-one-to-one'));
     final fitSize = tester.getSize(fitFinder);
     final previewSize = tester.getSize(previewFinder);
-    expect(previewSize.width, closeTo(400, 0.5));
-    expect(previewSize.height, closeTo(225, 0.5));
-    expect(previewSize.height, lessThan(fitSize.height));
+    expect(previewSize.width, greaterThanOrEqualTo(fitSize.width));
+    expect(previewSize.height, greaterThanOrEqualTo(fitSize.height));
     expect(previewSize.width / previewSize.height, closeTo(16 / 9, 0.01));
+    final widthBound = (previewSize.width - fitSize.width).abs() < 0.5;
+    final heightBound = (previewSize.height - fitSize.height).abs() < 0.5;
+    expect(widthBound || heightBound, isTrue);
+    expect(find.text('Mic'), findsOneWidget);
+    expect(find.text('Speaker'), findsOneWidget);
     expect(find.text('Cam'), findsOneWidget);
     expect(find.text('End'), findsOneWidget);
 
     session.reportEnded();
     await tester.pump();
+    await tester.pump(const Duration(seconds: 4));
+  });
+
+  testWidgets('one-to-one connected video supports split to pip to split',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final session = CallSession(
+      callData: const CallData(
+        callId: 'one-to-one-video-pip',
+        callerName: 'Ava',
+        handle: '+1 555 0101',
+        callType: CallType.video,
+      ),
+      isOutgoing: false,
+      initialState: CallSessionState.connected,
+    );
+    addTearDown(session.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ExampleVideoCallScreen(
+          session: session,
+          cameraController: fakeCamera,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle(const Duration(milliseconds: 200));
+
+    await session.toggleCamera();
+    await tester.pumpAndSettle(const Duration(milliseconds: 200));
+    final splitRemoteRect = tester.getRect(
+      find.byKey(
+          const ValueKey<String>('one-to-one-video-split-remote-surface')),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('one-to-one-video-split-remote-tap')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('one-to-one-video-primary-surface')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('one-to-one-video-pip-surface')),
+      findsOneWidget,
+    );
+    _expectSquareSurface(
+      tester,
+      find.byKey(const ValueKey<String>('one-to-one-video-primary-surface')),
+    );
+    _expectSquareSurface(
+      tester,
+      find.byKey(const ValueKey<String>('one-to-one-video-pip-surface')),
+    );
+    final primaryRect = tester.getRect(
+      find.byKey(const ValueKey<String>('one-to-one-video-primary-surface')),
+    );
+    final pipRect = tester.getRect(
+      find.byKey(const ValueKey<String>('one-to-one-video-pip-surface')),
+    );
+    final clusterRect = tester.getRect(
+      find.byKey(const ValueKey<String>('one-to-one-video-pip-cluster')),
+    );
+    final controlsRect = tester.getRect(
+      find.byKey(const ValueKey<String>('conference-controls-row')),
+    );
+    final screenRect = tester.getRect(
+      find.byKey(const ValueKey<String>('one-to-one-video-pip-view')),
+    );
+    expect(primaryRect.width, greaterThan(splitRemoteRect.width));
+    _expectDetachedPipLayout(
+      primaryRect: primaryRect,
+      pipRect: pipRect,
+      clusterRect: clusterRect,
+      screenRect: screenRect,
+      controlsRect: controlsRect,
+    );
+    _expectPrimaryNearMaxForPip(
+      primaryRect: primaryRect,
+      screenRect: screenRect,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('one-to-one-video-primary-tap-target')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('one-to-one-video-split-view')),
+      findsOneWidget,
+    );
+    session.reportEnded();
+    await tester.pump(const Duration(seconds: 4));
+  });
+
+  testWidgets('one-to-one permission card remains visible in split and pip',
+      (tester) async {
+    fakeCamera.denyOnEnable = true;
+    final session = CallSession(
+      callData: const CallData(
+        callId: 'one-to-one-video-permission',
+        callerName: 'Ava',
+        handle: '+1 555 0101',
+        callType: CallType.video,
+      ),
+      isOutgoing: false,
+      initialState: CallSessionState.connected,
+    );
+    addTearDown(session.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ExampleVideoCallScreen(
+          session: session,
+          cameraController: fakeCamera,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle(const Duration(milliseconds: 200));
+
+    await session.toggleCamera();
+    await tester.pumpAndSettle(const Duration(milliseconds: 200));
+
+    expect(
+      find.text('Camera permission is needed for video preview.'),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('one-to-one-video-split-view')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('one-to-one-video-split-remote-tap')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Camera permission is needed for video preview.'),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('one-to-one-video-primary-surface')),
+      findsOneWidget,
+    );
+    session.reportEnded();
+    await tester.pump(const Duration(seconds: 4));
+  });
+
+  testWidgets('example local display name extra handles non-string safely',
+      (tester) async {
+    final session = CallSession(
+      callData: const CallData(
+        callId: 'one-to-one-video-extra-safety',
+        callerName: 'Ava',
+        handle: '+1 555 0101',
+        callType: CallType.video,
+        extra: <String, Object?>{
+          CallDataExtraKeys.localDisplayName: 123,
+        },
+      ),
+      isOutgoing: false,
+      initialState: CallSessionState.connected,
+    );
+    addTearDown(session.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ExampleVideoCallScreen(
+          session: session,
+          cameraController: fakeCamera,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle(const Duration(milliseconds: 200));
+
+    expect(
+      find.byKey(const ValueKey<String>('one-to-one-video-split-view')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+    session.reportEnded();
     await tester.pump(const Duration(seconds: 4));
   });
 
@@ -687,4 +881,59 @@ class _FakeCameraHandle extends ExampleCameraHandle {
     _isPreviewReady = true;
     notifyListeners();
   }
+}
+
+void _expectSquareSurface(WidgetTester tester, Finder finder) {
+  final size = tester.getSize(finder);
+  expect((size.width - size.height).abs(), lessThan(0.5));
+}
+
+void _expectPrimaryNearMaxForPip({
+  required Rect primaryRect,
+  required Rect screenRect,
+}) {
+  final stageWidth = math.max(
+    0.0,
+    screenRect.width - (CallScreenTheme.oneToOnePipStageHorizontalPadding * 2),
+  );
+  final stageHeight = math.max(
+    0.0,
+    screenRect.height -
+        (CallScreenTheme.oneToOnePipStageTopPadding +
+            CallScreenTheme.oneToOnePipStageBottomPadding),
+  );
+  final expected = CallScreenTheme.oneToOnePrimarySquareSizeForDetachedPip(
+    stageWidth: stageWidth,
+    stageHeight: stageHeight,
+    primaryLeadingInset: CallScreenTheme.oneToOnePipPrimaryLeadingInset,
+    detachedGap: CallScreenTheme.oneToOnePipDetachedGap,
+  );
+  expect(primaryRect.width, closeTo(expected, 0.5));
+}
+
+void _expectDetachedPipLayout({
+  required Rect primaryRect,
+  required Rect pipRect,
+  required Rect clusterRect,
+  required Rect screenRect,
+  required Rect controlsRect,
+}) {
+  const tolerance = 0.5;
+  expect(
+    primaryRect.left - clusterRect.left,
+    closeTo(CallScreenTheme.oneToOnePipPrimaryLeadingInset, tolerance),
+  );
+  expect(
+    pipRect.right,
+    closeTo(primaryRect.right, tolerance),
+  );
+  expect(
+    pipRect.top,
+    greaterThanOrEqualTo(
+      primaryRect.bottom + CallScreenTheme.oneToOnePipDetachedGap - tolerance,
+    ),
+  );
+  expect(pipRect.right, lessThanOrEqualTo(screenRect.right + tolerance));
+  expect(pipRect.bottom, lessThanOrEqualTo(screenRect.bottom + tolerance));
+  expect(pipRect.bottom, lessThanOrEqualTo(controlsRect.top + tolerance));
 }

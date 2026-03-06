@@ -20,7 +20,7 @@ flutter test test/callwave_flutter_test.dart  # run a single test file
 flutter analyze                        # analyze a single package
 ```
 
-To run the example app: `cd example && flutter run`
+To run the example app: `cd packages/callwave_flutter/example && flutter run`
 
 ## Architecture
 

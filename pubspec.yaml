@@ -11,7 +11,7 @@ workspace:
   - packages/callwave_flutter
   - packages/callwave_flutter_method_channel
   - packages/callwave_flutter_platform_interface
-  - example
+  - packages/callwave_flutter/example
 
 melos:
   scripts:

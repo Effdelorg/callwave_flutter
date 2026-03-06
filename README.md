@@ -20,7 +20,7 @@ If you're building video or voice calls with WebRTC, callwave_flutter gives you 
 - `packages/callwave_flutter`: Public API for app developers.
 - `packages/callwave_flutter_platform_interface`: Shared contracts and DTOs.
 - `packages/callwave_flutter_method_channel`: Internal MethodChannel + native Android/iOS implementations.
-- `example`: Demo app for manual call flow testing.
+- `packages/callwave_flutter/example`: Demo app for manual call flow testing.
 
 ## What This Plugin Does
 
@@ -163,6 +163,47 @@ CallwaveScope(
   },
   child: child!,
 );
+```
+
+### 1:1 Split-to-PiP Customization
+
+For one-to-one connected video, inject your remote/local RTC surfaces through
+`CallwaveScope`:
+
+```dart
+CallwaveScope(
+  navigatorKey: navKey,
+  oneToOneRemoteVideoBuilder: (context, session) {
+    return rtcRemoteView(session.callId);
+  },
+  oneToOneLocalVideoBuilder: (context, session) {
+    return rtcLocalView(session.callId);
+  },
+  child: child!,
+);
+```
+
+Built-in behavior:
+
+- Connected one-to-one starts in a centered `50/50` split using two square
+  tiles (remote top, local bottom).
+- Tap either tile to promote it into a large square primary surface with a
+  bottom-right square PiP.
+- Tap the large surface to return to split; tap PiP to swap primary/secondary.
+- Built-in video framing uses cover-fit behavior (crop allowed, no stretch).
+- If builders are not provided, Callwave renders safe fallback tiles.
+
+For custom RTC widgets, wrap views in `VideoViewport` to preserve camera
+geometry in square tiles:
+
+```dart
+oneToOneRemoteVideoBuilder: (context, session) {
+  return VideoViewport(
+    aspectRatio: 16 / 9,
+    fit: BoxFit.cover,
+    child: rtcRemoteView(session.callId),
+  );
+},
 ```
 
 See `packages/callwave_flutter/README.md` for full API details.
