@@ -1,6 +1,6 @@
 # callwave_flutter
 
-Public Flutter API for Callwave VoIP call UX.
+Public Flutter API for Callwave VoIP/video call UX.
 
 ## Screenshots
 
