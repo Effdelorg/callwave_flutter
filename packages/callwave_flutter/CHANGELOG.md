@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-03-06
+
+### Fixed
+
+- `started` event no longer regresses connected or reconnecting outgoing sessions
+  to connecting state when cold-start routing (e.g. user taps ongoing call
+  notification)
+
+### Changed
+
+- Clarified pubspec description for pub.dev
+
 ## [0.2.0] - 2026-03-06
 
 ### Added
