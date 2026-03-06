@@ -8,9 +8,10 @@ abstract final class CallEventExtraKeys {
   /// Indicates how the user opened the app to this event.
   ///
   /// On Android, when the user taps the ongoing call notification (body or
-  /// expand), the platform emits an `accepted` event with this key set to
-  /// [launchActionOpenOngoing]. The app can use it to route to the call
-  /// screen or re-emit the session for [CallwaveScope] to push [CallScreen].
+  /// expand), the platform emits an `accepted` or `started` event with this
+  /// key set to [launchActionOpenOngoing]. The app can use it to route to the
+  /// call screen or re-emit the session for [CallwaveScope] to push
+  /// [CallScreen].
   static const String launchAction = 'launchAction';
 
   /// Value for [launchAction] when the user opened from the ongoing call

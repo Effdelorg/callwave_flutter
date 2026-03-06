@@ -121,20 +121,6 @@ class CallNotificationManager(
         CallForegroundService.start(context, notificationId, notification)
     }
 
-    fun showOutgoingCall(payload: CallPayload) {
-        val notification = NotificationCompat.Builder(context, CallwaveConstants.NOTIFICATION_CHANNEL_ID_OUTGOING)
-            .setSmallIcon(android.R.drawable.sym_call_outgoing)
-            .setContentTitle("Calling ${payload.callerName}")
-            .setContentText(payload.handle)
-            .setCategory(NotificationCompat.CATEGORY_CALL)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setSilent(true)
-            .setOngoing(true)
-            .build()
-
-        notificationManagerCompat.notify(incomingNotificationId(payload.callId), notification)
-    }
-
     fun showOngoingCall(
         payload: CallPayload,
         openIntent: PendingIntent,
@@ -142,8 +128,8 @@ class CallNotificationManager(
     ) {
         val builder = NotificationCompat.Builder(context, CallwaveConstants.NOTIFICATION_CHANNEL_ID_OUTGOING)
             .setSmallIcon(android.R.drawable.sym_call_outgoing)
-            .setContentTitle(payload.callerName)
-            .setContentText("Ongoing ${payload.callType} call")
+            .setContentTitle("Call Ongoing")
+            .setContentText("${payload.callerName} (${payload.callType})")
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setSilent(true)

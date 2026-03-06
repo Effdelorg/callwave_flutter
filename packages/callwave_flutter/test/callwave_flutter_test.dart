@@ -124,6 +124,43 @@ void main() {
     expect(identical(routedSession, existing), isTrue);
   });
 
+  test('started launchAction re-emits existing outgoing session for routing',
+      () async {
+    const callId = 'c-open-ongoing-started';
+    final engine = _FakeEngine();
+    CallwaveFlutter.instance.setEngine(engine);
+
+    final existing = CallwaveFlutter.instance.createSession(
+      callData: const CallData(
+        callId: callId,
+        callerName: 'Milo',
+        handle: '+1 555 0202',
+      ),
+      isOutgoing: true,
+      initialState: CallSessionState.connecting,
+    );
+
+    final routedSessionFuture = CallwaveFlutter.instance.sessions.first;
+    fakePlatform.emit(
+      platform.CallEventDto(
+        callId: callId,
+        type: platform.CallEventType.started,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        extra: const <String, dynamic>{
+          'launchAction':
+              'com.callwave.flutter.methodchannel.ACTION_OPEN_ONGOING',
+        },
+      ),
+    );
+
+    final routedSession = await routedSessionFuture;
+    await Future<void>.delayed(Duration.zero);
+
+    expect(identical(routedSession, existing), isTrue);
+    expect(engine.startCount, 1);
+    expect(engine.answerCount, 0);
+  });
+
   test('restoreActiveSessions creates connecting session without engine hooks',
       () async {
     final engine = _FakeEngine();
@@ -192,6 +229,34 @@ void main() {
     expect(engine.answerCount, 0);
   });
 
+  test('restoreActiveSessions replays native snapshots for started calls',
+      () async {
+    final engine = _FakeEngine();
+    fakePlatform.activeCallIds = <String>['c-restore-started'];
+    fakePlatform.activeCallSnapshots = <platform.CallEventDto>[
+      platform.CallEventDto(
+        callId: 'c-restore-started',
+        type: platform.CallEventType.started,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        extra: const <String, dynamic>{
+          'callerName': 'Milo',
+          'handle': '+1 555 0202',
+        },
+      ),
+    ];
+
+    CallwaveFlutter.instance.setEngine(engine);
+    await CallwaveFlutter.instance.restoreActiveSessions();
+    await Future<void>.delayed(Duration.zero);
+
+    final session = CallwaveFlutter.instance.getSession('c-restore-started');
+    expect(session, isNotNull);
+    expect(session!.callData.callerName, 'Milo');
+    expect(session.isOutgoing, isTrue);
+    expect(engine.startCount, 1);
+    expect(engine.answerCount, 0);
+  });
+
   test('prepareStartupRouteDecision opens call route for accepted startup',
       () async {
     final engine = _FakeEngine();
@@ -210,6 +275,27 @@ void main() {
 
     expect(decision.shouldOpenCall, isTrue);
     expect(decision.callId, 'c-startup-accepted');
+    expect(decision.sessionState, CallSessionState.connecting);
+  });
+
+  test('prepareStartupRouteDecision opens call route for started startup',
+      () async {
+    final engine = _FakeEngine();
+    fakePlatform.activeCallIds = <String>['c-startup-started'];
+    fakePlatform.activeCallSnapshots = <platform.CallEventDto>[
+      platform.CallEventDto(
+        callId: 'c-startup-started',
+        type: platform.CallEventType.started,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    ];
+
+    CallwaveFlutter.instance.setEngine(engine);
+    final decision =
+        await CallwaveFlutter.instance.prepareStartupRouteDecision();
+
+    expect(decision.shouldOpenCall, isTrue);
+    expect(decision.callId, 'c-startup-started');
     expect(decision.sessionState, CallSessionState.connecting);
   });
 

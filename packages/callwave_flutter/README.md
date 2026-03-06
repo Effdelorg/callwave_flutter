@@ -21,13 +21,13 @@ Public Flutter API for Callwave VoIP/video call UX.
 **Plug-and-play call UI for WebRTC video and audio calls.** Add WhatsApp-style incoming/outgoing call screens to your Flutter app in minutes—no reinventing the wheel.
 
 - **Works with any WebRTC backend** — LiveKit, Agora, Twilio, Daily, Video SDK, Cloudflare Calls (Real-time), or your own. Implement `CallwaveEngine`, wire your SDK in a few callbacks, and you're done.
-- **Native UX out of the box** — Full-screen incoming call UI on Android, CallKit on iOS. Handles accept, decline, timeout, missed, and callback flows.
+- **Native UX out of the box** — Full-screen incoming call UI on Android plus native ongoing-call notifications for active calls, and CallKit on iOS. Handles accept, decline, timeout, missed, and callback flows.
 - **Cold-start ready** — Event buffering and startup route resolution so calls work even when the app launches from a push notification.
 - **Conference support** — Built-in multi-participant UI with customizable tiles and controls.
 
 If you're building video or voice calls with WebRTC, callwave_flutter gives you the call UX layer so you can focus on your media and signaling.
 
-> **Platform status:** Android has custom native incoming call UI (`FullScreenCallActivity`) and full call UX (full-screen incoming, notifications, etc.). iOS uses CallKit system UI for incoming calls (Apple's native UI; no custom UI from the plugin). In-app call screen (`CallScreen`) is shared Flutter UI on both platforms.
+> **Platform status:** Android has custom native incoming call UI (`FullScreenCallActivity`) plus native ongoing-call notifications for active incoming-accepted and outgoing calls. iOS uses CallKit system UI for incoming and outgoing calls (Apple's native UI; no custom UI from the plugin). In-app call screen (`CallScreen`) is shared Flutter UI on both platforms.
 
 ## Core Flow
 
