@@ -194,6 +194,8 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
   final List<String> _eventLog = <String>[];
   final TextEditingController _callIdController =
       TextEditingController(text: 'demo-call-001');
+  final TextEditingController _missedNotificationTextController =
+      TextEditingController();
   StreamSubscription<CallEvent>? _subscription;
   bool _isCallActionInFlight = false;
   String? _previewCallId;
@@ -202,6 +204,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
   @override
   void initState() {
     super.initState();
+    _missedNotificationTextController.text = 'You missed a call from {name}.';
     _subscription = CallwaveFlutter.instance.events.listen(_onCallEvent);
   }
 
@@ -209,6 +212,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
   void dispose() {
     _subscription?.cancel();
     _callIdController.dispose();
+    _missedNotificationTextController.dispose();
     super.dispose();
   }
 
@@ -234,124 +238,155 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
   @override
   Widget build(BuildContext context) {
     final callId = _callIdController.text.trim();
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     return Scaffold(
       appBar: AppBar(title: const Text('Callwave Example')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            TextField(
-              controller: _callIdController,
-              decoration: const InputDecoration(labelText: 'Call ID'),
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: <Widget>[
-                ElevatedButton(
-                  onPressed:
-                      callId.isEmpty ? null : _requestNotificationPermission,
-                  child: const Text('Notif Permission'),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: constraints.maxHeight - 32,
                 ),
-                ElevatedButton(
-                  onPressed:
-                      callId.isEmpty ? null : _requestFullScreenPermission,
-                  child: const Text('FullScreen Permission'),
-                ),
-                ElevatedButton(
-                  onPressed: callId.isEmpty || _isCallActionInFlight
-                      ? null
-                      : () => _showCall(
-                            callId: callId,
-                            isIncoming: true,
-                            callType: CallType.audio,
-                          ),
-                  child: const Text('Incoming Audio'),
-                ),
-                ElevatedButton(
-                  onPressed: callId.isEmpty || _isCallActionInFlight
-                      ? null
-                      : () => _showCall(
-                            callId: callId,
-                            isIncoming: true,
-                            callType: CallType.video,
-                          ),
-                  child: const Text('Incoming Video'),
-                ),
-                ElevatedButton(
-                  onPressed: callId.isEmpty || _isCallActionInFlight
-                      ? null
-                      : () => _showCall(
-                            callId: callId,
-                            isIncoming: false,
-                            callType: CallType.audio,
-                          ),
-                  child: const Text('Outgoing Audio'),
-                ),
-                ElevatedButton(
-                  onPressed: callId.isEmpty || _isCallActionInFlight
-                      ? null
-                      : () => _showCall(
-                            callId: callId,
-                            isIncoming: false,
-                            callType: CallType.video,
-                          ),
-                  child: const Text('Outgoing Video'),
-                ),
-                ElevatedButton(
-                  onPressed: callId.isEmpty ? null : () => _endCall(callId),
-                  child: const Text('End call'),
-                ),
-                ElevatedButton(
-                  onPressed: callId.isEmpty ? null : () => _markMissed(callId),
-                  child: const Text('Missed'),
-                ),
-                ElevatedButton(
-                  onPressed: callId.isEmpty
-                      ? null
-                      : () => _openConferencePreview(callId, CallType.audio),
-                  child: const Text('Conference Audio'),
-                ),
-                ElevatedButton(
-                  onPressed: callId.isEmpty
-                      ? null
-                      : () => _openConferencePreview(callId, CallType.video),
-                  child: const Text('Conference Video'),
-                ),
-                ElevatedButton(
-                  onPressed:
-                      _previewCallId == null ? null : _cycleConferenceSpeaker,
-                  child: const Text('Cycle Speaker'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            const Text('Events'),
-            const SizedBox(height: 8),
-            Expanded(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.black26),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: ListView.builder(
-                  itemCount: _eventLog.length,
-                  itemBuilder: (context, index) {
-                    return ListTile(
-                      dense: true,
-                      title: Text(
-                        _eventLog[index],
-                        style: const TextStyle(fontSize: 13),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    TextField(
+                      controller: _callIdController,
+                      decoration: const InputDecoration(labelText: 'Call ID'),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _missedNotificationTextController,
+                      decoration: const InputDecoration(
+                        labelText: 'Missed Notification Text',
+                        hintText: 'You missed a call from {name}.',
                       ),
-                    );
-                  },
+                      onChanged: (_) => setState(() {}),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: <Widget>[
+                        ElevatedButton(
+                          onPressed: callId.isEmpty
+                              ? null
+                              : _requestNotificationPermission,
+                          child: const Text('Notif Permission'),
+                        ),
+                        ElevatedButton(
+                          onPressed: callId.isEmpty
+                              ? null
+                              : _requestFullScreenPermission,
+                          child: const Text('FullScreen Permission'),
+                        ),
+                        ElevatedButton(
+                          onPressed: callId.isEmpty || _isCallActionInFlight
+                              ? null
+                              : () => _showCall(
+                                    callId: callId,
+                                    isIncoming: true,
+                                    callType: CallType.audio,
+                                  ),
+                          child: const Text('Incoming Audio'),
+                        ),
+                        ElevatedButton(
+                          onPressed: callId.isEmpty || _isCallActionInFlight
+                              ? null
+                              : () => _showCall(
+                                    callId: callId,
+                                    isIncoming: true,
+                                    callType: CallType.video,
+                                  ),
+                          child: const Text('Incoming Video'),
+                        ),
+                        ElevatedButton(
+                          onPressed: callId.isEmpty || _isCallActionInFlight
+                              ? null
+                              : () => _showCall(
+                                    callId: callId,
+                                    isIncoming: false,
+                                    callType: CallType.audio,
+                                  ),
+                          child: const Text('Outgoing Audio'),
+                        ),
+                        ElevatedButton(
+                          onPressed: callId.isEmpty || _isCallActionInFlight
+                              ? null
+                              : () => _showCall(
+                                    callId: callId,
+                                    isIncoming: false,
+                                    callType: CallType.video,
+                                  ),
+                          child: const Text('Outgoing Video'),
+                        ),
+                        ElevatedButton(
+                          onPressed:
+                              callId.isEmpty ? null : () => _endCall(callId),
+                          child: const Text('End call'),
+                        ),
+                        ElevatedButton(
+                          onPressed:
+                              callId.isEmpty ? null : () => _markMissed(callId),
+                          child: const Text('Missed'),
+                        ),
+                        ElevatedButton(
+                          onPressed: callId.isEmpty
+                              ? null
+                              : () => _openConferencePreview(
+                                  callId, CallType.audio),
+                          child: const Text('Conference Audio'),
+                        ),
+                        ElevatedButton(
+                          onPressed: callId.isEmpty
+                              ? null
+                              : () => _openConferencePreview(
+                                  callId, CallType.video),
+                          child: const Text('Conference Video'),
+                        ),
+                        ElevatedButton(
+                          onPressed: _previewCallId == null
+                              ? null
+                              : _cycleConferenceSpeaker,
+                          child: const Text('Cycle Speaker'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    const Text('Events'),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 220,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.black26),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: ListView.builder(
+                          itemCount: _eventLog.length,
+                          itemBuilder: (context, index) {
+                            return ListTile(
+                              dense: true,
+                              title: Text(
+                                _eventLog[index],
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ],
+            );
+          },
         ),
       ),
     );
@@ -416,6 +451,8 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
     required CallType callType,
     Duration timeout = const Duration(seconds: 30),
   }) {
+    final customMissedNotificationText =
+        _resolvedMissedNotificationText(callerName);
     return CallData(
       callId: callId,
       callerName: callerName,
@@ -427,9 +464,17 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
         'handle': handle,
         'callType': callType.name,
         CallDataExtraKeys.androidMissedCallNotificationText:
-            'You missed a call from $callerName.',
+            customMissedNotificationText,
       },
     );
+  }
+
+  String _resolvedMissedNotificationText(String callerName) {
+    final customText = _missedNotificationTextController.text.trim();
+    if (customText.isNotEmpty) {
+      return customText.replaceAll('{name}', callerName);
+    }
+    return 'You missed a call from $callerName.';
   }
 
   Future<void> _endCall(String callId) async {

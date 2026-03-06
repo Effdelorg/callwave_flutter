@@ -496,6 +496,12 @@ void main() {
       'You missed a call from Ava.',
     );
 
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Missed Notification Text'),
+      'You missed a notification from {name}.',
+    );
+    await tester.pump();
+
     await tester.tap(find.text('Outgoing Audio'));
     await tester.pump();
     expect(fakePlatform.lastOutgoingCallData, isNotNull);
@@ -505,7 +511,7 @@ void main() {
     expect(
       fakePlatform.lastOutgoingCallData!
           .extra?[CallDataExtraKeys.androidMissedCallNotificationText],
-      'You missed a call from Milo.',
+      'You missed a notification from Milo.',
     );
 
     await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));

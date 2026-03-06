@@ -35,6 +35,14 @@ Outgoing ongoing notification checks (Android):
 - Tap `End call` and confirm the call ends and the ongoing notification is removed.
 - After the call has ended and the notification is removed, tapping stale UI should not reopen a call screen.
 
+Missed notification custom text example (Android):
+- In `Missed Notification Text`, enter `You missed a notification from {name}.`
+- Tap `Incoming Audio` to create the call payload with that text.
+- Tap `Missed` for the same call ID.
+- Confirm the missed-call notification body uses your custom text, for example `You missed a notification from Ava.`
+
+Note: the custom missed text is read from the call payload created by `Incoming` or `Outgoing`. If you tap `Missed` before starting a call, or edit the text after starting the call, Android will use the older/default payload instead.
+
 Note: the custom incoming screen trigger on notification/details tap is Android behavior. iOS uses CallKit system incoming UI.
 
 Cold-start example:
