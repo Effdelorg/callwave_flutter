@@ -284,6 +284,9 @@ class CallwaveFlutter {
           initialState: CallSessionState.connecting,
         );
         unawaited(session.applyNativeEvent(event));
+        if (_isOpenOngoingLaunchAction(event.extra)) {
+          _sessionController.add(session);
+        }
         return;
       case CallEventType.declined:
       case CallEventType.ended:

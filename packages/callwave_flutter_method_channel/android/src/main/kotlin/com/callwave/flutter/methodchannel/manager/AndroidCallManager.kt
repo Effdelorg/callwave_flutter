@@ -80,9 +80,19 @@ class AndroidCallManager(
             return
         }
         payloadStore[payload.callId] = payload
+        openedIncomingCalls.remove(payload.callId)
         acceptedCalls.remove(payload.callId)
         outgoingCalls.add(payload.callId)
-        notificationManager.showOutgoingCall(payload)
+        notificationManager.showOngoingCall(
+            payload = payload,
+            openIntent = openOngoingIntent(payload),
+            endIntent = actionIntent(
+                action = CallwaveConstants.ACTION_END,
+                callId = payload.callId,
+                extra = payload.extra,
+                payload = payload,
+            ),
+        )
         emitEvent(payload.callId, CallwaveConstants.EVENT_STARTED, payload.extra)
     }
 
@@ -252,20 +262,25 @@ class AndroidCallManager(
         extra: Map<String, Any?>?,
         fallbackPayload: CallPayload?,
     ): Boolean {
-        if (!acceptedCalls.contains(callId) && !activeCallRegistry.contains(callId)) {
+        if (!activeCallRegistry.contains(callId)) {
             return false
         }
 
         val payload = payloadStore[callId] ?: fallbackPayload ?: return false
         payloadStore[callId] = payload
-        acceptedCalls.add(callId)
         openedIncomingCalls.remove(callId)
-        outgoingCalls.remove(callId)
-        timeoutScheduler.cancel(callId)
+        val isAcceptedIncomingCall = acceptedCalls.contains(callId)
+        val eventType = if (isAcceptedIncomingCall) {
+            timeoutScheduler.cancel(callId)
+            CallwaveConstants.EVENT_ACCEPTED
+        } else {
+            outgoingCalls.add(callId)
+            CallwaveConstants.EVENT_STARTED
+        }
 
         emitEvent(
             callId,
-            CallwaveConstants.EVENT_ACCEPTED,
+            eventType,
             appendLaunchAction(
                 eventExtra(
                     payload = payload,

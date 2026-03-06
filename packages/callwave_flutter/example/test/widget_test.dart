@@ -490,6 +490,17 @@ void main() {
     expect(
         fakePlatform.lastIncomingCallData!.callType, platform.CallType.video);
     expect(fakePlatform.lastIncomingCallData!.callId, _FakePlatform.callId);
+    expect(
+      fakePlatform.lastIncomingCallData!
+          .extra?[CallDataExtraKeys.androidMissedCallNotificationText],
+      'You missed a call from Ava.',
+    );
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Missed Notification Text'),
+      'You missed a notification from {name}.',
+    );
+    await tester.pump();
 
     await tester.tap(find.text('Outgoing Audio'));
     await tester.pump();
@@ -497,6 +508,11 @@ void main() {
     expect(
         fakePlatform.lastOutgoingCallData!.callType, platform.CallType.audio);
     expect(fakePlatform.lastOutgoingCallData!.callId, _FakePlatform.callId);
+    expect(
+      fakePlatform.lastOutgoingCallData!
+          .extra?[CallDataExtraKeys.androidMissedCallNotificationText],
+      'You missed a notification from Milo.',
+    );
 
     await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
   });
@@ -561,6 +577,30 @@ void main() {
     await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
   });
 
+  testWidgets('started launchAction event opens session-driven call screen',
+      (tester) async {
+    fakePlatform.initialEvents = <platform.CallEventDto>[
+      platform.CallEventDto(
+        callId: _FakePlatform.callId,
+        type: platform.CallEventType.started,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        extra: const <String, dynamic>{
+          'launchAction':
+              'com.callwave.flutter.methodchannel.ACTION_OPEN_ONGOING',
+        },
+      ),
+    ];
+
+    await tester.pumpWidget(const CallwaveExampleApp());
+    await _pumpUntilCallScreen(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(CallScreen), findsOneWidget);
+    fakePlatform.emit(type: platform.CallEventType.ended);
+    await tester.pump();
+    await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
+  });
+
   testWidgets('ended event transitions startup-routed session to ended state',
       (tester) async {
     fakePlatform.activeCallIds = <String>[_FakePlatform.callId];
@@ -596,6 +636,32 @@ void main() {
       platform.CallEventDto(
         callId: _FakePlatform.callId,
         type: platform.CallEventType.accepted,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    ];
+
+    final startupDecision =
+        await CallwaveFlutter.instance.prepareStartupRouteDecision();
+    await tester.pumpWidget(
+      CallwaveExampleApp(startupDecision: startupDecision),
+    );
+    await _pumpUntilCallScreen(tester);
+
+    expect(startupDecision.shouldOpenCall, isTrue);
+    expect(find.byType(CallScreen), findsOneWidget);
+    expect(find.text('Call ID'), findsNothing);
+    fakePlatform.emit(type: platform.CallEventType.ended);
+    await tester.pump();
+    await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
+  });
+
+  testWidgets('startup decision routes started cold start directly to call',
+      (tester) async {
+    fakePlatform.activeCallIds = <String>[_FakePlatform.callId];
+    fakePlatform.activeCallSnapshots = <platform.CallEventDto>[
+      platform.CallEventDto(
+        callId: _FakePlatform.callId,
+        type: platform.CallEventType.started,
         timestampMs: DateTime.now().millisecondsSinceEpoch,
       ),
     ];

@@ -5,7 +5,7 @@ import '../theme/call_screen_theme.dart';
 import 'call_action_button.dart';
 
 /// Composes call actions for both incoming (Accept/Decline) and active call
-/// states (Mute/Speaker/End + Camera for video).
+/// states (Mute/Speaker/Camera for video/End).
 class CallActionsRow extends StatelessWidget {
   const CallActionsRow({
     required this.controller,
@@ -55,12 +55,6 @@ class CallActionsRow extends StatelessWidget {
           isActive: controller.isSpeakerOn,
           onPressed: controller.toggleSpeaker,
         ),
-        CallActionButton(
-          icon: Icons.call_end,
-          label: 'End',
-          isDestructive: true,
-          onPressed: controller.endCall,
-        ),
         if (controller.isVideo)
           CallActionButton(
             icon: controller.isCameraOn ? Icons.videocam : Icons.videocam_off,
@@ -68,6 +62,12 @@ class CallActionsRow extends StatelessWidget {
             isActive: controller.isCameraOn,
             onPressed: controller.toggleCamera,
           ),
+        CallActionButton(
+          icon: Icons.call_end,
+          label: 'End',
+          isDestructive: true,
+          onPressed: controller.endCall,
+        ),
       ],
     );
   }
