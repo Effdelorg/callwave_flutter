@@ -601,6 +601,83 @@ void main() {
     await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
   });
 
+  testWidgets(
+      'started launchAction preserves connected outgoing session on reopen',
+      (tester) async {
+    const callId = _FakePlatform.callId;
+    final existing = CallwaveFlutter.instance.createSession(
+      callData: const CallData(
+        callId: callId,
+        callerName: 'Milo',
+        handle: '+1 555 0202',
+        callType: CallType.audio,
+      ),
+      isOutgoing: true,
+      initialState: CallSessionState.connected,
+    );
+
+    await tester.pumpWidget(const CallwaveExampleApp());
+    await tester.pump();
+
+    fakePlatform.emit(
+      type: platform.CallEventType.started,
+      extra: const <String, dynamic>{
+        'launchAction':
+            'com.callwave.flutter.methodchannel.ACTION_OPEN_ONGOING',
+      },
+    );
+
+    await _pumpUntilCallScreen(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(CallScreen), findsOneWidget);
+    expect(existing.state, CallSessionState.connected);
+    fakePlatform.emit(type: platform.CallEventType.ended);
+    await tester.pump();
+    await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
+  });
+
+  testWidgets(
+      'started launchAction keeps connecting outgoing call on connecting UI',
+      (tester) async {
+    final startGate = Completer<void>();
+    CallwaveFlutter.instance.setEngine(_PendingStartEngine(startGate));
+    const callId = _FakePlatform.callId;
+    final existing = CallwaveFlutter.instance.createSession(
+      callData: const CallData(
+        callId: callId,
+        callerName: 'Milo',
+        handle: '+1 555 0202',
+        callType: CallType.audio,
+      ),
+      isOutgoing: true,
+      initialState: CallSessionState.connecting,
+    );
+
+    await tester.pumpWidget(const CallwaveExampleApp());
+    await tester.pump();
+
+    fakePlatform.emit(
+      type: platform.CallEventType.started,
+      extra: const <String, dynamic>{
+        'launchAction':
+            'com.callwave.flutter.methodchannel.ACTION_OPEN_ONGOING',
+      },
+    );
+
+    await _pumpUntilCallScreen(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(CallScreen), findsOneWidget);
+    expect(existing.state, CallSessionState.connecting);
+    expect(find.text('Connecting...'), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('timer')), findsNothing);
+    startGate.complete();
+    fakePlatform.emit(type: platform.CallEventType.ended);
+    await tester.pump();
+    await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
+  });
+
   testWidgets('ended event transitions startup-routed session to ended state',
       (tester) async {
     fakePlatform.activeCallIds = <String>[_FakePlatform.callId];
@@ -870,6 +947,17 @@ class _TestEngine extends CallwaveEngine {
 
   @override
   Future<void> onDispose(CallSession session) async {}
+}
+
+class _PendingStartEngine extends _TestEngine {
+  _PendingStartEngine(this._startGate);
+
+  final Completer<void> _startGate;
+
+  @override
+  Future<void> onStartCall(CallSession session) async {
+    await _startGate.future;
+  }
 }
 
 class _FakeCameraHandle extends ExampleCameraHandle {

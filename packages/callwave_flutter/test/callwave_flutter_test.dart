@@ -157,6 +157,7 @@ void main() {
     await Future<void>.delayed(Duration.zero);
 
     expect(identical(routedSession, existing), isTrue);
+    expect(existing.state, CallSessionState.connecting);
     expect(engine.startCount, 1);
     expect(engine.answerCount, 0);
   });
