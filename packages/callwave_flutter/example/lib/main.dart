@@ -426,6 +426,8 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
         'callerName': callerName,
         'handle': handle,
         'callType': callType.name,
+        CallDataExtraKeys.androidMissedCallNotificationText:
+            'You missed a call from $callerName.',
       },
     );
   }

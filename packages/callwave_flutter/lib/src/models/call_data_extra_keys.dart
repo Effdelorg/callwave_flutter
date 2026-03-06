@@ -28,4 +28,10 @@ abstract final class CallDataExtraKeys {
 
   /// Preferred local/self participant display name for fallback tiles.
   static const String localDisplayName = 'localDisplayName';
+
+  /// Android only: custom body text for the missed-call notification.
+  ///
+  /// Example: `You missed a call from Dan.`
+  static const String androidMissedCallNotificationText =
+      'androidMissedCallNotificationText';
 }

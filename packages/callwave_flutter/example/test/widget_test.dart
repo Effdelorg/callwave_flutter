@@ -490,6 +490,11 @@ void main() {
     expect(
         fakePlatform.lastIncomingCallData!.callType, platform.CallType.video);
     expect(fakePlatform.lastIncomingCallData!.callId, _FakePlatform.callId);
+    expect(
+      fakePlatform.lastIncomingCallData!
+          .extra?[CallDataExtraKeys.androidMissedCallNotificationText],
+      'You missed a call from Ava.',
+    );
 
     await tester.tap(find.text('Outgoing Audio'));
     await tester.pump();
@@ -497,6 +502,11 @@ void main() {
     expect(
         fakePlatform.lastOutgoingCallData!.callType, platform.CallType.audio);
     expect(fakePlatform.lastOutgoingCallData!.callId, _FakePlatform.callId);
+    expect(
+      fakePlatform.lastOutgoingCallData!
+          .extra?[CallDataExtraKeys.androidMissedCallNotificationText],
+      'You missed a call from Milo.',
+    );
 
     await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
   });

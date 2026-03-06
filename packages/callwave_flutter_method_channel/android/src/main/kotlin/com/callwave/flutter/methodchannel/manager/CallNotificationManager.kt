@@ -167,7 +167,7 @@ class CallNotificationManager(
         val notification = NotificationCompat.Builder(context, CallwaveConstants.NOTIFICATION_CHANNEL_ID_MISSED)
             .setSmallIcon(android.R.drawable.sym_call_missed)
             .setContentTitle("Missed call")
-            .setContentText("${payload.callerName} (${payload.handle})")
+            .setContentText(missedCallNotificationText(payload))
             .setCategory(NotificationCompat.CATEGORY_MISSED_CALL)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
@@ -196,7 +196,19 @@ class CallNotificationManager(
 
     private fun missedNotificationId(callId: String): Int = callId.hashCode() + MISSED_NOTIFICATION_OFFSET
 
+    private fun missedCallNotificationText(payload: CallPayload): String {
+        val customText = payload.extra?.get(KEY_ANDROID_MISSED_CALL_NOTIFICATION_TEXT) as? String
+        val trimmed = customText?.trim()
+        if (!trimmed.isNullOrEmpty()) {
+            return trimmed
+        }
+
+        return "${payload.callerName} (${payload.handle})"
+    }
+
     companion object {
+        private const val KEY_ANDROID_MISSED_CALL_NOTIFICATION_TEXT =
+            "androidMissedCallNotificationText"
         private const val MISSED_NOTIFICATION_OFFSET = 40000
     }
 }

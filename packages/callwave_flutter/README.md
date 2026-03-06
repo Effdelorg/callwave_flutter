@@ -193,6 +193,26 @@ CallwaveScope(
 You can also replace the entire conference surface with
 `conferenceScreenBuilder`.
 
+## Android Missed Call Text
+
+Set [CallData.extra] with [CallDataExtraKeys.androidMissedCallNotificationText]
+to customize the Android missed-call notification body.
+
+```dart
+final call = CallData(
+  callId: 'call-42',
+  callerName: 'Dan',
+  handle: '+1 555 0101',
+  extra: const <String, dynamic>{
+    CallDataExtraKeys.androidMissedCallNotificationText:
+        'You missed a call from Dan.',
+  },
+);
+```
+
+If you do not provide it, Android falls back to the default
+`callerName (handle)` text. iOS ignores this key.
+
 ### One-to-One Split-to-PiP Builders
 
 For one-to-one connected video, you can inject remote/local RTC widgets:
