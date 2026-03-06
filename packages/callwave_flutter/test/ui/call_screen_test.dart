@@ -423,6 +423,56 @@ void main() {
     session.dispose();
   });
 
+  testWidgets('pre-connected video actions keep camera beside speaker', (
+    tester,
+  ) async {
+    final session = _buildSession(
+      callType: CallType.video,
+      initialState: CallSessionState.connecting,
+    );
+    addTearDown(session.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CallScreen(session: session),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Connecting...'), findsOneWidget);
+    _expectActionOrder(
+      tester: tester,
+      labels: const ['Speaker', 'Camera On', 'End'],
+    );
+  });
+
+  testWidgets('ended video actions keep end button on the right', (
+    tester,
+  ) async {
+    final session = _buildSession(
+      callType: CallType.video,
+      initialState: CallSessionState.connecting,
+    );
+    addTearDown(session.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CallScreen(session: session),
+      ),
+    );
+    await tester.pump();
+
+    session.reportEnded();
+    await tester.pump();
+
+    expect(find.text('Call Ended'), findsOneWidget);
+    _expectActionOrder(
+      tester: tester,
+      labels: const ['Speaker', 'Camera On', 'End'],
+    );
+    await _pumpThroughAutoDismiss(tester);
+  });
+
   testWidgets('non-string local display name extra falls back safely', (
     tester,
   ) async {
@@ -630,6 +680,18 @@ Finder _actionButtonFinder(String label) {
   return find.byWidgetPredicate(
     (widget) => widget is CallActionButton && widget.label == label,
   );
+}
+
+void _expectActionOrder({
+  required WidgetTester tester,
+  required List<String> labels,
+}) {
+  final leftPositions = labels
+      .map((label) => tester.getTopLeft(_actionButtonFinder(label)).dx)
+      .toList(growable: false);
+  for (var index = 1; index < leftPositions.length; index += 1) {
+    expect(leftPositions[index - 1], lessThan(leftPositions[index]));
+  }
 }
 
 void _expectSquare(WidgetTester tester, Finder finder) {
