@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-06
+
 ### Added
 
 - Conference session models: `CallParticipant` and `ConferenceState`
@@ -18,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `conferenceControlsBuilder`
 - `CallwaveThemeData` for built-in conference styling while preserving current
   Callwave defaults
+- `CallDataExtraKeys.androidMissedCallNotificationText` for customizable Android
+  missed call notification body text
+- `CallEventExtraKeys` with `launchAction` and `launchActionOpenOngoing` for
+  platform launch actions (e.g. Android ongoing call notification tap)
 
 ### Changed
 
@@ -30,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   audio calls show `Mic`, `Speaker`, `End`
 - One-to-one call UI remains unchanged and is still used for
   `participantCount <= 1`
+- Refactored call actions layout and enhanced test coverage for video call actions
+- Enhanced documentation and example app for missed call notifications
 
 ## [0.1.1] - 2026-03-05
 
