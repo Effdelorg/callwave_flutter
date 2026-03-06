@@ -30,6 +30,8 @@ class EventSinkBridge(
         try {
             currentSink.success(event.toMap())
         } catch (_: Throwable) {
+            // A sink that throws is no longer a reliable foreground listener.
+            sink = null
             bufferStore.enqueue(event)
         }
     }
@@ -41,6 +43,7 @@ class EventSinkBridge(
             try {
                 currentSink.success(event.toMap())
             } catch (_: Throwable) {
+                sink = null
                 bufferStore.enqueue(event)
                 return
             }

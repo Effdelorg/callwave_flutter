@@ -28,6 +28,7 @@ class CallwaveFlutterPlugin :
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         methodChannel?.setMethodCallHandler(null)
         eventChannel?.setStreamHandler(null)
+        CallwaveRuntime.eventSinkBridge.detach()
         CallwaveRuntime.callManager.activity = null
         methodChannel = null
         eventChannel = null

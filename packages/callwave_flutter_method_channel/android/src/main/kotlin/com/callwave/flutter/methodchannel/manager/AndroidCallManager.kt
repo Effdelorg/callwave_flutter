@@ -42,6 +42,12 @@ class AndroidCallManager(
     private var backgroundDispatcherHandle: Long? = null
     private var backgroundCallbackHandle: Long? = null
 
+    private enum class BackgroundValidationStartResult {
+        STARTED,
+        DEFERRED_TO_LIVE_LISTENER,
+        UNAVAILABLE,
+    }
+
     init {
         restoreBackgroundIncomingCallValidatorRegistration()
     }
@@ -322,27 +328,20 @@ class AndroidCallManager(
             if (shouldOpenAfterConfirm) {
                 pendingLaunchAfterConfirm.add(callId)
             }
-            val startedBackgroundValidation = maybeRunBackgroundValidation(
+            val validationStartResult = maybeRunBackgroundValidation(
                 payload = payload,
                 onResolved = onBackgroundValidationResolved,
             )
-            if (!startedBackgroundValidation) {
-                Log.d(
-                    TAG,
-                    "onAccept could not start background validation for $callId.",
-                )
-                if (requireBackgroundValidationForValidatedAccept) {
-                    markMissed(
-                        callId,
-                        extra = eventExtra(
-                            payload = payload,
-                            fallbackExtra = extra,
-                        ).toMutableMap().apply {
-                            put(CallwaveConstants.EXTRA_OUTCOME_REASON, "failed")
-                        },
+            when (validationStartResult) {
+                BackgroundValidationStartResult.STARTED -> {
+                    Log.d(TAG, "onAccept background validation started for $callId.")
+                    return AcceptResult.VALIDATION_PENDING
+                }
+                BackgroundValidationStartResult.DEFERRED_TO_LIVE_LISTENER -> {
+                    Log.d(
+                        TAG,
+                        "onAccept deferring validated flow to live listener for $callId.",
                     )
-                    onBackgroundValidationResolved?.invoke()
-                } else {
                     emitEvent(
                         callId,
                         CallwaveConstants.EVENT_ACCEPTED,
@@ -352,13 +351,35 @@ class AndroidCallManager(
                         ),
                     )
                 }
+                BackgroundValidationStartResult.UNAVAILABLE -> {
+                    Log.d(
+                        TAG,
+                        "onAccept could not start validated flow for $callId.",
+                    )
+                    if (requireBackgroundValidationForValidatedAccept) {
+                        markMissed(
+                            callId,
+                            extra = eventExtra(
+                                payload = payload,
+                                fallbackExtra = extra,
+                            ).toMutableMap().apply {
+                                put(CallwaveConstants.EXTRA_OUTCOME_REASON, "failed")
+                            },
+                        )
+                        onBackgroundValidationResolved?.invoke()
+                    } else {
+                        emitEvent(
+                            callId,
+                            CallwaveConstants.EVENT_ACCEPTED,
+                            acceptedEventExtra(
+                                payload = payload,
+                                fallbackExtra = extra,
+                            ),
+                        )
+                    }
+                }
             }
-            return if (startedBackgroundValidation) {
-                Log.d(TAG, "onAccept background validation started for $callId.")
-                AcceptResult.VALIDATION_PENDING
-            } else {
-                AcceptResult.HANDLED
-            }
+            return AcceptResult.HANDLED
         }
 
         emitEvent(
@@ -952,13 +973,13 @@ class AndroidCallManager(
     private fun maybeRunBackgroundValidation(
         payload: CallPayload,
         onResolved: (() -> Unit)? = null,
-    ): Boolean {
+    ): BackgroundValidationStartResult {
         if (eventSinkBridge.hasListener()) {
             Log.d(
                 TAG,
                 "maybeRunBackgroundValidation skipped for ${payload.callId} because a live listener exists.",
             )
-            return false
+            return BackgroundValidationStartResult.DEFERRED_TO_LIVE_LISTENER
         }
         val registration = backgroundIncomingCallValidatorRegistrationFor(payload)
         if (registration == null) {
@@ -966,7 +987,7 @@ class AndroidCallManager(
                 TAG,
                 "maybeRunBackgroundValidation skipped for ${payload.callId} because no validator registration is available.",
             )
-            return false
+            return BackgroundValidationStartResult.UNAVAILABLE
         }
         Log.d(
             TAG,
@@ -1005,7 +1026,7 @@ class AndroidCallManager(
                 onResolved?.invoke()
             }
         }
-        return true
+        return BackgroundValidationStartResult.STARTED
     }
 
     private fun restoreBackgroundIncomingCallValidatorRegistration() {
