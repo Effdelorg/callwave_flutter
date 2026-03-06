@@ -454,7 +454,8 @@ class CallwaveFlutter {
     if (needsNativeConfirmation) {
       try {
         await confirmAcceptedCall(session.callId);
-      } catch (_) {
+      } catch (error, stackTrace) {
+        Zone.current.handleUncaughtError(error, stackTrace);
         if (!session.isEnded) {
           await _markMissedSafely(
             session,

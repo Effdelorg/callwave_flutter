@@ -283,6 +283,48 @@ void main() {
     expect(capturedErrors.single, isA<StateError>());
   });
 
+  test('confirmAcceptedCall failures are reported and call is marked missed',
+      () async {
+    final capturedErrors = <Object>[];
+    fakePlatform.confirmAcceptedCallError = StateError('confirm failed');
+
+    await runZonedGuarded(() async {
+      final sessionFuture = CallwaveFlutter.instance.sessions.first;
+
+      CallwaveFlutter.instance.configure(
+        CallwaveConfiguration(
+          engine: _FakeEngine(),
+          incomingCallHandling: IncomingCallHandling.validated(
+            validator: (_) async => const CallAcceptDecision.allow(),
+          ),
+        ),
+      );
+      fakePlatform.emit(
+        platform.CallEventDto(
+          callId: 'c-confirm-failure',
+          type: platform.CallEventType.accepted,
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+
+      final session = await sessionFuture;
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(session.state, CallSessionState.ended);
+      expect(fakePlatform.lastMarkedMissedCallId, 'c-confirm-failure');
+      expect(
+        fakePlatform.lastMarkedMissedExtra?[CallEventExtraKeys.outcomeReason],
+        CallAcceptRejectReason.unavailable.name,
+      );
+    }, (error, _) {
+      capturedErrors.add(error);
+    });
+
+    expect(capturedErrors, hasLength(1));
+    expect(capturedErrors.single, isA<StateError>());
+  });
+
   test('open ongoing launch action re-emits existing session for routing',
       () async {
     const callId = 'c-open-ongoing';
@@ -592,6 +634,7 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   int? lastBackgroundDispatcherHandle;
   int? lastBackgroundCallbackHandle;
   Object? markMissedError;
+  Object? confirmAcceptedCallError;
   int confirmAcceptedCallCount = 0;
   platform.PostCallBehavior postCallBehavior =
       platform.PostCallBehavior.stayOpen;
@@ -632,6 +675,10 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   Future<void> confirmAcceptedCall(String callId) async {
     confirmAcceptedCallCount += 1;
     lastConfirmedCallId = callId;
+    final error = confirmAcceptedCallError;
+    if (error != null) {
+      throw error;
+    }
   }
 
   @override
