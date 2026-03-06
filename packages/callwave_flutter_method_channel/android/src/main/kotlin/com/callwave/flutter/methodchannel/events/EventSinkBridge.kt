@@ -29,7 +29,7 @@ class EventSinkBridge(
 
         try {
             currentSink.success(event.toMap())
-        } catch (_: Throwable) {
+        } catch (_: Exception) {
             // A sink that throws is no longer a reliable foreground listener.
             sink = null
             bufferStore.enqueue(event)
@@ -39,14 +39,20 @@ class EventSinkBridge(
     private fun flushBuffered() {
         val currentSink = sink ?: return
         val buffered = bufferStore.drain()
-        for (event in buffered) {
+        for ((index, event) in buffered.withIndex()) {
             try {
                 currentSink.success(event.toMap())
-            } catch (_: Throwable) {
+            } catch (_: Exception) {
                 sink = null
-                bufferStore.enqueue(event)
+                requeueFrom(buffered, index)
                 return
             }
+        }
+    }
+
+    private fun requeueFrom(events: List<CallEventPayload>, startIndex: Int) {
+        for (index in startIndex until events.size) {
+            bufferStore.enqueue(events[index])
         }
     }
 }
