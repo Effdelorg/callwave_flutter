@@ -6,15 +6,15 @@ Public Flutter API for Callwave VoIP/video call UX.
 
 | Incoming call | Native plugin |
 |:---:|:---:|
-| ![Incoming call](screenshots/Incoming_call_ui.png) | ![Native plugin](screenshots/Incoming_call_native_plugin_UI.png) |
+| ![Incoming call](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/Incoming_call_ui.png) | ![Native plugin](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/Incoming_call_native_plugin_UI.png) |
 
 | Missed call | Video conference |
 |:---:|:---:|
-| ![Missed call](screenshots/Missed_call_ui.png) | ![Video conference](screenshots/Video_conference_call_ui.png) |
+| ![Missed call](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/Missed_call_ui.png) | ![Video conference](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/Video_conference_call_ui.png) |
 
 | 1-to-1 audio | 1-to-1 video |
 |:---:|:---:|
-| ![1-to-1 audio](screenshots/1to1_ui.png) | ![1-to-1 video](screenshots/1to1_video.png) |
+| ![1-to-1 audio](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/1to1_ui.png) | ![1-to-1 video](https://raw.githubusercontent.com/Effdelorg/callwave_flutter/main/packages/callwave_flutter/screenshots/1to1_video.png) |
 
 ## Why callwave_flutter?
 
