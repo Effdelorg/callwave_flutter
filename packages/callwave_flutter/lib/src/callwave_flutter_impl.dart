@@ -1,14 +1,20 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:callwave_flutter_platform_interface/callwave_flutter_platform_interface.dart'
     as platform;
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 
-import 'engine/callwave_engine.dart';
+import 'config/callwave_configuration.dart';
 import 'engine/call_session.dart';
+import 'engine/callwave_engine.dart';
 import 'enums/call_event_type.dart';
 import 'enums/call_session_state.dart';
-import 'enums/post_call_behavior.dart';
 import 'enums/call_type.dart';
+import 'enums/post_call_behavior.dart';
+import 'models/call_accept_decision.dart';
+import 'models/background_incoming_call_validation_request.dart';
 import 'models/call_data.dart';
 import 'models/call_event.dart';
 import 'models/call_event_extra_keys.dart';
@@ -26,11 +32,17 @@ class CallwaveFlutter {
   final Map<String, void Function()> _sessionListeners =
       <String, void Function()>{};
   final Map<String, Timer> _sessionCleanupTimers = <String, Timer>{};
+  final Map<String, int> _acceptFlowVersions = <String, int>{};
+  final Set<String> _acceptValidationsInFlight = <String>{};
+  final Set<String> _announcedRoutableSessions = <String>{};
   final StreamController<CallSession> _sessionController =
       StreamController<CallSession>.broadcast();
 
   StreamSubscription<CallEvent>? _engineEventSubscription;
   CallwaveEngine? _engine;
+  IncomingCallHandling _incomingCallHandling =
+      const IncomingCallHandling.realtime();
+  BackgroundIncomingCallValidator? _backgroundIncomingCallValidator;
 
   Stream<CallEvent> get events {
     return _platform.events.map((dto) {
@@ -43,11 +55,21 @@ class CallwaveFlutter {
     });
   }
 
-  void setEngine(CallwaveEngine engine) {
+  /// Applies a new engine/configuration pair and resets any in-memory session
+  /// state tracked by the singleton.
+  ///
+  /// Reconfiguring during an active call intentionally disposes existing
+  /// sessions so apps should treat this as startup/setup, not an in-call mode
+  /// toggle.
+  void configure(CallwaveConfiguration configuration) {
     _disposeAllSessions();
-    // Set the engine before wiring the listener so newly routed events always
-    // see the current engine via CallSession.engineProvider.
-    _engine = engine;
+    _acceptFlowVersions.clear();
+    _acceptValidationsInFlight.clear();
+    _announcedRoutableSessions.clear();
+    _engine = configuration.engine;
+    _incomingCallHandling = configuration.incomingCallHandling;
+    _backgroundIncomingCallValidator =
+        configuration.backgroundIncomingCallValidator;
     final previousSubscription = _engineEventSubscription;
     _engineEventSubscription = null;
     unawaited(previousSubscription?.cancel());
@@ -55,6 +77,17 @@ class CallwaveFlutter {
       _onEngineEvent,
       onError: _onEngineEventStreamError,
     );
+    unawaited(
+      _syncBackgroundIncomingCallValidatorRegistration().catchError(
+        (Object error, StackTrace stackTrace) {
+          Zone.current.handleUncaughtError(error, stackTrace);
+        },
+      ),
+    );
+  }
+
+  void setEngine(CallwaveEngine engine) {
+    configure(CallwaveConfiguration(engine: engine));
   }
 
   bool get hasEngine => _engine != null;
@@ -101,6 +134,9 @@ class CallwaveFlutter {
     void listener() => _onSessionChanged(callData.callId);
     _sessionListeners[callData.callId] = listener;
     session.addListener(listener);
+    if (_isRoutableSessionState(initialState)) {
+      _announcedRoutableSessions.add(callData.callId);
+    }
     _sessionController.add(session);
     return session;
   }
@@ -164,9 +200,9 @@ class CallwaveFlutter {
         final session = _ensureSessionFromEvent(
           event: event,
           isOutgoing: false,
-          initialState: CallSessionState.connecting,
+          initialState: _acceptedInitialState(event.extra),
         );
-        await session.applyNativeEvent(event);
+        await _handleAcceptedEvent(session, event);
         return;
       case CallEventType.started:
         final session = _ensureSessionFromEvent(
@@ -202,7 +238,15 @@ class CallwaveFlutter {
   }
 
   Future<void> showIncomingCall(CallData data) {
-    return _platform.showIncomingCall(_toDto(data));
+    return _platform.showIncomingCall(
+      _toDtoWithStrategy(
+        data,
+        incomingAcceptStrategy:
+            _incomingCallHandling is RealtimeIncomingCallHandling
+                ? platform.IncomingAcceptStrategy.openImmediately
+                : platform.IncomingAcceptStrategy.deferOpenUntilConfirmed,
+      ),
+    );
   }
 
   Future<void> showOutgoingCall(CallData data) {
@@ -217,6 +261,13 @@ class CallwaveFlutter {
     return _platform.acceptCall(callId);
   }
 
+  /// Marks an accepted call as confirmed so native UI can proceed.
+  ///
+  /// Call after validation allows the call. Fails if [callId] is unknown.
+  Future<void> confirmAcceptedCall(String callId) {
+    return _platform.confirmAcceptedCall(callId);
+  }
+
   /// Declines an active incoming call.
   ///
   /// The returned future fails if [callId] does not map to an active incoming
@@ -226,11 +277,14 @@ class CallwaveFlutter {
   }
 
   Future<void> endCall(String callId) {
+    _invalidateAcceptFlow(callId);
     return _platform.endCall(callId);
   }
 
-  Future<void> markMissed(String callId) {
-    return _platform.markMissed(callId);
+  /// Marks a call as missed. [extra] can include [CallEventExtraKeys.outcomeReason].
+  Future<void> markMissed(String callId, {Map<String, dynamic>? extra}) {
+    _invalidateAcceptFlow(callId);
+    return _platform.markMissed(callId, extra: extra);
   }
 
   Future<List<String>> getActiveCallIds() {
@@ -270,12 +324,15 @@ class CallwaveFlutter {
         final session = _ensureSessionFromEvent(
           event: event,
           isOutgoing: false,
-          initialState: CallSessionState.connecting,
+          initialState: _acceptedInitialState(event.extra),
         );
-        unawaited(session.applyNativeEvent(event));
-        if (_isOpenOngoingLaunchAction(event.extra)) {
-          _sessionController.add(session);
-        }
+        unawaited(
+          _handleAcceptedEvent(
+            session,
+            event,
+            shouldAnnounceWhenReady: _isOpenOngoingLaunchAction(event.extra),
+          ),
+        );
         return;
       case CallEventType.started:
         final session = _ensureSessionFromEvent(
@@ -292,6 +349,7 @@ class CallwaveFlutter {
       case CallEventType.ended:
       case CallEventType.timeout:
       case CallEventType.missed:
+        _invalidateAcceptFlow(event.callId);
         final session = _sessions[event.callId];
         if (session != null) {
           unawaited(session.applyNativeEvent(event));
@@ -302,8 +360,144 @@ class CallwaveFlutter {
     }
   }
 
+  Future<void> _handleAcceptedEvent(
+    CallSession session,
+    CallEvent event, {
+    bool shouldAnnounceWhenReady = false,
+  }) async {
+    final isConfirmed = _isConfirmedAcceptance(event.extra);
+    if (isConfirmed) {
+      _invalidateAcceptFlow(session.callId);
+      await _beginConfirmedAcceptedSession(
+        session,
+        shouldAnnounceWhenReady: shouldAnnounceWhenReady,
+      );
+      return;
+    }
+
+    final handling = _incomingCallHandling;
+    if (handling is RealtimeIncomingCallHandling) {
+      _invalidateAcceptFlow(session.callId);
+      await _beginConfirmedAcceptedSession(
+        session,
+        shouldAnnounceWhenReady: shouldAnnounceWhenReady,
+        needsNativeConfirmation: true,
+      );
+      return;
+    }
+
+    if (_acceptValidationsInFlight.contains(session.callId)) {
+      return;
+    }
+
+    final validator = (handling as ValidatedIncomingCallHandling).validator;
+    final flowVersion = _nextAcceptFlowVersion(session.callId);
+    _acceptValidationsInFlight.add(session.callId);
+    session.reportValidating();
+
+    try {
+      final decision = await validator(session);
+      _acceptValidationsInFlight.remove(session.callId);
+      if (!_isCurrentAcceptFlow(session.callId, flowVersion) ||
+          session.isEnded) {
+        return;
+      }
+
+      if (decision.extra != null && decision.extra!.isNotEmpty) {
+        session.updateCallData(
+          session.callData.copyWith(
+            extra: _mergeExtraMaps(session.callData.extra, decision.extra),
+          ),
+        );
+      }
+
+      if (decision.isAllowed) {
+        await _beginConfirmedAcceptedSession(
+          session,
+          shouldAnnounceWhenReady: shouldAnnounceWhenReady,
+          needsNativeConfirmation: true,
+        );
+        return;
+      }
+
+      await _markMissedSafely(
+        session,
+        extra: _validationRejectExtra(
+          session: session,
+          decision: decision,
+        ),
+      );
+    } catch (error, stackTrace) {
+      _acceptValidationsInFlight.remove(session.callId);
+      if (!_isCurrentAcceptFlow(session.callId, flowVersion) ||
+          session.isEnded) {
+        return;
+      }
+      Zone.current.handleUncaughtError(error, stackTrace);
+      await _markMissedSafely(
+        session,
+        extra: _validationRejectExtra(
+          session: session,
+          decision: const CallAcceptDecision.reject(
+            reason: CallAcceptRejectReason.failed,
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _beginConfirmedAcceptedSession(
+    CallSession session, {
+    required bool shouldAnnounceWhenReady,
+    bool needsNativeConfirmation = false,
+  }) async {
+    if (needsNativeConfirmation) {
+      try {
+        await confirmAcceptedCall(session.callId);
+      } catch (_) {
+        if (!session.isEnded) {
+          await _markMissedSafely(
+            session,
+            extra: _validationRejectExtra(
+              session: session,
+              decision: const CallAcceptDecision.reject(
+                reason: CallAcceptRejectReason.unavailable,
+              ),
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    if (session.isEnded) {
+      return;
+    }
+    final wasValidating = session.state == CallSessionState.validating;
+    final beginAnsweringFuture = session.beginAnswering();
+    if (shouldAnnounceWhenReady || wasValidating) {
+      _announcedRoutableSessions.add(session.callId);
+      _sessionController.add(session);
+    }
+    unawaited(beginAnsweringFuture);
+  }
+
   void _onEngineEventStreamError(Object error, StackTrace stackTrace) {
     Zone.current.handleUncaughtError(error, stackTrace);
+  }
+
+  Future<void> _markMissedSafely(
+    CallSession session, {
+    Map<String, dynamic>? extra,
+  }) async {
+    try {
+      await markMissed(session.callId, extra: extra);
+    } catch (error, stackTrace) {
+      Zone.current.handleUncaughtError(error, stackTrace);
+      if (!session.isEnded) {
+        session.reportEnded();
+      }
+    }
   }
 
   void _onSessionChanged(String callId) {
@@ -312,6 +506,8 @@ class CallwaveFlutter {
       return;
     }
     if (session.isEnded) {
+      _invalidateAcceptFlow(callId);
+      _announcedRoutableSessions.remove(callId);
       // Terminal states are absorbing; schedule cleanup once.
       if (_sessionCleanupTimers.containsKey(callId)) {
         return;
@@ -322,11 +518,20 @@ class CallwaveFlutter {
       );
       return;
     }
+    if (_isRoutableSessionState(session.state)) {
+      if (_announcedRoutableSessions.add(callId)) {
+        _sessionController.add(session);
+      }
+    } else {
+      _announcedRoutableSessions.remove(callId);
+    }
     _sessionCleanupTimers.remove(callId)?.cancel();
   }
 
   void _disposeSession(String callId) {
     _sessionCleanupTimers.remove(callId)?.cancel();
+    _invalidateAcceptFlow(callId);
+    _announcedRoutableSessions.remove(callId);
     final session = _sessions.remove(callId);
     final listener = _sessionListeners.remove(callId);
     if (session == null || listener == null) {
@@ -342,6 +547,9 @@ class CallwaveFlutter {
       timer.cancel();
     }
     _sessionCleanupTimers.clear();
+    _acceptFlowVersions.clear();
+    _acceptValidationsInFlight.clear();
+    _announcedRoutableSessions.clear();
 
     final sessions = _sessions.values.toList(growable: false);
     for (final session in sessions) {
@@ -386,9 +594,16 @@ class CallwaveFlutter {
           session.reportRinging();
         }
         return;
-      case CallSessionState.connecting:
+      case CallSessionState.validating:
         if (session.state == CallSessionState.idle ||
             session.state == CallSessionState.ringing) {
+          session.reportValidating();
+        }
+        return;
+      case CallSessionState.connecting:
+        if (session.state == CallSessionState.idle ||
+            session.state == CallSessionState.ringing ||
+            session.state == CallSessionState.validating) {
           session.reportConnecting();
         }
         return;
@@ -431,6 +646,7 @@ class CallwaveFlutter {
         return 3;
       case CallSessionState.connecting:
         return 2;
+      case CallSessionState.validating:
       case CallSessionState.ringing:
       case CallSessionState.idle:
       case CallSessionState.ended:
@@ -443,6 +659,68 @@ class CallwaveFlutter {
     return state == CallSessionState.connecting ||
         state == CallSessionState.connected ||
         state == CallSessionState.reconnecting;
+  }
+
+  bool _isRoutableSessionState(CallSessionState state) {
+    return state != CallSessionState.validating &&
+        state != CallSessionState.ended &&
+        state != CallSessionState.failed;
+  }
+
+  CallSessionState _acceptedInitialState(Map<String, dynamic>? extra) {
+    if (_isConfirmedAcceptance(extra) ||
+        _incomingCallHandling is RealtimeIncomingCallHandling) {
+      return CallSessionState.connecting;
+    }
+    return CallSessionState.validating;
+  }
+
+  bool _isConfirmedAcceptance(Map<String, dynamic>? extra) {
+    return extra?[CallEventExtraKeys.acceptanceState] ==
+        CallEventExtraKeys.acceptanceStateConfirmed;
+  }
+
+  int _nextAcceptFlowVersion(String callId) {
+    final nextVersion = (_acceptFlowVersions[callId] ?? 0) + 1;
+    _acceptFlowVersions[callId] = nextVersion;
+    return nextVersion;
+  }
+
+  void _invalidateAcceptFlow(String callId) {
+    _acceptFlowVersions[callId] = (_acceptFlowVersions[callId] ?? 0) + 1;
+    _acceptValidationsInFlight.remove(callId);
+  }
+
+  bool _isCurrentAcceptFlow(String callId, int version) {
+    return _acceptFlowVersions[callId] == version;
+  }
+
+  Map<String, dynamic> _validationRejectExtra({
+    required CallSession session,
+    required CallAcceptDecision decision,
+  }) {
+    return _mergeExtraMaps(
+      session.callData.extra,
+      <String, dynamic>{
+        CallEventExtraKeys.outcomeReason:
+            (decision.reason ?? CallAcceptRejectReason.unknown).name,
+        if (decision.extra != null) ...decision.extra!,
+      },
+    );
+  }
+
+  Map<String, dynamic> _mergeExtraMaps(
+    Map<String, dynamic>? base,
+    Map<String, dynamic>? extra,
+  ) {
+    final merged = <String, dynamic>{};
+    if (base != null) {
+      merged.addAll(base);
+    }
+    if (extra != null) {
+      merged.addAll(extra);
+    }
+    return merged;
   }
 
   CallData _callDataFromEvent(
@@ -464,6 +742,7 @@ class CallwaveFlutter {
       callerName: callerName,
       handle: handle,
       avatarUrl: avatarUrl,
+      timeout: fallbackData.timeout,
       callType: callType,
       extra: event.extra ?? fallbackData.extra,
     );
@@ -484,7 +763,7 @@ class CallwaveFlutter {
       return;
     }
     throw StateError(
-      'CallwaveEngine is not set. Call setEngine(...) before session operations.',
+      'CallwaveEngine is not set. Call setEngine(...) or configure(...) before session operations.',
     );
   }
 
@@ -522,6 +801,18 @@ class CallwaveFlutter {
   }
 
   platform.CallDataDto _toDto(CallData data) {
+    return _toDtoWithStrategy(
+      data,
+      incomingAcceptStrategy: platform.IncomingAcceptStrategy.openImmediately,
+    );
+  }
+
+  platform.CallDataDto _toDtoWithStrategy(
+    CallData data, {
+    required platform.IncomingAcceptStrategy incomingAcceptStrategy,
+  }) {
+    final backgroundValidatorHandles =
+        _backgroundIncomingCallValidatorHandlesOrNull();
     return platform.CallDataDto(
       callId: data.callId,
       callerName: data.callerName,
@@ -530,6 +821,47 @@ class CallwaveFlutter {
       timeoutSeconds: data.timeout.inSeconds,
       callType: _dtoCallTypeFromPublic(data.callType),
       extra: data.extra,
+      incomingAcceptStrategy: incomingAcceptStrategy,
+      backgroundDispatcherHandle:
+          backgroundValidatorHandles?.backgroundDispatcherHandle,
+      backgroundCallbackHandle:
+          backgroundValidatorHandles?.backgroundCallbackHandle,
+    );
+  }
+
+  Future<void> _syncBackgroundIncomingCallValidatorRegistration() async {
+    final handles = _backgroundIncomingCallValidatorHandlesOrNull();
+    if (handles == null) {
+      await _platform.clearBackgroundIncomingCallValidator();
+      return;
+    }
+
+    await _platform.registerBackgroundIncomingCallValidator(
+      backgroundDispatcherHandle: handles.backgroundDispatcherHandle,
+      backgroundCallbackHandle: handles.backgroundCallbackHandle,
+    );
+  }
+
+  _BackgroundIncomingCallValidatorHandles?
+      _backgroundIncomingCallValidatorHandlesOrNull() {
+    final validator = _backgroundIncomingCallValidator;
+    if (validator == null) {
+      return null;
+    }
+
+    final dispatcherHandle = ui.PluginUtilities.getCallbackHandle(
+      _backgroundIncomingCallDispatcher,
+    );
+    final callbackHandle = ui.PluginUtilities.getCallbackHandle(validator);
+    if (dispatcherHandle == null || callbackHandle == null) {
+      throw ArgumentError(
+        'backgroundIncomingCallValidator must be a top-level or static function.',
+      );
+    }
+
+    return _BackgroundIncomingCallValidatorHandles(
+      backgroundDispatcherHandle: dispatcherHandle.toRawHandle(),
+      backgroundCallbackHandle: callbackHandle.toRawHandle(),
     );
   }
 
@@ -577,4 +909,89 @@ class CallwaveFlutter {
         return platform.PostCallBehavior.backgroundOnEnded;
     }
   }
+}
+
+const MethodChannel _backgroundValidationChannel = MethodChannel(
+  'callwave_flutter/background',
+);
+
+@pragma('vm:entry-point')
+Future<void> _backgroundIncomingCallDispatcher() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  ui.DartPluginRegistrant.ensureInitialized();
+  _backgroundValidationChannel.setMethodCallHandler((call) async {
+    if (call.method != 'validateBackgroundIncomingCall') {
+      throw MissingPluginException(
+        'Unsupported background validation method: ${call.method}',
+      );
+    }
+    final arguments = call.arguments as Map<Object?, Object?>?;
+    if (arguments == null) {
+      return const <String, dynamic>{
+        'isAllowed': false,
+        'reason': 'unknown',
+      };
+    }
+
+    final callbackHandleRaw = arguments['backgroundCallbackHandle'];
+    if (callbackHandleRaw is! int) {
+      return const <String, dynamic>{
+        'isAllowed': false,
+        'reason': 'unknown',
+      };
+    }
+
+    final callback = ui.PluginUtilities.getCallbackFromHandle(
+      ui.CallbackHandle.fromRawHandle(callbackHandleRaw),
+    );
+    if (callback is! BackgroundIncomingCallValidator) {
+      return const <String, dynamic>{
+        'isAllowed': false,
+        'reason': 'unknown',
+      };
+    }
+
+    final rawPayload = arguments['callData'];
+    if (rawPayload is! Map) {
+      return const <String, dynamic>{
+        'isAllowed': false,
+        'reason': 'unknown',
+      };
+    }
+
+    final payload = rawPayload.map<String, dynamic>((key, value) {
+      return MapEntry(key.toString(), value);
+    });
+    final dto = platform.PayloadCodec.callDataFromMap(payload);
+    final decision = await callback(
+      BackgroundIncomingCallValidationRequest(
+        callId: dto.callId,
+        callerName: dto.callerName,
+        handle: dto.handle,
+        avatarUrl: dto.avatarUrl,
+        callType: dto.callType == platform.CallType.video
+            ? CallType.video
+            : CallType.audio,
+        extra: dto.extra,
+      ),
+    );
+    return <String, dynamic>{
+      'isAllowed': decision.isAllowed,
+      'reason': decision.reason?.name,
+      'extra': decision.extra,
+    };
+  });
+  await _backgroundValidationChannel.invokeMethod<void>(
+    'backgroundDispatcherReady',
+  );
+}
+
+final class _BackgroundIncomingCallValidatorHandles {
+  const _BackgroundIncomingCallValidatorHandles({
+    required this.backgroundDispatcherHandle,
+    required this.backgroundCallbackHandle,
+  });
+
+  final int backgroundDispatcherHandle;
+  final int backgroundCallbackHandle;
 }

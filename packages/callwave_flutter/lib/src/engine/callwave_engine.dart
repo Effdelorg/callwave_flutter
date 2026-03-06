@@ -6,7 +6,8 @@ import 'call_session.dart';
 /// actual call logic. The package handles native notifications, CallKit,
 /// and session state; you handle connection, media, and signaling.
 ///
-/// Must be set via [CallwaveFlutter.setEngine] before any session operations.
+/// Must be set via [CallwaveFlutter.setEngine] or [CallwaveFlutter.configure]
+/// before any session operations.
 abstract class CallwaveEngine {
   /// Called when the user accepts an incoming call.
   ///

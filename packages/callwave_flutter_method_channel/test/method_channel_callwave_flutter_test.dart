@@ -36,4 +36,91 @@ void main() {
     final args = calls.last.arguments as Map<dynamic, dynamic>;
     expect(args[PayloadCodec.keyPostCallBehavior], 'backgroundOnEnded');
   });
+
+  test('confirmAcceptedCall sends method channel payload', () async {
+    const channel = MethodChannel('callwave_flutter/methods');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+
+    final plugin = MethodChannelCallwaveFlutter();
+    await plugin.confirmAcceptedCall('c-123');
+
+    expect(calls.map((call) => call.method), <String>[
+      'initialize',
+      'confirmAcceptedCall',
+    ]);
+
+    final args = calls.last.arguments as Map<dynamic, dynamic>;
+    expect(args[PayloadCodec.keyCallId], 'c-123');
+  });
+
+  test('registerBackgroundIncomingCallValidator sends callback handles',
+      () async {
+    const channel = MethodChannel('callwave_flutter/methods');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+
+    final plugin = MethodChannelCallwaveFlutter();
+    await plugin.registerBackgroundIncomingCallValidator(
+      backgroundDispatcherHandle: 101,
+      backgroundCallbackHandle: 202,
+    );
+
+    expect(calls.map((call) => call.method), <String>[
+      'initialize',
+      'registerBackgroundIncomingCallValidator',
+    ]);
+
+    final args = calls.last.arguments as Map<dynamic, dynamic>;
+    expect(args[PayloadCodec.keyBackgroundDispatcherHandle], 101);
+    expect(args[PayloadCodec.keyBackgroundCallbackHandle], 202);
+  });
+
+  test('markMissed sends optional extra metadata', () async {
+    const channel = MethodChannel('callwave_flutter/methods');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+
+    final plugin = MethodChannelCallwaveFlutter();
+    await plugin.markMissed(
+      'c-456',
+      extra: const <String, dynamic>{'outcomeReason': 'cancelled'},
+    );
+
+    expect(calls.map((call) => call.method), <String>[
+      'initialize',
+      'markMissed',
+    ]);
+
+    final args = calls.last.arguments as Map<dynamic, dynamic>;
+    expect(args[PayloadCodec.keyCallId], 'c-456');
+    expect(
+      args[PayloadCodec.keyExtra],
+      const <String, dynamic>{'outcomeReason': 'cancelled'},
+    );
+  });
 }

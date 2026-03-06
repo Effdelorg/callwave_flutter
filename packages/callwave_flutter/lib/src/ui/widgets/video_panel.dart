@@ -6,8 +6,8 @@ import '../theme/call_screen_theme.dart';
 class VideoPanel extends StatelessWidget {
   const VideoPanel({
     required this.child,
-    this.borderRadius =
-        const BorderRadius.all(Radius.circular(CallScreenTheme.oneToOneDefaultBorderRadius)),
+    this.borderRadius = const BorderRadius.all(
+        Radius.circular(CallScreenTheme.oneToOneDefaultBorderRadius)),
     super.key,
   });
 

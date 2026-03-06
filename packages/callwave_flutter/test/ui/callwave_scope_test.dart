@@ -151,6 +151,42 @@ void main() {
     expect(find.byType(CallScreen), findsOneWidget);
   });
 
+  testWidgets('validating session opens once it becomes connecting',
+      (tester) async {
+    final session = CallwaveFlutter.instance.createSession(
+      callData: const CallData(
+        callId: 'validated-then-connecting',
+        callerName: 'Ava',
+        handle: '+1 555 0101',
+      ),
+      isOutgoing: false,
+      initialState: CallSessionState.validating,
+    );
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        builder: (context, child) {
+          return CallwaveScope(
+            navigatorKey: navigatorKey,
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
+        home: const Scaffold(body: SizedBox.shrink()),
+      ),
+    );
+
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.byType(CallScreen), findsNothing);
+
+    session.reportConnecting();
+    await _pumpUntilCallScreen(tester);
+
+    expect(find.byType(CallScreen), findsOneWidget);
+    expect(find.text('Connecting...'), findsOneWidget);
+  });
+
   testWidgets('forwards one-to-one builders into pushed call screen', (
     tester,
   ) async {
@@ -270,7 +306,19 @@ class _NoopPlatform extends platform.CallwaveFlutterPlatform {
   Future<void> showOutgoingCall(platform.CallDataDto data) async {}
 
   @override
+  Future<void> registerBackgroundIncomingCallValidator({
+    required int backgroundDispatcherHandle,
+    required int backgroundCallbackHandle,
+  }) async {}
+
+  @override
+  Future<void> clearBackgroundIncomingCallValidator() async {}
+
+  @override
   Future<void> acceptCall(String callId) async {}
+
+  @override
+  Future<void> confirmAcceptedCall(String callId) async {}
 
   @override
   Future<void> declineCall(String callId) async {}
@@ -279,7 +327,10 @@ class _NoopPlatform extends platform.CallwaveFlutterPlatform {
   Future<void> endCall(String callId) async {}
 
   @override
-  Future<void> markMissed(String callId) async {}
+  Future<void> markMissed(
+    String callId, {
+    Map<String, dynamic>? extra,
+  }) async {}
 
   @override
   Future<List<String>> getActiveCallIds() async => const <String>[];

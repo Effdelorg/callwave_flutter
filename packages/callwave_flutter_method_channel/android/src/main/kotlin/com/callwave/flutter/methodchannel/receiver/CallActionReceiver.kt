@@ -6,6 +6,7 @@ import android.content.Intent
 import android.util.Log
 import com.callwave.flutter.methodchannel.CallwaveConstants
 import com.callwave.flutter.methodchannel.CallwaveRuntime
+import com.callwave.flutter.methodchannel.manager.AcceptResult
 import com.callwave.flutter.methodchannel.model.CallPayload
 
 class CallActionReceiver : BroadcastReceiver() {
@@ -17,14 +18,45 @@ class CallActionReceiver : BroadcastReceiver() {
 
         when (intent.action) {
             CallwaveConstants.ACTION_ACCEPT -> {
+                Log.d(TAG, "CallActionReceiver received ACTION_ACCEPT for $callId.")
                 val fallbackPayload = CallwaveRuntime.callManager.payloadFromActionIntent(
                     intent = intent,
                     callId = callId,
                     fallbackExtra = extra,
                 )
-                val accepted = CallwaveRuntime.callManager.onAccept(callId, extra, fallbackPayload)
-                if (accepted) {
-                    launchHostApp(context, intent)
+                if (CallwaveRuntime.callManager.shouldHandleValidatedAcceptInBridge(
+                        fallbackPayload,
+                    )
+                ) {
+                    Log.d(TAG, "CallActionReceiver redirecting $callId to validated bridge.")
+                    fallbackPayload?.let(CallwaveRuntime.callManager::launchValidatedAcceptBridge)
+                    return
+                }
+
+                val pendingResult = goAsync()
+                var shouldFinishPendingResult = true
+                try {
+                    val acceptResult = CallwaveRuntime.callManager.onAccept(
+                        callId = callId,
+                        extra = extra,
+                        fallbackPayload = fallbackPayload,
+                        shouldOpenAfterConfirm = true,
+                        onBackgroundValidationResolved = {
+                            pendingResult.finish()
+                        },
+                    )
+                    shouldFinishPendingResult =
+                        acceptResult != AcceptResult.VALIDATION_PENDING
+                    if (acceptResult == AcceptResult.LAUNCH_NOW &&
+                        fallbackPayload != null
+                    ) {
+                        Log.d(TAG, "CallActionReceiver launching host app for $callId.")
+                        launchHostApp(fallbackPayload)
+                    }
+                } finally {
+                    if (shouldFinishPendingResult) {
+                        pendingResult.finish()
+                    }
                 }
             }
             CallwaveConstants.ACTION_DECLINE -> CallwaveRuntime.callManager.onDecline(callId, extra)
@@ -34,27 +66,12 @@ class CallActionReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun launchHostApp(context: Context, sourceIntent: Intent) {
-        val launchIntent = CallwaveRuntime.callManager
-            .hostLaunchIntentForAction(CallwaveConstants.ACTION_ACCEPT_AND_OPEN)
-            ?: run {
-                Log.w(TAG, "Unable to resolve host launch intent after call accept.")
-                return
-            }
-        sourceIntent.extras?.let { extras ->
-            launchIntent.putExtras(extras)
-        }
-        launchIntent.putExtra(
-            CallwaveConstants.EXTRA_LAUNCH_ACTION,
-            CallwaveConstants.ACTION_ACCEPT_AND_OPEN,
-        )
-        launchIntent.addFlags(
-            Intent.FLAG_ACTIVITY_NEW_TASK or
-                Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                Intent.FLAG_ACTIVITY_CLEAR_TOP,
-        )
+    private fun launchHostApp(payload: CallPayload) {
         try {
-            context.startActivity(launchIntent)
+            CallwaveRuntime.callManager.launchHostApp(
+                CallwaveConstants.ACTION_ACCEPT_AND_OPEN,
+                payload,
+            )
         } catch (error: Throwable) {
             Log.w(TAG, "Unable to launch host app after call accept.", error)
         }

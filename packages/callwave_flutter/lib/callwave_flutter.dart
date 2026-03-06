@@ -1,6 +1,7 @@
 library callwave_flutter;
 
 export 'src/callwave_flutter_impl.dart';
+export 'src/config/callwave_configuration.dart';
 export 'src/engine/callwave_engine.dart';
 export 'src/engine/call_session.dart';
 export 'src/enums/call_event_type.dart';
@@ -9,6 +10,8 @@ export 'src/enums/call_type.dart';
 export 'src/enums/post_call_behavior.dart';
 export 'src/models/call_data.dart';
 export 'src/models/call_data_extra_keys.dart';
+export 'src/models/background_incoming_call_validation_request.dart';
+export 'src/models/call_accept_decision.dart';
 export 'src/models/call_event_extra_keys.dart';
 export 'src/models/call_event.dart';
 export 'src/models/call_startup_route_decision.dart';

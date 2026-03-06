@@ -18,6 +18,10 @@ final class EventStreamBridge {
     sink = nil
   }
 
+  var hasListener: Bool {
+    sink != nil
+  }
+
   func emit(_ event: CallEventPayload) {
     guard let sink else {
       bufferStore.enqueue(event)

@@ -56,6 +56,29 @@ class MethodChannelCallwaveFlutter extends CallwaveFlutterPlatform {
   }
 
   @override
+  Future<void> registerBackgroundIncomingCallValidator({
+    required int backgroundDispatcherHandle,
+    required int backgroundCallbackHandle,
+  }) async {
+    await initialize();
+    await _methodChannel.invokeMethod<void>(
+      'registerBackgroundIncomingCallValidator',
+      <String, dynamic>{
+        PayloadCodec.keyBackgroundDispatcherHandle: backgroundDispatcherHandle,
+        PayloadCodec.keyBackgroundCallbackHandle: backgroundCallbackHandle,
+      },
+    );
+  }
+
+  @override
+  Future<void> clearBackgroundIncomingCallValidator() async {
+    await initialize();
+    await _methodChannel.invokeMethod<void>(
+      'clearBackgroundIncomingCallValidator',
+    );
+  }
+
+  @override
   Future<void> endCall(String callId) async {
     await initialize();
     await _methodChannel.invokeMethod<void>('endCall', <String, dynamic>{
@@ -72,6 +95,17 @@ class MethodChannelCallwaveFlutter extends CallwaveFlutterPlatform {
   }
 
   @override
+  Future<void> confirmAcceptedCall(String callId) async {
+    await initialize();
+    await _methodChannel.invokeMethod<void>(
+      'confirmAcceptedCall',
+      <String, dynamic>{
+        PayloadCodec.keyCallId: callId,
+      },
+    );
+  }
+
+  @override
   Future<void> declineCall(String callId) async {
     await initialize();
     await _methodChannel.invokeMethod<void>('declineCall', <String, dynamic>{
@@ -80,10 +114,11 @@ class MethodChannelCallwaveFlutter extends CallwaveFlutterPlatform {
   }
 
   @override
-  Future<void> markMissed(String callId) async {
+  Future<void> markMissed(String callId, {Map<String, dynamic>? extra}) async {
     await initialize();
     await _methodChannel.invokeMethod<void>('markMissed', <String, dynamic>{
       PayloadCodec.keyCallId: callId,
+      if (extra != null) PayloadCodec.keyExtra: extra,
     });
   }
 

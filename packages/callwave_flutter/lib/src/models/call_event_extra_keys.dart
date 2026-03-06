@@ -14,6 +14,22 @@ abstract final class CallEventExtraKeys {
   /// [CallScreen].
   static const String launchAction = 'launchAction';
 
+  /// Native accepted-call phase.
+  ///
+  /// `pendingValidation` means the user accepted natively, but Flutter has not
+  /// confirmed the call should open yet. `confirmed` means the package has
+  /// cleared the call to continue into the in-app call experience.
+  static const String acceptanceState = 'acceptanceState';
+
+  /// Value for [acceptanceState] while backend/app validation is pending.
+  static const String acceptanceStatePendingValidation = 'pendingValidation';
+
+  /// Value for [acceptanceState] once the accepted call is confirmed.
+  static const String acceptanceStateConfirmed = 'confirmed';
+
+  /// Machine-readable rejection/end reason surfaced on missed/failure flows.
+  static const String outcomeReason = 'outcomeReason';
+
   /// Value for [launchAction] when the user opened from the ongoing call
   /// notification (Android).
   static const String launchActionOpenOngoing =

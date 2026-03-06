@@ -26,10 +26,31 @@ abstract class CallwaveFlutterPlatform extends PlatformInterface {
 
   Future<void> showOutgoingCall(CallDataDto data);
 
+  Future<void> registerBackgroundIncomingCallValidator({
+    required int backgroundDispatcherHandle,
+    required int backgroundCallbackHandle,
+  }) async {
+    throw UnimplementedError(
+      'registerBackgroundIncomingCallValidator() has not been implemented.',
+    );
+  }
+
+  Future<void> clearBackgroundIncomingCallValidator() async {
+    throw UnimplementedError(
+      'clearBackgroundIncomingCallValidator() has not been implemented.',
+    );
+  }
+
   /// Accepts an active incoming call.
   ///
   /// Implementations should throw if [callId] is unknown or no longer active.
   Future<void> acceptCall(String callId);
+
+  /// Marks an accepted call as safe to open/connect.
+  ///
+  /// Only used when [IncomingAcceptStrategy.deferOpenUntilConfirmed]. Default:
+  /// no-op. Override for platforms that support deferred confirmation.
+  Future<void> confirmAcceptedCall(String callId) async {}
 
   /// Declines an active incoming call.
   ///
@@ -38,7 +59,9 @@ abstract class CallwaveFlutterPlatform extends PlatformInterface {
 
   Future<void> endCall(String callId);
 
-  Future<void> markMissed(String callId);
+  /// Marks a call as missed. [extra] can include outcome reason for validation
+  /// rejections (e.g. `outcomeReason`).
+  Future<void> markMissed(String callId, {Map<String, dynamic>? extra});
 
   Future<List<String>> getActiveCallIds();
 
@@ -85,6 +108,13 @@ class _StubCallwaveFlutterPlatform extends CallwaveFlutterPlatform {
   }
 
   @override
+  Future<void> confirmAcceptedCall(String callId) {
+    throw UnimplementedError(
+      'confirmAcceptedCall() has not been implemented.',
+    );
+  }
+
+  @override
   Future<void> declineCall(String callId) {
     throw UnimplementedError('declineCall() has not been implemented.');
   }
@@ -106,7 +136,7 @@ class _StubCallwaveFlutterPlatform extends CallwaveFlutterPlatform {
   Future<void> initialize() async {}
 
   @override
-  Future<void> markMissed(String callId) {
+  Future<void> markMissed(String callId, {Map<String, dynamic>? extra}) {
     throw UnimplementedError('markMissed() has not been implemented.');
   }
 
@@ -139,5 +169,22 @@ class _StubCallwaveFlutterPlatform extends CallwaveFlutterPlatform {
   @override
   Future<void> showOutgoingCall(CallDataDto data) {
     throw UnimplementedError('showOutgoingCall() has not been implemented.');
+  }
+
+  @override
+  Future<void> registerBackgroundIncomingCallValidator({
+    required int backgroundDispatcherHandle,
+    required int backgroundCallbackHandle,
+  }) {
+    throw UnimplementedError(
+      'registerBackgroundIncomingCallValidator() has not been implemented.',
+    );
+  }
+
+  @override
+  Future<void> clearBackgroundIncomingCallValidator() {
+    throw UnimplementedError(
+      'clearBackgroundIncomingCallValidator() has not been implemented.',
+    );
   }
 }

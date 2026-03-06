@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../callwave_flutter_impl.dart';
 import '../engine/call_session.dart';
+import '../enums/call_session_state.dart';
 import 'call_screen.dart';
 import 'call_screen_builders.dart';
 import 'inherited_call_session.dart';
@@ -93,7 +94,9 @@ class _CallwaveScopeState extends State<CallwaveScope> {
   void _hydrateExistingSessions() {
     final existingSessions = CallwaveFlutter.instance.activeSessions;
     for (final session in existingSessions) {
-      _pendingByCallId[session.callId] = session;
+      if (_isRoutableSession(session)) {
+        _pendingByCallId[session.callId] = session;
+      }
     }
     if (existingSessions.isNotEmpty) {
       _scheduleFlush();
@@ -106,8 +109,18 @@ class _CallwaveScopeState extends State<CallwaveScope> {
       _openedCallIds.remove(session.callId);
       return;
     }
+    if (!_isRoutableSession(session)) {
+      _pendingByCallId.remove(session.callId);
+      return;
+    }
     _pendingByCallId[session.callId] = session;
     _scheduleFlush();
+  }
+
+  bool _isRoutableSession(CallSession session) {
+    return session.state != CallSessionState.validating &&
+        session.state != CallSessionState.ended &&
+        session.state != CallSessionState.failed;
   }
 
   void _scheduleFlush() {
@@ -118,6 +131,7 @@ class _CallwaveScopeState extends State<CallwaveScope> {
       return;
     }
     _flushScheduled = true;
+    WidgetsBinding.instance.scheduleFrame();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _flushScheduled = false;
       if (!mounted) {

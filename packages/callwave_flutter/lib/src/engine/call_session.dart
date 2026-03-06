@@ -23,7 +23,8 @@ enum _SessionToggleControl { mute, speaker, camera }
 /// Apps receive [CallSession] from [CallwaveFlutter.sessions] or
 /// [CallwaveFlutter.getSession]. Do not construct directly.
 ///
-/// Lifecycle: idle → ringing → connecting → connected → ended/failed.
+/// Lifecycle: idle → ringing → validating → connecting → connected →
+/// ended/failed.
 /// Use [state], [elapsed], [isMuted], etc. to drive [CallScreen].
 /// Call [reportConnected], [reportEnded], etc. from your [CallwaveEngine]
 /// to update state.
@@ -279,20 +280,9 @@ class CallSession extends ChangeNotifier {
         reportRinging();
         return;
       case CallEventType.accepted:
-        if (_state == CallSessionState.connected ||
-            _state == CallSessionState.reconnecting) {
-          return;
-        }
-        reportConnecting();
-        await _invokeAnswerEngineOnce();
         return;
       case CallEventType.started:
-        if (_state == CallSessionState.connected ||
-            _state == CallSessionState.reconnecting) {
-          return;
-        }
-        reportConnecting();
-        await _invokeStartEngineOnce();
+        await beginOutgoingStart();
         return;
       case CallEventType.ended:
         reportEnded();
@@ -304,7 +294,8 @@ class CallSession extends ChangeNotifier {
       case CallEventType.timeout:
       case CallEventType.missed:
         if (_state == CallSessionState.idle ||
-            _state == CallSessionState.ringing) {
+            _state == CallSessionState.ringing ||
+            _state == CallSessionState.validating) {
           reportEnded();
         }
         return;
@@ -314,6 +305,8 @@ class CallSession extends ChangeNotifier {
   }
 
   void reportRinging() => _transitionTo(CallSessionState.ringing);
+
+  void reportValidating() => _transitionTo(CallSessionState.validating);
 
   void reportConnecting() => _transitionTo(CallSessionState.connecting);
 
@@ -326,6 +319,24 @@ class CallSession extends ChangeNotifier {
   void reportFailed([Object? error]) {
     _error = error ?? StateError('Call session failed.');
     _transitionTo(CallSessionState.failed);
+  }
+
+  Future<void> beginAnswering() async {
+    if (_state == CallSessionState.connected ||
+        _state == CallSessionState.reconnecting) {
+      return;
+    }
+    reportConnecting();
+    await _invokeAnswerEngineOnce();
+  }
+
+  Future<void> beginOutgoingStart() async {
+    if (_state == CallSessionState.connected ||
+        _state == CallSessionState.reconnecting) {
+      return;
+    }
+    reportConnecting();
+    await _invokeStartEngineOnce();
   }
 
   Future<void> _invokeAnswerEngineOnce() async {

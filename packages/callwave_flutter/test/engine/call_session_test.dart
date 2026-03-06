@@ -4,7 +4,7 @@ import 'package:callwave_flutter/callwave_flutter.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('accepted event invokes answer hook once', () async {
+  test('beginAnswering invokes answer hook once', () async {
     final engine = _FakeEngine();
     final session = CallSession(
       callData: const CallData(
@@ -17,20 +17,8 @@ void main() {
     );
     addTearDown(session.dispose);
 
-    await session.applyNativeEvent(
-      CallEvent(
-        callId: 'c-1',
-        type: CallEventType.accepted,
-        timestamp: DateTime.now(),
-      ),
-    );
-    await session.applyNativeEvent(
-      CallEvent(
-        callId: 'c-1',
-        type: CallEventType.accepted,
-        timestamp: DateTime.now(),
-      ),
-    );
+    await session.beginAnswering();
+    await session.beginAnswering();
 
     expect(session.state, CallSessionState.connecting);
     expect(engine.answerCount, 1);

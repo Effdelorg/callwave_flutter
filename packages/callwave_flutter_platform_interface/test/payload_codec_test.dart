@@ -22,6 +22,8 @@ void main() {
         timeoutSeconds: 45,
         callType: CallType.video,
         extra: <String, dynamic>{'room': 'blue'},
+        backgroundDispatcherHandle: 101,
+        backgroundCallbackHandle: 202,
       );
 
       final map = PayloadCodec.callDataToMap(data);
@@ -34,6 +36,12 @@ void main() {
       expect(decoded.timeoutSeconds, data.timeoutSeconds);
       expect(decoded.callType, data.callType);
       expect(decoded.extra, data.extra);
+      expect(
+        decoded.incomingAcceptStrategy,
+        IncomingAcceptStrategy.openImmediately,
+      );
+      expect(decoded.backgroundDispatcherHandle, 101);
+      expect(decoded.backgroundCallbackHandle, 202);
     });
 
     test('safeCallEventFromMap returns null for invalid payload', () {

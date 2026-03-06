@@ -8,6 +8,7 @@ struct CallPayload {
   let timeoutSeconds: Int
   let callType: String
   let extra: [String: Any]?
+  let incomingAcceptStrategy: String
 
   init?(dictionary: [String: Any]) {
     guard let callId = dictionary["callId"] as? String else { return nil }
@@ -18,5 +19,20 @@ struct CallPayload {
     self.timeoutSeconds = dictionary["timeoutSeconds"] as? Int ?? 30
     self.callType = dictionary["callType"] as? String ?? "audio"
     self.extra = dictionary["extra"] as? [String: Any]
+    self.incomingAcceptStrategy =
+      dictionary["incomingAcceptStrategy"] as? String ?? "openImmediately"
+  }
+
+  var dictionary: [String: Any] {
+    [
+      "callId": callId,
+      "callerName": callerName,
+      "handle": handle,
+      "avatarUrl": avatarUrl as Any,
+      "timeoutSeconds": timeoutSeconds,
+      "callType": callType,
+      "extra": extra as Any,
+      "incomingAcceptStrategy": incomingAcceptStrategy,
+    ]
   }
 }

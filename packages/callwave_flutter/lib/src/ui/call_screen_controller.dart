@@ -84,6 +84,7 @@ class CallScreenController extends ChangeNotifier {
       case CallSessionState.idle:
       case CallSessionState.ringing:
         return CallStatus.ringing;
+      case CallSessionState.validating:
       case CallSessionState.connecting:
       case CallSessionState.reconnecting:
         return CallStatus.connecting;

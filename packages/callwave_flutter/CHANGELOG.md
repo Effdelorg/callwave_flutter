@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking for custom platform implementations
+
+- Custom `CallwaveFlutterPlatform` implementations must update `markMissed` to
+  accept optional `extra`. Override `confirmAcceptedCall` only if using
+  [IncomingAcceptStrategy.deferOpenUntilConfirmed]; it has a default no-op.
+  The method channel implementation already includes these changes.
+
 ## [0.2.1] - 2026-03-06
 
 ### Fixed

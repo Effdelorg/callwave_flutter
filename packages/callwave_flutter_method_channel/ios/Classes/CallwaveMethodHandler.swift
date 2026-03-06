@@ -35,6 +35,31 @@ final class CallwaveMethodHandler {
       callManager.showOutgoingCall(payload)
       result(nil)
 
+    case "registerBackgroundIncomingCallValidator":
+      let args = call.arguments as? [String: Any]
+      guard
+        let dispatcherHandle = (args?["backgroundDispatcherHandle"] as? NSNumber)?.int64Value,
+        let callbackHandle = (args?["backgroundCallbackHandle"] as? NSNumber)?.int64Value
+      else {
+        result(
+          FlutterError(
+            code: "invalid_background_validator",
+            message: "Dispatcher and callback handles are required",
+            details: nil
+          )
+        )
+        return
+      }
+      callManager.registerBackgroundIncomingCallValidator(
+        backgroundDispatcherHandle: dispatcherHandle,
+        backgroundCallbackHandle: callbackHandle
+      )
+      result(nil)
+
+    case "clearBackgroundIncomingCallValidator":
+      callManager.clearBackgroundIncomingCallValidator()
+      result(nil)
+
     case "endCall":
       let args = call.arguments as? [String: Any]
       guard let callId = args?["callId"] as? String else {
@@ -55,6 +80,24 @@ final class CallwaveMethodHandler {
           FlutterError(
             code: "invalid_call_id",
             message: "No active incoming call found for callId=\(callId)",
+            details: nil
+          )
+        )
+        return
+      }
+      result(nil)
+
+    case "confirmAcceptedCall":
+      let args = call.arguments as? [String: Any]
+      guard let callId = args?["callId"] as? String else {
+        result(FlutterError(code: "invalid_call_id", message: "callId is required", details: nil))
+        return
+      }
+      guard callManager.confirmAcceptedCall(callId: callId) else {
+        result(
+          FlutterError(
+            code: "invalid_call_id",
+            message: "No active accepted call found for callId=\(callId)",
             details: nil
           )
         )
@@ -86,7 +129,8 @@ final class CallwaveMethodHandler {
         result(FlutterError(code: "invalid_call_id", message: "callId is required", details: nil))
         return
       }
-      callManager.markMissed(callId: callId)
+      let extra = args?["extra"] as? [String: Any]
+      callManager.markMissed(callId: callId, extra: extra)
       result(nil)
 
     case "getActiveCallIds":

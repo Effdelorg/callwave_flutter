@@ -1,4 +1,5 @@
 import '../enums/call_type.dart';
+import '../enums/incoming_accept_strategy.dart';
 
 class CallDataDto {
   const CallDataDto({
@@ -9,6 +10,9 @@ class CallDataDto {
     this.timeoutSeconds = 30,
     this.callType = CallType.audio,
     this.extra,
+    this.incomingAcceptStrategy = IncomingAcceptStrategy.openImmediately,
+    this.backgroundDispatcherHandle,
+    this.backgroundCallbackHandle,
   });
 
   final String callId;
@@ -18,6 +22,9 @@ class CallDataDto {
   final int timeoutSeconds;
   final CallType callType;
   final Map<String, dynamic>? extra;
+  final IncomingAcceptStrategy incomingAcceptStrategy;
+  final int? backgroundDispatcherHandle;
+  final int? backgroundCallbackHandle;
 
   CallDataDto copyWith({
     String? callId,
@@ -27,6 +34,9 @@ class CallDataDto {
     int? timeoutSeconds,
     CallType? callType,
     Map<String, dynamic>? extra,
+    IncomingAcceptStrategy? incomingAcceptStrategy,
+    int? backgroundDispatcherHandle,
+    int? backgroundCallbackHandle,
   }) {
     return CallDataDto(
       callId: callId ?? this.callId,
@@ -36,6 +46,12 @@ class CallDataDto {
       timeoutSeconds: timeoutSeconds ?? this.timeoutSeconds,
       callType: callType ?? this.callType,
       extra: extra ?? this.extra,
+      incomingAcceptStrategy:
+          incomingAcceptStrategy ?? this.incomingAcceptStrategy,
+      backgroundDispatcherHandle:
+          backgroundDispatcherHandle ?? this.backgroundDispatcherHandle,
+      backgroundCallbackHandle:
+          backgroundCallbackHandle ?? this.backgroundCallbackHandle,
     );
   }
 }

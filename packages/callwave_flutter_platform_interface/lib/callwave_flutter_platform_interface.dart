@@ -4,6 +4,7 @@ export 'src/callwave_flutter_platform.dart';
 export 'src/codec/payload_codec.dart';
 export 'src/enums/call_event_type.dart';
 export 'src/enums/call_type.dart';
+export 'src/enums/incoming_accept_strategy.dart';
 export 'src/enums/post_call_behavior.dart';
 export 'src/models/call_data_dto.dart';
 export 'src/models/call_event_dto.dart';

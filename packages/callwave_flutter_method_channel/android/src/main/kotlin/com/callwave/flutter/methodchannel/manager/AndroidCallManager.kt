@@ -14,6 +14,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.callwave.flutter.methodchannel.CallwaveConstants
 import com.callwave.flutter.methodchannel.activity.FullScreenCallActivity
+import com.callwave.flutter.methodchannel.activity.ValidatedAcceptBridgeActivity
 import com.callwave.flutter.methodchannel.events.EventSinkBridge
 import com.callwave.flutter.methodchannel.model.CallEventPayload
 import com.callwave.flutter.methodchannel.model.CallPayload
@@ -29,16 +30,31 @@ class AndroidCallManager(
 ) {
     private val payloadStore = HashMap<String, CallPayload>()
     private val openedIncomingCalls = HashSet<String>()
-    private val acceptedCalls = HashSet<String>()
+    private val pendingAcceptedCalls = HashSet<String>()
+    private val confirmedAcceptedCalls = HashSet<String>()
+    private val pendingLaunchAfterConfirm = HashSet<String>()
     private val outgoingCalls = HashSet<String>()
+    private val backgroundValidator = AndroidBackgroundValidator(context)
+    private val backgroundValidatorRegistrationStore =
+        BackgroundValidatorRegistrationStore(context)
     var activity: Activity? = null
     private var postCallBehavior = PostCallBehavior.STAY_OPEN
+    private var backgroundDispatcherHandle: Long? = null
+    private var backgroundCallbackHandle: Long? = null
+
+    init {
+        restoreBackgroundIncomingCallValidatorRegistration()
+    }
 
     fun initialize() {
         notificationManager.ensureChannel()
     }
 
     fun showIncomingCall(payload: CallPayload) {
+        Log.d(
+            TAG,
+            "showIncomingCall(callId=${payload.callId}, strategy=${payload.incomingAcceptStrategy})",
+        )
         if (!activeCallRegistry.tryStart(payload.callId)) {
             emitEvent(payload.callId, CallwaveConstants.EVENT_DECLINED, payload.extra)
             return
@@ -57,13 +73,15 @@ class AndroidCallManager(
 
         payloadStore[payload.callId] = payload
         openedIncomingCalls.remove(payload.callId)
-        acceptedCalls.remove(payload.callId)
+        pendingAcceptedCalls.remove(payload.callId)
+        confirmedAcceptedCalls.remove(payload.callId)
+        pendingLaunchAfterConfirm.remove(payload.callId)
         outgoingCalls.remove(payload.callId)
 
         notificationManager.showIncomingCall(
             payload = payload,
             fullScreenIntent = fullScreenIntent(payload),
-            acceptIntent = acceptAndOpenIntent(payload),
+            acceptIntent = acceptIntent(payload),
             declineIntent = actionIntent(
                 action = CallwaveConstants.ACTION_DECLINE,
                 callId = payload.callId,
@@ -81,7 +99,9 @@ class AndroidCallManager(
         }
         payloadStore[payload.callId] = payload
         openedIncomingCalls.remove(payload.callId)
-        acceptedCalls.remove(payload.callId)
+        pendingAcceptedCalls.remove(payload.callId)
+        confirmedAcceptedCalls.remove(payload.callId)
+        pendingLaunchAfterConfirm.remove(payload.callId)
         outgoingCalls.add(payload.callId)
         notificationManager.showOngoingCall(
             payload = payload,
@@ -103,25 +123,71 @@ class AndroidCallManager(
         applyPostCallBehavior()
     }
 
-    fun markMissed(callId: String) {
+    fun markMissed(callId: String, extra: Map<String, Any?>? = null) {
+        Log.d(TAG, "markMissed(callId=$callId)")
         val payload = payloadStore.remove(callId) ?: fallbackPayload(callId)
+        val missedExtra = eventExtra(
+            payload = payload,
+            fallbackExtra = extra,
+        )
         clearCallRuntimeState(callId, dismissMissed = false)
         notificationManager.showMissedCall(
-            payload = payload,
+            payload = payload.copy(extra = missedExtra),
             callbackIntent = actionIntent(
                 action = CallwaveConstants.ACTION_CALLBACK,
                 callId = callId,
-                extra = payload.extra,
-                payload = payload,
+                extra = missedExtra,
+                payload = payload.copy(extra = missedExtra),
             ),
         )
-        emitEvent(callId, CallwaveConstants.EVENT_MISSED, payload.extra)
+        emitEvent(callId, CallwaveConstants.EVENT_MISSED, missedExtra)
     }
 
     fun acceptCall(callId: String): Boolean {
         val payload = payloadStore[callId] ?: return false
         onAccept(callId, payload.extra)
         return true
+    }
+
+    fun confirmAcceptedCall(callId: String): Boolean {
+        if (!pendingAcceptedCalls.contains(callId) && !confirmedAcceptedCalls.contains(callId)) {
+            return false
+        }
+        val payload = payloadStore[callId] ?: return false
+        pendingAcceptedCalls.remove(callId)
+        confirmedAcceptedCalls.add(callId)
+        notificationManager.showOngoingCall(
+            payload = payload,
+            openIntent = openOngoingIntent(payload),
+            endIntent = actionIntent(
+                action = CallwaveConstants.ACTION_END,
+                callId = callId,
+                extra = payload.extra,
+                payload = payload,
+            ),
+        )
+        if (pendingLaunchAfterConfirm.remove(callId)) {
+            launchHostApp(CallwaveConstants.ACTION_OPEN_ONGOING, payload)
+        }
+        return true
+    }
+
+    fun registerBackgroundIncomingCallValidator(
+        backgroundDispatcherHandle: Long,
+        backgroundCallbackHandle: Long,
+    ) {
+        this.backgroundDispatcherHandle = backgroundDispatcherHandle
+        this.backgroundCallbackHandle = backgroundCallbackHandle
+        backgroundValidatorRegistrationStore.save(
+            backgroundDispatcherHandle = backgroundDispatcherHandle,
+            backgroundCallbackHandle = backgroundCallbackHandle,
+        )
+    }
+
+    fun clearBackgroundIncomingCallValidator() {
+        backgroundDispatcherHandle = null
+        backgroundCallbackHandle = null
+        backgroundValidatorRegistrationStore.clear()
     }
 
     fun declineCall(callId: String): Boolean {
@@ -160,7 +226,7 @@ class AndroidCallManager(
         }
 
         val callId = intent.getStringExtra(CallwaveConstants.EXTRA_CALL_ID) ?: return false
-        if (acceptedCalls.contains(callId)) {
+        if (pendingAcceptedCalls.contains(callId) || confirmedAcceptedCalls.contains(callId)) {
             return true
         }
         if (!openedIncomingCalls.add(callId)) {
@@ -204,14 +270,27 @@ class AndroidCallManager(
         callId: String,
         extra: Map<String, Any?>?,
         fallbackPayload: CallPayload? = null,
-    ): Boolean {
-        if (!acceptedCalls.add(callId)) {
-            return false
+        shouldOpenAfterConfirm: Boolean = false,
+        requireBackgroundValidationForValidatedAccept: Boolean = false,
+        onBackgroundValidationResolved: (() -> Unit)? = null,
+    ): AcceptResult {
+        Log.d(
+            TAG,
+            "onAccept(callId=$callId, hasFallbackPayload=${fallbackPayload != null}, " +
+                "requireBackgroundValidation=$requireBackgroundValidationForValidatedAccept)",
+        )
+        if (pendingAcceptedCalls.contains(callId) || confirmedAcceptedCalls.contains(callId)) {
+            Log.d(TAG, "onAccept ignored for $callId because it is already accepted.")
+            return AcceptResult.IGNORED
         }
+        pendingAcceptedCalls.add(callId)
 
         val payload = resolvePayloadForAccept(callId, fallbackPayload)
         if (payload == null) {
-            acceptedCalls.remove(callId)
+            Log.d(TAG, "onAccept could not resolve payload for $callId.")
+            pendingAcceptedCalls.remove(callId)
+            confirmedAcceptedCalls.remove(callId)
+            pendingLaunchAfterConfirm.remove(callId)
             outgoingCalls.remove(callId)
             if (fallbackPayload != null) {
                 timeoutScheduler.cancel(callId)
@@ -226,7 +305,7 @@ class AndroidCallManager(
                     ),
                 )
             }
-            return false
+            return AcceptResult.IGNORED
         }
 
         timeoutScheduler.cancel(callId)
@@ -236,25 +315,62 @@ class AndroidCallManager(
         )
         openedIncomingCalls.remove(callId)
         outgoingCalls.remove(callId)
-        notificationManager.showOngoingCall(
-            payload = payload,
-            openIntent = openOngoingIntent(payload),
-            endIntent = actionIntent(
-                action = CallwaveConstants.ACTION_END,
-                callId = callId,
-                extra = payload.extra,
+        if (payload.incomingAcceptStrategy ==
+            CallwaveConstants.INCOMING_ACCEPT_STRATEGY_DEFER_OPEN_UNTIL_CONFIRMED
+        ) {
+            Log.d(TAG, "onAccept entering validated flow for $callId.")
+            if (shouldOpenAfterConfirm) {
+                pendingLaunchAfterConfirm.add(callId)
+            }
+            val startedBackgroundValidation = maybeRunBackgroundValidation(
                 payload = payload,
-            ),
-        )
+                onResolved = onBackgroundValidationResolved,
+            )
+            if (!startedBackgroundValidation) {
+                Log.d(
+                    TAG,
+                    "onAccept could not start background validation for $callId.",
+                )
+                if (requireBackgroundValidationForValidatedAccept) {
+                    markMissed(
+                        callId,
+                        extra = eventExtra(
+                            payload = payload,
+                            fallbackExtra = extra,
+                        ).toMutableMap().apply {
+                            put(CallwaveConstants.EXTRA_OUTCOME_REASON, "failed")
+                        },
+                    )
+                    onBackgroundValidationResolved?.invoke()
+                } else {
+                    emitEvent(
+                        callId,
+                        CallwaveConstants.EVENT_ACCEPTED,
+                        acceptedEventExtra(
+                            payload = payload,
+                            fallbackExtra = extra,
+                        ),
+                    )
+                }
+            }
+            return if (startedBackgroundValidation) {
+                Log.d(TAG, "onAccept background validation started for $callId.")
+                AcceptResult.VALIDATION_PENDING
+            } else {
+                AcceptResult.HANDLED
+            }
+        }
+
         emitEvent(
             callId,
             CallwaveConstants.EVENT_ACCEPTED,
-            eventExtra(
+            acceptedEventExtra(
                 payload = payload,
                 fallbackExtra = extra,
             ),
         )
-        return true
+        confirmAcceptedCall(callId)
+        return AcceptResult.LAUNCH_NOW
     }
 
     private fun onOpenOngoing(
@@ -269,7 +385,8 @@ class AndroidCallManager(
         val payload = payloadStore[callId] ?: fallbackPayload ?: return false
         payloadStore[callId] = payload
         openedIncomingCalls.remove(callId)
-        val isAcceptedIncomingCall = acceptedCalls.contains(callId)
+        val acceptanceState = acceptedStateFor(callId)
+        val isAcceptedIncomingCall = acceptanceState != null
         val eventType = if (isAcceptedIncomingCall) {
             timeoutScheduler.cancel(callId)
             CallwaveConstants.EVENT_ACCEPTED
@@ -282,10 +399,18 @@ class AndroidCallManager(
             callId,
             eventType,
             appendLaunchAction(
-                eventExtra(
-                    payload = payload,
-                    fallbackExtra = extra,
-                ),
+                if (eventType == CallwaveConstants.EVENT_ACCEPTED) {
+                    acceptedEventExtra(
+                        payload = payload,
+                        fallbackExtra = extra,
+                        acceptanceState = acceptanceState,
+                    )
+                } else {
+                    eventExtra(
+                        payload = payload,
+                        fallbackExtra = extra,
+                    )
+                },
                 CallwaveConstants.ACTION_OPEN_ONGOING,
             ),
         )
@@ -293,7 +418,7 @@ class AndroidCallManager(
     }
 
     fun onDecline(callId: String, extra: Map<String, Any?>?) {
-        if (acceptedCalls.contains(callId)) {
+        if (pendingAcceptedCalls.contains(callId) || confirmedAcceptedCalls.contains(callId)) {
             // Ignore stale decline actions after a successful accept.
             return
         }
@@ -307,7 +432,7 @@ class AndroidCallManager(
             // Ignore stale timeout broadcasts after call cleanup.
             return
         }
-        if (acceptedCalls.contains(callId)) {
+        if (pendingAcceptedCalls.contains(callId) || confirmedAcceptedCalls.contains(callId)) {
             // Ignore stale timeout broadcasts that race with an accepted call.
             return
         }
@@ -340,7 +465,8 @@ class AndroidCallManager(
         for (callId in activeCallIds) {
             val payload = payloadStore[callId]
             val type = when {
-                acceptedCalls.contains(callId) -> CallwaveConstants.EVENT_ACCEPTED
+                pendingAcceptedCalls.contains(callId) ||
+                    confirmedAcceptedCalls.contains(callId) -> CallwaveConstants.EVENT_ACCEPTED
                 outgoingCalls.contains(callId) -> CallwaveConstants.EVENT_STARTED
                 else -> CallwaveConstants.EVENT_INCOMING
             }
@@ -348,10 +474,17 @@ class AndroidCallManager(
                 CallEventPayload.now(
                     callId = callId,
                     type = type,
-                    extra = eventExtra(
-                        payload = payload,
-                        fallbackExtra = payload?.extra,
-                    ),
+                    extra = if (type == CallwaveConstants.EVENT_ACCEPTED) {
+                        acceptedEventExtra(
+                            payload = payload,
+                            fallbackExtra = payload?.extra,
+                        )
+                    } else {
+                        eventExtra(
+                            payload = payload,
+                            fallbackExtra = payload?.extra,
+                        )
+                    },
                 ).toMap(),
             )
         }
@@ -363,17 +496,25 @@ class AndroidCallManager(
         for (callId in activeCallIds) {
             val payload = payloadStore[callId]
             val type = when {
-                acceptedCalls.contains(callId) -> CallwaveConstants.EVENT_ACCEPTED
+                pendingAcceptedCalls.contains(callId) ||
+                    confirmedAcceptedCalls.contains(callId) -> CallwaveConstants.EVENT_ACCEPTED
                 outgoingCalls.contains(callId) -> CallwaveConstants.EVENT_STARTED
                 else -> CallwaveConstants.EVENT_INCOMING
             }
             emitEvent(
                 callId,
                 type,
-                eventExtra(
-                    payload = payload,
-                    fallbackExtra = payload?.extra,
-                ),
+                if (type == CallwaveConstants.EVENT_ACCEPTED) {
+                    acceptedEventExtra(
+                        payload = payload,
+                        fallbackExtra = payload?.extra,
+                    )
+                } else {
+                    eventExtra(
+                        payload = payload,
+                        fallbackExtra = payload?.extra,
+                    )
+                },
             )
         }
     }
@@ -418,6 +559,32 @@ class AndroidCallManager(
         postCallBehavior = PostCallBehavior.fromWireValue(rawBehavior)
     }
 
+    fun shouldOpenImmediatelyOnAccept(payload: CallPayload?): Boolean {
+        return payload?.incomingAcceptStrategy !=
+            CallwaveConstants.INCOMING_ACCEPT_STRATEGY_DEFER_OPEN_UNTIL_CONFIRMED
+    }
+
+    fun shouldHandleValidatedAcceptInBridge(payload: CallPayload?): Boolean {
+        return payload != null &&
+            payload.incomingAcceptStrategy ==
+            CallwaveConstants.INCOMING_ACCEPT_STRATEGY_DEFER_OPEN_UNTIL_CONFIRMED &&
+            !eventSinkBridge.hasListener()
+    }
+
+    fun launchValidatedAcceptBridge(payload: CallPayload) {
+        Log.d(TAG, "launchValidatedAcceptBridge(callId=${payload.callId})")
+        val intent = validatedAcceptBridgeIntent(payload).apply {
+            putExtra(CallwaveConstants.EXTRA_LAUNCH_ACTION, CallwaveConstants.ACTION_ACCEPT)
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_NO_ANIMATION,
+            )
+        }
+        context.startActivity(intent)
+    }
+
     private fun emitEvent(callId: String, type: String, extra: Map<String, Any?>?) {
         eventSinkBridge.emit(
             CallEventPayload.now(
@@ -440,13 +607,7 @@ class AndroidCallManager(
 
     private fun fullScreenIntent(payload: CallPayload): PendingIntent {
         val launchIntent = hostLaunchIntentForAction(CallwaveConstants.ACTION_OPEN_INCOMING)?.apply {
-            putExtra(CallwaveConstants.EXTRA_CALL_ID, payload.callId)
-            putExtra(CallwaveConstants.EXTRA_CALLER_NAME, payload.callerName)
-            putExtra(CallwaveConstants.EXTRA_HANDLE, payload.handle)
-            putExtra(CallwaveConstants.EXTRA_AVATAR_URL, payload.avatarUrl)
-            putExtra(CallwaveConstants.EXTRA_TIMEOUT_SECONDS, payload.timeoutSeconds)
-            putExtra(CallwaveConstants.EXTRA_CALL_TYPE, payload.callType)
-            putExtra(CallwaveConstants.EXTRA_EXTRA, toExtraJson(payload.extra))
+            putPayloadExtras(payload)
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_SINGLE_TOP or
@@ -455,13 +616,7 @@ class AndroidCallManager(
         }
 
         val intent = launchIntent ?: Intent(context, FullScreenCallActivity::class.java).apply {
-            putExtra(CallwaveConstants.EXTRA_CALL_ID, payload.callId)
-            putExtra(CallwaveConstants.EXTRA_CALLER_NAME, payload.callerName)
-            putExtra(CallwaveConstants.EXTRA_HANDLE, payload.handle)
-            putExtra(CallwaveConstants.EXTRA_AVATAR_URL, payload.avatarUrl)
-            putExtra(CallwaveConstants.EXTRA_TIMEOUT_SECONDS, payload.timeoutSeconds)
-            putExtra(CallwaveConstants.EXTRA_CALL_TYPE, payload.callType)
-            putExtra(CallwaveConstants.EXTRA_EXTRA, toExtraJson(payload.extra))
+            putPayloadExtras(payload)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
 
@@ -484,11 +639,7 @@ class AndroidCallManager(
             putExtra(CallwaveConstants.EXTRA_CALL_ID, callId)
             putExtra(CallwaveConstants.EXTRA_EXTRA, toExtraJson(extra))
             if (payload != null) {
-                putExtra(CallwaveConstants.EXTRA_CALLER_NAME, payload.callerName)
-                putExtra(CallwaveConstants.EXTRA_HANDLE, payload.handle)
-                putExtra(CallwaveConstants.EXTRA_AVATAR_URL, payload.avatarUrl)
-                putExtra(CallwaveConstants.EXTRA_TIMEOUT_SECONDS, payload.timeoutSeconds)
-                putExtra(CallwaveConstants.EXTRA_CALL_TYPE, payload.callType)
+                putPayloadExtras(payload)
             }
         }
 
@@ -500,15 +651,29 @@ class AndroidCallManager(
         )
     }
 
-    private fun acceptAndOpenIntent(payload: CallPayload): PendingIntent {
+    private fun acceptIntent(payload: CallPayload): PendingIntent {
+        if (payload.incomingAcceptStrategy ==
+            CallwaveConstants.INCOMING_ACCEPT_STRATEGY_DEFER_OPEN_UNTIL_CONFIRMED
+        ) {
+            val intent = validatedAcceptBridgeIntent(payload).apply {
+                putExtra(CallwaveConstants.EXTRA_LAUNCH_ACTION, CallwaveConstants.ACTION_ACCEPT)
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_NO_ANIMATION,
+                )
+            }
+            return PendingIntent.getActivity(
+                context,
+                payload.callId.hashCode() + PENDING_INTENT_REQUEST_CODE_OFFSET_ACCEPT_AND_OPEN,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        }
+
         val launchIntent = hostLaunchIntentForAction(CallwaveConstants.ACTION_ACCEPT_AND_OPEN)?.apply {
-            putExtra(CallwaveConstants.EXTRA_CALL_ID, payload.callId)
-            putExtra(CallwaveConstants.EXTRA_CALLER_NAME, payload.callerName)
-            putExtra(CallwaveConstants.EXTRA_HANDLE, payload.handle)
-            putExtra(CallwaveConstants.EXTRA_AVATAR_URL, payload.avatarUrl)
-            putExtra(CallwaveConstants.EXTRA_TIMEOUT_SECONDS, payload.timeoutSeconds)
-            putExtra(CallwaveConstants.EXTRA_CALL_TYPE, payload.callType)
-            putExtra(CallwaveConstants.EXTRA_EXTRA, toExtraJson(payload.extra))
+            putPayloadExtras(payload)
             putExtra(CallwaveConstants.EXTRA_LAUNCH_ACTION, CallwaveConstants.ACTION_ACCEPT_AND_OPEN)
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -540,13 +705,7 @@ class AndroidCallManager(
                 ?: hostLaunchIntentForAction(CallwaveConstants.ACTION_OPEN_INCOMING)
                 ?: Intent(context, FullScreenCallActivity::class.java)
             ).apply {
-            putExtra(CallwaveConstants.EXTRA_CALL_ID, payload.callId)
-            putExtra(CallwaveConstants.EXTRA_CALLER_NAME, payload.callerName)
-            putExtra(CallwaveConstants.EXTRA_HANDLE, payload.handle)
-            putExtra(CallwaveConstants.EXTRA_AVATAR_URL, payload.avatarUrl)
-            putExtra(CallwaveConstants.EXTRA_TIMEOUT_SECONDS, payload.timeoutSeconds)
-            putExtra(CallwaveConstants.EXTRA_CALL_TYPE, payload.callType)
-            putExtra(CallwaveConstants.EXTRA_EXTRA, toExtraJson(payload.extra))
+            putPayloadExtras(payload)
             putExtra(CallwaveConstants.EXTRA_LAUNCH_ACTION, CallwaveConstants.ACTION_OPEN_ONGOING)
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -626,7 +785,9 @@ class AndroidCallManager(
         }
         activeCallRegistry.remove(callId)
         openedIncomingCalls.remove(callId)
-        acceptedCalls.remove(callId)
+        pendingAcceptedCalls.remove(callId)
+        confirmedAcceptedCalls.remove(callId)
+        pendingLaunchAfterConfirm.remove(callId)
         outgoingCalls.remove(callId)
     }
 
@@ -639,6 +800,9 @@ class AndroidCallManager(
             timeoutSeconds = 30,
             callType = "audio",
             extra = null,
+            incomingAcceptStrategy = CallwaveConstants.INCOMING_ACCEPT_STRATEGY_OPEN_IMMEDIATELY,
+            backgroundDispatcherHandle = null,
+            backgroundCallbackHandle = null,
         )
     }
 
@@ -694,6 +858,32 @@ class AndroidCallManager(
         return merged
     }
 
+    private fun acceptedEventExtra(
+        payload: CallPayload?,
+        fallbackExtra: Map<String, Any?>?,
+        acceptanceState: String? = null,
+    ): Map<String, Any?> {
+        val merged = eventExtra(
+            payload = payload,
+            fallbackExtra = fallbackExtra,
+        ).toMutableMap()
+        merged[CallwaveConstants.EXTRA_ACCEPTANCE_STATE] =
+            acceptanceState ?: acceptedStateFor(payload?.callId)
+        return merged
+    }
+
+    private fun acceptedStateFor(callId: String?): String? {
+        if (callId == null) {
+            return null
+        }
+        return when {
+            confirmedAcceptedCalls.contains(callId) -> CallwaveConstants.ACCEPTANCE_STATE_CONFIRMED
+            pendingAcceptedCalls.contains(callId) ->
+                CallwaveConstants.ACCEPTANCE_STATE_PENDING_VALIDATION
+            else -> null
+        }
+    }
+
     private fun appendLaunchAction(
         extra: Map<String, Any?>,
         launchAction: String,
@@ -716,6 +906,19 @@ class AndroidCallManager(
             timeoutSeconds = intent.getIntExtra(CallwaveConstants.EXTRA_TIMEOUT_SECONDS, 30),
             callType = intent.getStringExtra(CallwaveConstants.EXTRA_CALL_TYPE) ?: "audio",
             extra = fallbackExtra,
+            incomingAcceptStrategy = intent.getStringExtra(
+                CallwaveConstants.EXTRA_INCOMING_ACCEPT_STRATEGY,
+            ) ?: CallwaveConstants.INCOMING_ACCEPT_STRATEGY_OPEN_IMMEDIATELY,
+            backgroundDispatcherHandle =
+                intent.takeIf {
+                    it.hasExtra(CallwaveConstants.EXTRA_BACKGROUND_DISPATCHER_HANDLE)
+                }?.getLongExtra(CallwaveConstants.EXTRA_BACKGROUND_DISPATCHER_HANDLE, 0L)
+                    ?.takeIf { it > 0L },
+            backgroundCallbackHandle =
+                intent.takeIf {
+                    it.hasExtra(CallwaveConstants.EXTRA_BACKGROUND_CALLBACK_HANDLE)
+                }?.getLongExtra(CallwaveConstants.EXTRA_BACKGROUND_CALLBACK_HANDLE, 0L)
+                    ?.takeIf { it > 0L },
         )
     }
 
@@ -742,7 +945,144 @@ class AndroidCallManager(
             intent.hasExtra(CallwaveConstants.EXTRA_HANDLE) ||
             intent.hasExtra(CallwaveConstants.EXTRA_AVATAR_URL) ||
             intent.hasExtra(CallwaveConstants.EXTRA_TIMEOUT_SECONDS) ||
-            intent.hasExtra(CallwaveConstants.EXTRA_CALL_TYPE)
+            intent.hasExtra(CallwaveConstants.EXTRA_CALL_TYPE) ||
+            intent.hasExtra(CallwaveConstants.EXTRA_INCOMING_ACCEPT_STRATEGY)
+    }
+
+    private fun maybeRunBackgroundValidation(
+        payload: CallPayload,
+        onResolved: (() -> Unit)? = null,
+    ): Boolean {
+        if (eventSinkBridge.hasListener()) {
+            Log.d(
+                TAG,
+                "maybeRunBackgroundValidation skipped for ${payload.callId} because a live listener exists.",
+            )
+            return false
+        }
+        val registration = backgroundIncomingCallValidatorRegistrationFor(payload)
+        if (registration == null) {
+            Log.d(
+                TAG,
+                "maybeRunBackgroundValidation skipped for ${payload.callId} because no validator registration is available.",
+            )
+            return false
+        }
+        Log.d(
+            TAG,
+            "maybeRunBackgroundValidation starting for ${payload.callId}.",
+        )
+        backgroundValidator.validate(
+            backgroundDispatcherHandle = registration.backgroundDispatcherHandle,
+            backgroundCallbackHandle = registration.backgroundCallbackHandle,
+            payload = payload,
+        ) { decision ->
+            try {
+                Log.d(
+                    TAG,
+                    "background validation resolved for ${payload.callId}: allowed=${decision.isAllowed}, reason=${decision.reason}",
+                )
+                if (!activeCallRegistry.contains(payload.callId)) {
+                    return@validate
+                }
+                if (decision.isAllowed) {
+                    confirmAcceptedCall(payload.callId)
+                } else {
+                    markMissed(
+                        payload.callId,
+                        extra = eventExtra(
+                            payload = payload,
+                            fallbackExtra = decision.extra,
+                        ).toMutableMap().apply {
+                            put(
+                                CallwaveConstants.EXTRA_OUTCOME_REASON,
+                                decision.reason ?: "failed",
+                            )
+                        },
+                    )
+                }
+            } finally {
+                onResolved?.invoke()
+            }
+        }
+        return true
+    }
+
+    private fun restoreBackgroundIncomingCallValidatorRegistration() {
+        val registration = backgroundValidatorRegistrationStore.load() ?: return
+        backgroundDispatcherHandle = registration.backgroundDispatcherHandle
+        backgroundCallbackHandle = registration.backgroundCallbackHandle
+    }
+
+    private fun currentBackgroundIncomingCallValidatorRegistration():
+        BackgroundValidatorRegistrationStore.Registration? {
+        val dispatcherHandle = backgroundDispatcherHandle
+        val callbackHandle = backgroundCallbackHandle
+        if (dispatcherHandle != null && callbackHandle != null) {
+            return BackgroundValidatorRegistrationStore.Registration(
+                backgroundDispatcherHandle = dispatcherHandle,
+                backgroundCallbackHandle = callbackHandle,
+            )
+        }
+
+        val restored = backgroundValidatorRegistrationStore.load() ?: return null
+        backgroundDispatcherHandle = restored.backgroundDispatcherHandle
+        backgroundCallbackHandle = restored.backgroundCallbackHandle
+        return restored
+    }
+
+    private fun backgroundIncomingCallValidatorRegistrationFor(
+        payload: CallPayload,
+    ): BackgroundValidatorRegistrationStore.Registration? {
+        val payloadDispatcherHandle = payload.backgroundDispatcherHandle
+        val payloadCallbackHandle = payload.backgroundCallbackHandle
+        if (payloadDispatcherHandle != null && payloadCallbackHandle != null) {
+            return BackgroundValidatorRegistrationStore.Registration(
+                backgroundDispatcherHandle = payloadDispatcherHandle,
+                backgroundCallbackHandle = payloadCallbackHandle,
+            )
+        }
+        return currentBackgroundIncomingCallValidatorRegistration()
+    }
+
+    fun launchHostApp(action: String, payload: CallPayload) {
+        val launchIntent = hostLaunchIntentForAction(action) ?: return
+        launchIntent.putPayloadExtras(payload)
+        launchIntent.putExtra(CallwaveConstants.EXTRA_LAUNCH_ACTION, action)
+        launchIntent.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP,
+        )
+        context.startActivity(launchIntent)
+    }
+
+    private fun validatedAcceptBridgeIntent(payload: CallPayload): Intent {
+        return Intent(context, ValidatedAcceptBridgeActivity::class.java).apply {
+            putPayloadExtras(payload)
+        }
+    }
+
+    private fun Intent.putPayloadExtras(payload: CallPayload) {
+        putExtra(CallwaveConstants.EXTRA_CALL_ID, payload.callId)
+        putExtra(CallwaveConstants.EXTRA_CALLER_NAME, payload.callerName)
+        putExtra(CallwaveConstants.EXTRA_HANDLE, payload.handle)
+        putExtra(CallwaveConstants.EXTRA_AVATAR_URL, payload.avatarUrl)
+        putExtra(CallwaveConstants.EXTRA_TIMEOUT_SECONDS, payload.timeoutSeconds)
+        putExtra(CallwaveConstants.EXTRA_CALL_TYPE, payload.callType)
+        putExtra(CallwaveConstants.EXTRA_EXTRA, toExtraJson(payload.extra))
+        putExtra(
+            CallwaveConstants.EXTRA_INCOMING_ACCEPT_STRATEGY,
+            payload.incomingAcceptStrategy,
+        )
+        putExtra(
+            CallwaveConstants.EXTRA_BACKGROUND_DISPATCHER_HANDLE,
+            payload.backgroundDispatcherHandle,
+        )
+        putExtra(
+            CallwaveConstants.EXTRA_BACKGROUND_CALLBACK_HANDLE,
+            payload.backgroundCallbackHandle,
+        )
     }
 
     companion object {
@@ -752,6 +1092,13 @@ class AndroidCallManager(
         private const val PENDING_INTENT_REQUEST_CODE_OFFSET_ACCEPT_AND_OPEN = 30000
         private const val PENDING_INTENT_REQUEST_CODE_OFFSET_OPEN_ONGOING = 35000
     }
+}
+
+enum class AcceptResult {
+    HANDLED,
+    LAUNCH_NOW,
+    VALIDATION_PENDING,
+    IGNORED,
 }
 
 private enum class PostCallBehavior(val wireValue: String) {

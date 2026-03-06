@@ -26,6 +26,22 @@ object CallwaveConstants {
     const val EXTRA_POST_CALL_BEHAVIOR = "postCallBehavior"
     const val EXTRA_EXTRA = "extra"
     const val EXTRA_LAUNCH_ACTION = "launchAction"
+    const val EXTRA_ACCEPTANCE_STATE = "acceptanceState"
+    const val EXTRA_OUTCOME_REASON = "outcomeReason"
+    const val EXTRA_INCOMING_ACCEPT_STRATEGY = "incomingAcceptStrategy"
+    const val EXTRA_BACKGROUND_DISPATCHER_HANDLE = "backgroundDispatcherHandle"
+    const val EXTRA_BACKGROUND_CALLBACK_HANDLE = "backgroundCallbackHandle"
+
+    const val BACKGROUND_CHANNEL = "callwave_flutter/background"
+    const val METHOD_VALIDATE_BACKGROUND_INCOMING_CALL = "validateBackgroundIncomingCall"
+    const val METHOD_BACKGROUND_DISPATCHER_READY = "backgroundDispatcherReady"
+    const val EXTRA_CALL_DATA = "callData"
+
+    const val ACCEPTANCE_STATE_PENDING_VALIDATION = "pendingValidation"
+    const val ACCEPTANCE_STATE_CONFIRMED = "confirmed"
+    const val INCOMING_ACCEPT_STRATEGY_OPEN_IMMEDIATELY = "openImmediately"
+    const val INCOMING_ACCEPT_STRATEGY_DEFER_OPEN_UNTIL_CONFIRMED =
+        "deferOpenUntilConfirmed"
 
     const val EVENT_INCOMING = "incoming"
     const val EVENT_ACCEPTED = "accepted"

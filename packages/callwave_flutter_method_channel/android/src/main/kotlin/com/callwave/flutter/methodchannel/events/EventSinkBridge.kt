@@ -18,6 +18,8 @@ class EventSinkBridge(
         sink = null
     }
 
+    fun hasListener(): Boolean = sink != null
+
     fun emit(event: CallEventPayload) {
         val currentSink = sink
         if (currentSink == null) {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:callwave_flutter/callwave_flutter.dart';
 import 'package:flutter/material.dart';
@@ -7,11 +8,138 @@ import 'example_camera_controller.dart';
 import 'example_video_call_screen.dart';
 import 'mock_callwave_engine.dart';
 
+enum IncomingDemoMode {
+  realtime('Realtime'),
+  validatedAllow('Validated Allow'),
+  validatedReject('Validated Reject');
+
+  const IncomingDemoMode(this.label);
+
+  final String label;
+}
+
+class _IncomingDemoModeStore {
+  static File get _file => File(
+        '${Directory.systemTemp.path}/callwave_example_incoming_mode.txt',
+      );
+
+  static Future<IncomingDemoMode> load() async {
+    try {
+      final raw = (await _file.readAsString()).trim();
+      return IncomingDemoMode.values.firstWhere(
+        (mode) => mode.name == raw,
+        orElse: () => IncomingDemoMode.realtime,
+      );
+    } catch (_) {
+      return IncomingDemoMode.realtime;
+    }
+  }
+
+  static Future<void> save(IncomingDemoMode mode) async {
+    await _file.writeAsString(mode.name, flush: true);
+  }
+
+  static Future<void> clear() async {
+    if (await _file.exists()) {
+      await _file.delete();
+    }
+  }
+}
+
+Future<IncomingDemoMode> loadPersistedIncomingDemoMode() {
+  return _IncomingDemoModeStore.load();
+}
+
+Future<void> persistIncomingDemoMode(IncomingDemoMode mode) {
+  return _IncomingDemoModeStore.save(mode);
+}
+
+Future<void> clearPersistedIncomingDemoMode() {
+  return _IncomingDemoModeStore.clear();
+}
+
+IncomingCallHandling exampleIncomingCallHandling({
+  required IncomingDemoMode incomingDemoMode,
+  required CallAcceptValidator foregroundValidator,
+}) {
+  return switch (incomingDemoMode) {
+    IncomingDemoMode.realtime => const IncomingCallHandling.realtime(),
+    IncomingDemoMode.validatedAllow ||
+    IncomingDemoMode.validatedReject =>
+      IncomingCallHandling.validated(
+        validator: foregroundValidator,
+      ),
+  };
+}
+
+void configureExampleCallwave({
+  required CallwaveEngine engine,
+  required IncomingDemoMode incomingDemoMode,
+  required CallAcceptValidator foregroundValidator,
+}) {
+  CallwaveFlutter.instance.configure(
+    CallwaveConfiguration(
+      engine: engine,
+      incomingCallHandling: exampleIncomingCallHandling(
+        incomingDemoMode: incomingDemoMode,
+        foregroundValidator: foregroundValidator,
+      ),
+      backgroundIncomingCallValidator: exampleBackgroundIncomingCallValidator,
+    ),
+  );
+}
+
+Future<CallAcceptDecision> _decisionForMode({
+  required IncomingDemoMode mode,
+  required String callId,
+}) async {
+  await Future<void>.delayed(const Duration(milliseconds: 700));
+  switch (mode) {
+    case IncomingDemoMode.realtime:
+    case IncomingDemoMode.validatedAllow:
+      return CallAcceptDecision.allow(
+        extra: <String, dynamic>{
+          'validatedByExample': true,
+          'validatedCallId': callId,
+        },
+      );
+    case IncomingDemoMode.validatedReject:
+      return const CallAcceptDecision.reject(
+        reason: CallAcceptRejectReason.cancelled,
+        extra: <String, dynamic>{
+          'validatedByExample': true,
+        },
+      );
+  }
+}
+
+@pragma('vm:entry-point')
+Future<CallAcceptDecision> exampleBackgroundIncomingCallValidator(
+  BackgroundIncomingCallValidationRequest request,
+) async {
+  final mode = await loadPersistedIncomingDemoMode();
+  return _decisionForMode(
+    mode: mode,
+    callId: request.callId,
+  );
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final cameraController = ExampleCameraController();
-  CallwaveFlutter.instance.setEngine(
-    MockCallwaveEngine(cameraController: cameraController),
+  final engine = MockCallwaveEngine(
+    cameraController: cameraController,
+  );
+  final initialIncomingDemoMode = await loadPersistedIncomingDemoMode();
+  configureExampleCallwave(
+    engine: engine,
+    incomingDemoMode: initialIncomingDemoMode,
+    foregroundValidator: (session) {
+      return _decisionForMode(
+        mode: initialIncomingDemoMode,
+        callId: session.callId,
+      );
+    },
   );
   final startupDecision =
       await CallwaveFlutter.instance.prepareStartupRouteDecision();
@@ -19,6 +147,8 @@ Future<void> main() async {
     CallwaveExampleApp(
       startupDecision: startupDecision,
       cameraController: cameraController,
+      engine: engine,
+      initialIncomingDemoMode: initialIncomingDemoMode,
       disposeCameraControllerOnDispose: true,
     ),
   );
@@ -33,8 +163,10 @@ class CallwaveExampleApp extends StatefulWidget {
   const CallwaveExampleApp({
     CallStartupRouteDecision? startupDecision,
     this.cameraController,
+    this.engine,
     this.oneToOneRemoteVideoBuilder,
     this.oneToOneLocalVideoBuilder,
+    this.initialIncomingDemoMode = IncomingDemoMode.realtime,
     this.disposeCameraControllerOnDispose = false,
     super.key,
   }) : startupDecision =
@@ -44,8 +176,10 @@ class CallwaveExampleApp extends StatefulWidget {
 
   /// Handle for camera preview in video calls. If null, a default is created.
   final ExampleCameraHandle? cameraController;
+  final CallwaveEngine? engine;
   final OneToOneRemoteVideoBuilder? oneToOneRemoteVideoBuilder;
   final OneToOneLocalVideoBuilder? oneToOneLocalVideoBuilder;
+  final IncomingDemoMode initialIncomingDemoMode;
 
   /// If true and [cameraController] is provided, the app disposes it when
   /// disposed. Use when the app creates the controller (e.g. in main).
@@ -61,6 +195,8 @@ class _CallwaveExampleAppState extends State<CallwaveExampleApp> {
       widget.cameraController ?? ExampleCameraController();
   late final bool _ownsCameraController = widget.cameraController == null ||
       widget.disposeCameraControllerOnDispose;
+  late final CallwaveEngine _engine =
+      widget.engine ?? MockCallwaveEngine(cameraController: _cameraController);
   late final Set<String> _preRoutedCallIds =
       widget.startupDecision.callId == null
           ? const <String>{}
@@ -102,10 +238,15 @@ class _CallwaveExampleAppState extends State<CallwaveExampleApp> {
       initialRoute:
           widget.startupDecision.shouldOpenCall ? _Routes.call : _Routes.home,
       routes: <String, WidgetBuilder>{
-        _Routes.home: (_) => const CallDemoScreen(),
+        _Routes.home: (_) => CallDemoScreen(
+              engine: _engine,
+              initialIncomingDemoMode: widget.initialIncomingDemoMode,
+            ),
         _Routes.call: (_) => _StartupCallRoute(
               startupDecision: widget.startupDecision,
               cameraController: _cameraController,
+              engine: _engine,
+              initialIncomingDemoMode: widget.initialIncomingDemoMode,
               oneToOneRemoteVideoBuilder: widget.oneToOneRemoteVideoBuilder,
               oneToOneLocalVideoBuilder: widget.oneToOneLocalVideoBuilder,
             ),
@@ -118,12 +259,16 @@ class _StartupCallRoute extends StatelessWidget {
   const _StartupCallRoute({
     required this.startupDecision,
     required this.cameraController,
+    required this.engine,
+    required this.initialIncomingDemoMode,
     this.oneToOneRemoteVideoBuilder,
     this.oneToOneLocalVideoBuilder,
   });
 
   final CallStartupRouteDecision startupDecision;
   final ExampleCameraHandle cameraController;
+  final CallwaveEngine engine;
+  final IncomingDemoMode initialIncomingDemoMode;
   final OneToOneRemoteVideoBuilder? oneToOneRemoteVideoBuilder;
   final OneToOneLocalVideoBuilder? oneToOneLocalVideoBuilder;
 
@@ -131,12 +276,18 @@ class _StartupCallRoute extends StatelessWidget {
   Widget build(BuildContext context) {
     final callId = startupDecision.callId;
     if (callId == null) {
-      return const CallDemoScreen();
+      return CallDemoScreen(
+        engine: engine,
+        initialIncomingDemoMode: initialIncomingDemoMode,
+      );
     }
 
     final session = CallwaveFlutter.instance.getSession(callId);
     if (session == null || session.isEnded) {
-      return const CallDemoScreen();
+      return CallDemoScreen(
+        engine: engine,
+        initialIncomingDemoMode: initialIncomingDemoMode,
+      );
     }
 
     return InheritedCallSession(
@@ -179,7 +330,14 @@ Widget _buildCallScreen({
 }
 
 class CallDemoScreen extends StatefulWidget {
-  const CallDemoScreen({super.key});
+  const CallDemoScreen({
+    required this.engine,
+    required this.initialIncomingDemoMode,
+    super.key,
+  });
+
+  final CallwaveEngine engine;
+  final IncomingDemoMode initialIncomingDemoMode;
 
   @override
   State<CallDemoScreen> createState() => _CallDemoScreenState();
@@ -196,10 +354,12 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
       TextEditingController(text: 'demo-call-001');
   final TextEditingController _missedNotificationTextController =
       TextEditingController();
+  late final CallwaveEngine _engine = widget.engine;
   StreamSubscription<CallEvent>? _subscription;
   bool _isCallActionInFlight = false;
   String? _previewCallId;
   int _speakerCursor = 0;
+  late IncomingDemoMode _incomingDemoMode = widget.initialIncomingDemoMode;
 
   @override
   void initState() {
@@ -239,6 +399,9 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
   Widget build(BuildContext context) {
     final callId = _callIdController.text.trim();
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final hasActiveSessions =
+        CallwaveFlutter.instance.activeSessions.isNotEmpty;
+    final incomingModeLocked = hasActiveSessions || _isCallActionInFlight;
     return Scaffold(
       appBar: AppBar(title: const Text('Callwave Example')),
       body: SafeArea(
@@ -268,6 +431,44 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                         hintText: 'You missed a call from {name}.',
                       ),
                       onChanged: (_) => setState(() {}),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Incoming Flow: ${_incomingDemoMode.label}',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    SegmentedButton<IncomingDemoMode>(
+                      showSelectedIcon: false,
+                      segments: IncomingDemoMode.values
+                          .map(
+                            (mode) => ButtonSegment<IncomingDemoMode>(
+                              value: mode,
+                              label: Text(mode.label),
+                            ),
+                          )
+                          .toList(growable: false),
+                      selected: <IncomingDemoMode>{_incomingDemoMode},
+                      onSelectionChanged: incomingModeLocked
+                          ? null
+                          : (selection) {
+                              final nextMode = selection.first;
+                              if (nextMode == _incomingDemoMode) {
+                                return;
+                              }
+                              setState(() {
+                                _incomingDemoMode = nextMode;
+                              });
+                              unawaited(
+                                persistIncomingDemoMode(nextMode),
+                              );
+                              _applyIncomingMode();
+                            },
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _incomingModeDescription,
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                     const SizedBox(height: 12),
                     Wrap(
@@ -483,6 +684,34 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
 
   Future<void> _markMissed(String callId) async {
     await CallwaveFlutter.instance.markMissed(callId);
+  }
+
+  void _applyIncomingMode() {
+    configureExampleCallwave(
+      engine: _engine,
+      incomingDemoMode: _incomingDemoMode,
+      foregroundValidator: _foregroundIncomingValidator,
+    );
+  }
+
+  Future<CallAcceptDecision> _foregroundIncomingValidator(
+    CallSession session,
+  ) {
+    return _decisionForMode(
+      mode: _incomingDemoMode,
+      callId: session.callId,
+    );
+  }
+
+  String get _incomingModeDescription {
+    switch (_incomingDemoMode) {
+      case IncomingDemoMode.realtime:
+        return 'Native accept opens the call flow immediately, like WhatsApp-style realtime signaling.';
+      case IncomingDemoMode.validatedAllow:
+        return 'Native accept waits for backend validation, then opens the call only after approval.';
+      case IncomingDemoMode.validatedReject:
+        return 'Native accept waits for validation and then fails gracefully into missed-call handling without foreground fallback.';
+    }
   }
 
   void _openConferencePreview(String callIdSeed, CallType callType) {
