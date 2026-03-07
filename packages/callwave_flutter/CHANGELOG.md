@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Ongoing-call restoration after process death: native layer persists call state
+  and `connectedAtMs`; `restoreActiveSessions()` restores sessions with correct
+  elapsed time. `CallwaveEngine.onResumeCall` for rejoin logic; default falls
+  back to `onAnswerCall`/`onStartCall`. `CallEventExtraKeys.connectedAtMs` in
+  event extra.
 - Missed-call startup actions: `CallStartupAction`, `CallStartupActionType`, and
   `CallStartupRouteDecision.pendingAction()` for when the app is launched from a
   missed-call notification (tap body or "Call Back")
@@ -20,7 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking for custom platform implementations
 
 - Custom `CallwaveFlutterPlatform` implementations must implement
-  `takePendingStartupAction()` (returns `null` by default)
+  `takePendingStartupAction()` (returns `null` by default). For ongoing-call
+  restoration, implement `syncCallConnectedState` and `clearCallState` (default
+  no-ops).
 - Custom `CallwaveFlutterPlatform` implementations must update `markMissed` to
   accept optional `extra`. Override `confirmAcceptedCall` only if using
   [IncomingAcceptStrategy.deferOpenUntilConfirmed]; it has a default no-op.

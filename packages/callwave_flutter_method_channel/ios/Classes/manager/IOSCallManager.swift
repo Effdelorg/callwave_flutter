@@ -11,6 +11,7 @@ final class IOSCallManager {
   private let notificationCenter: NotificationCenter
   private let missedCallNotificationManager: MissedCallNotificationManager
   private let pendingStartupActionStore: PendingStartupActionStore
+  private let ongoingCallStore: OngoingCallStore
   private let callController = CXCallController()
   private let delegate = CallKitProviderDelegate()
   private let backgroundValidator = IOSBackgroundValidator()
@@ -22,7 +23,9 @@ final class IOSCallManager {
   private var confirmedAcceptedCallIds: Set<String> = []
   private var launchActionOverrides: [String: String] = [:]
   private var explicitIncomingLaunchEmittedCallIds: Set<String> = []
+  private var explicitOngoingLaunchEmittedCallIds: Set<String> = []
   private var outgoingCallIds: Set<String> = []
+  private var connectedAtMsByCallId: [String: Int64] = [:]
   private var timeoutItems: [String: DispatchWorkItem] = [:]
   private var postCallBehavior: PostCallBehavior = .stayOpen
   private var backgroundDispatcherHandle: Int64?
@@ -34,13 +37,15 @@ final class IOSCallManager {
     activeCallRegistry: ActiveCallRegistry,
     notificationCenter: NotificationCenter = .default,
     missedCallNotificationManager: MissedCallNotificationManager = MissedCallNotificationManager(),
-    pendingStartupActionStore: PendingStartupActionStore = PendingStartupActionStore()
+    pendingStartupActionStore: PendingStartupActionStore = PendingStartupActionStore(),
+    ongoingCallStore: OngoingCallStore = OngoingCallStore()
   ) {
     self.eventBridge = eventBridge
     self.activeCallRegistry = activeCallRegistry
     self.notificationCenter = notificationCenter
     self.missedCallNotificationManager = missedCallNotificationManager
     self.pendingStartupActionStore = pendingStartupActionStore
+    self.ongoingCallStore = ongoingCallStore
 
     let config = CXProviderConfiguration(localizedName: "Callwave")
     config.supportsVideo = true
@@ -53,6 +58,7 @@ final class IOSCallManager {
     delegate.onDidReset = { [weak self] in self?.handleReset() }
     provider.setDelegate(delegate, queue: nil)
     self.missedCallNotificationManager.registerCategories()
+    restorePersistedOngoingCall()
     registerApplicationObservers()
   }
 
@@ -73,7 +79,9 @@ final class IOSCallManager {
     confirmedAcceptedCallIds.remove(payload.callId)
     launchActionOverrides.removeValue(forKey: payload.callId)
     explicitIncomingLaunchEmittedCallIds.remove(payload.callId)
+    explicitOngoingLaunchEmittedCallIds.remove(payload.callId)
     outgoingCallIds.remove(payload.callId)
+    connectedAtMsByCallId.removeValue(forKey: payload.callId)
     let uuid = uuidByCallId[payload.callId] ?? UUID()
     uuidByCallId[payload.callId] = uuid
     callIdByUuid[uuid] = payload.callId
@@ -103,7 +111,9 @@ final class IOSCallManager {
     confirmedAcceptedCallIds.remove(payload.callId)
     launchActionOverrides.removeValue(forKey: payload.callId)
     explicitIncomingLaunchEmittedCallIds.remove(payload.callId)
+    explicitOngoingLaunchEmittedCallIds.remove(payload.callId)
     outgoingCallIds.insert(payload.callId)
+    connectedAtMsByCallId.removeValue(forKey: payload.callId)
     let uuid = UUID()
     uuidByCallId[payload.callId] = uuid
     callIdByUuid[uuid] = payload.callId
@@ -114,12 +124,18 @@ final class IOSCallManager {
 
     let transaction = CXTransaction(action: startAction)
     callController.request(transaction) { [weak self] _ in
+      self?.persistOngoingCall(
+        payload: payload,
+        eventType: "started",
+        uuid: uuid
+      )
       self?.emit(callId: payload.callId, type: "started", extra: payload.extra)
     }
   }
 
   func endCall(callId: String) {
     guard let uuid = uuidByCallId[callId] else {
+      clearCallState(callId: callId)
       emit(callId: callId, type: "ended", extra: nil)
       applyPostCallBehaviorIfNeeded()
       return
@@ -150,6 +166,14 @@ final class IOSCallManager {
     confirmedAcceptedCallIds.insert(callId)
     launchActionOverrides.removeValue(forKey: callId)
     explicitIncomingLaunchEmittedCallIds.remove(callId)
+    explicitOngoingLaunchEmittedCallIds.remove(callId)
+    if let payload = payloadStore[callId] {
+      persistOngoingCall(
+        payload: payload,
+        eventType: "accepted",
+        uuid: uuidByCallId[callId]
+      )
+    }
     return true
   }
 
@@ -164,6 +188,32 @@ final class IOSCallManager {
   func clearBackgroundIncomingCallValidator() {
     backgroundDispatcherHandle = nil
     backgroundCallbackHandle = nil
+  }
+
+  func syncCallConnectedState(callId: String, connectedAtMs: Int64) {
+    guard activeCallRegistry.activeCallIds().contains(callId) else {
+      return
+    }
+    connectedAtMsByCallId[callId] = connectedAtMs
+    ongoingCallStore.updateConnectedAt(callId: callId, connectedAtMs: connectedAtMs)
+  }
+
+  func clearCallState(callId: String) {
+    if let uuid = uuidByCallId[callId] {
+      cleanup(callId: callId, uuid: uuid)
+      return
+    }
+    activeCallRegistry.remove(callId: callId)
+    payloadStore.removeValue(forKey: callId)
+    pendingAcceptedCallIds.remove(callId)
+    confirmedAcceptedCallIds.remove(callId)
+    launchActionOverrides.removeValue(forKey: callId)
+    explicitIncomingLaunchEmittedCallIds.remove(callId)
+    explicitOngoingLaunchEmittedCallIds.remove(callId)
+    outgoingCallIds.remove(callId)
+    connectedAtMsByCallId.removeValue(forKey: callId)
+    ongoingCallStore.clear(callId: callId)
+    missedCallNotificationManager.dismissMissedCall(callId: callId)
   }
 
   func declineCall(callId: String) -> Bool {
@@ -192,7 +242,10 @@ final class IOSCallManager {
       confirmedAcceptedCallIds.remove(callId)
       launchActionOverrides.removeValue(forKey: callId)
       explicitIncomingLaunchEmittedCallIds.remove(callId)
+      explicitOngoingLaunchEmittedCallIds.remove(callId)
       outgoingCallIds.remove(callId)
+      connectedAtMsByCallId.removeValue(forKey: callId)
+      ongoingCallStore.clear(callId: callId)
     }
     let notificationPayload = (payload ?? fallbackPayload(callId: callId)).copy(extra: missedExtra)
     missedCallNotificationManager.showMissedCall(payload: notificationPayload)
@@ -240,7 +293,7 @@ final class IOSCallManager {
           consumeLaunchActionOverride: true
         )
       } else {
-        extra = eventExtra(payload: payload)
+        extra = eventExtra(payload: payload, callId: callId)
       }
       return CallEventPayload.now(
         callId: callId,
@@ -256,7 +309,7 @@ final class IOSCallManager {
       if pendingAcceptedCallIds.contains(callId) || confirmedAcceptedCallIds.contains(callId) {
         emit(callId: callId, type: "accepted", extra: acceptedEventExtra(callId: callId, payload: payload))
       } else if outgoingCallIds.contains(callId) {
-        emit(callId: callId, type: "started", extra: eventExtra(payload: payload))
+        emit(callId: callId, type: "started", extra: eventExtra(payload: payload, callId: callId))
       } else {
         emit(
           callId: callId,
@@ -283,6 +336,7 @@ final class IOSCallManager {
     confirmedAcceptedCallIds.remove(callId)
     launchActionOverrides.removeValue(forKey: callId)
     explicitIncomingLaunchEmittedCallIds.remove(callId)
+    explicitOngoingLaunchEmittedCallIds.remove(callId)
     outgoingCallIds.remove(callId)
     guard let payload else { return }
     if payload.incomingAcceptStrategy == "deferOpenUntilConfirmed" {
@@ -365,7 +419,59 @@ final class IOSCallManager {
     confirmedAcceptedCallIds.removeAll()
     launchActionOverrides.removeAll()
     explicitIncomingLaunchEmittedCallIds.removeAll()
+    explicitOngoingLaunchEmittedCallIds.removeAll()
     outgoingCallIds.removeAll()
+    connectedAtMsByCallId.removeAll()
+    ongoingCallStore.clear()
+  }
+
+  private func restorePersistedOngoingCall() {
+    guard let snapshot = ongoingCallStore.restore() else {
+      return
+    }
+    let payload = snapshot.payload
+    guard activeCallRegistry.tryStart(callId: payload.callId) else {
+      ongoingCallStore.clear(callId: payload.callId)
+      return
+    }
+    payloadStore[payload.callId] = payload
+    pendingAcceptedCallIds.remove(payload.callId)
+    confirmedAcceptedCallIds.remove(payload.callId)
+    launchActionOverrides.removeValue(forKey: payload.callId)
+    explicitIncomingLaunchEmittedCallIds.remove(payload.callId)
+    explicitOngoingLaunchEmittedCallIds.remove(payload.callId)
+    outgoingCallIds.remove(payload.callId)
+    if let uuid = snapshot.uuid {
+      uuidByCallId[payload.callId] = uuid
+      callIdByUuid[uuid] = payload.callId
+    }
+    switch snapshot.eventType {
+    case "accepted":
+      confirmedAcceptedCallIds.insert(payload.callId)
+    case "started":
+      outgoingCallIds.insert(payload.callId)
+    default:
+      ongoingCallStore.clear(callId: payload.callId)
+      activeCallRegistry.remove(callId: payload.callId)
+      payloadStore.removeValue(forKey: payload.callId)
+      return
+    }
+    if let connectedAtMs = snapshot.connectedAtMs {
+      connectedAtMsByCallId[payload.callId] = connectedAtMs
+    }
+  }
+
+  private func persistOngoingCall(
+    payload: CallPayload,
+    eventType: String,
+    uuid: UUID?
+  ) {
+    ongoingCallStore.save(
+      payload: payload,
+      eventType: eventType,
+      connectedAtMs: connectedAtMsByCallId[payload.callId],
+      uuid: uuid
+    )
   }
 
   private func cleanup(callId: String, uuid: UUID) {
@@ -379,7 +485,10 @@ final class IOSCallManager {
     confirmedAcceptedCallIds.remove(callId)
     launchActionOverrides.removeValue(forKey: callId)
     explicitIncomingLaunchEmittedCallIds.remove(callId)
+    explicitOngoingLaunchEmittedCallIds.remove(callId)
     outgoingCallIds.remove(callId)
+    connectedAtMsByCallId.removeValue(forKey: callId)
+    ongoingCallStore.clear(callId: callId)
   }
 
   private func emit(callId: String, type: String, extra: [String: Any]?) {
@@ -423,7 +532,8 @@ final class IOSCallManager {
 
   private func eventExtra(
     payload: CallPayload?,
-    fallbackExtra: [String: Any]? = nil
+    fallbackExtra: [String: Any]? = nil,
+    callId: String? = nil
   ) -> [String: Any] {
     var merged = fallbackExtra ?? [:]
     if let payloadExtra = payload?.extra {
@@ -433,6 +543,12 @@ final class IOSCallManager {
     merged["handle"] = payload?.handle ?? (merged["handle"] as? String ?? "")
     merged["callType"] = payload?.callType ?? (merged["callType"] as? String ?? "audio")
     merged["avatarUrl"] = payload?.avatarUrl ?? merged["avatarUrl"] ?? NSNull()
+    let resolvedCallId = callId ?? payload?.callId
+    if let resolvedCallId, let connectedAtMs = connectedAtMsByCallId[resolvedCallId] {
+      merged["connectedAtMs"] = connectedAtMs
+    } else {
+      merged.removeValue(forKey: "connectedAtMs")
+    }
 
     return merged
   }
@@ -471,7 +587,7 @@ final class IOSCallManager {
     payload: CallPayload?,
     fallbackExtra: [String: Any]? = nil
   ) -> [String: Any] {
-    var merged = eventExtra(payload: payload, fallbackExtra: fallbackExtra)
+    var merged = eventExtra(payload: payload, fallbackExtra: fallbackExtra, callId: callId)
     merged["acceptanceState"] = acceptedState(for: callId)
     return merged
   }
@@ -510,6 +626,31 @@ final class IOSCallManager {
   }
 
   private func handleApplicationDidBecomeActive() {
+    if let callId = activeOngoingCallIdForOpenLaunch() {
+      guard !explicitOngoingLaunchEmittedCallIds.contains(callId) else {
+        return
+      }
+      guard launchActionOverrides[callId] == nil else {
+        return
+      }
+      explicitOngoingLaunchEmittedCallIds.insert(callId)
+      launchActionOverrides[callId] = Self.launchActionOpenOngoing
+      let type = confirmedAcceptedCallIds.contains(callId) ? "accepted" : "started"
+      if type == "accepted" {
+        emit(
+          callId: callId,
+          type: type,
+          extra: acceptedEventExtra(callId: callId, payload: payloadStore[callId])
+        )
+      } else {
+        emit(
+          callId: callId,
+          type: type,
+          extra: eventExtra(payload: payloadStore[callId], callId: callId)
+        )
+      }
+      return
+    }
     guard let callId = activeIncomingCallIdForOpenLaunch() else {
       return
     }
@@ -534,6 +675,13 @@ final class IOSCallManager {
         !pendingAcceptedCallIds.contains(callId) &&
         !confirmedAcceptedCallIds.contains(callId) &&
         !outgoingCallIds.contains(callId)
+    }
+  }
+
+  private func activeOngoingCallIdForOpenLaunch() -> String? {
+    activeCallRegistry.activeCallIds().first { callId in
+      payloadStore[callId] != nil &&
+        (confirmedAcceptedCallIds.contains(callId) || outgoingCallIds.contains(callId))
     }
   }
 
@@ -584,6 +732,8 @@ final class IOSCallManager {
 
   private static let launchActionOpenIncoming =
     "com.callwave.flutter.methodchannel.ACTION_OPEN_INCOMING"
+  private static let launchActionOpenOngoing =
+    "com.callwave.flutter.methodchannel.ACTION_OPEN_ONGOING"
 }
 
 private enum PostCallBehavior: String {

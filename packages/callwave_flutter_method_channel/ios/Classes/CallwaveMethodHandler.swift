@@ -133,6 +133,34 @@ final class CallwaveMethodHandler {
       callManager.markMissed(callId: callId, extra: extra)
       result(nil)
 
+    case "syncCallConnectedState":
+      let args = call.arguments as? [String: Any]
+      guard
+        let callId = args?["callId"] as? String,
+        let connectedAtMs = (args?["connectedAtMs"] as? NSNumber)?.int64Value,
+        connectedAtMs > 0
+      else {
+        result(
+          FlutterError(
+            code: "invalid_connected_state",
+            message: "callId and connectedAtMs are required",
+            details: nil
+          )
+        )
+        return
+      }
+      callManager.syncCallConnectedState(callId: callId, connectedAtMs: connectedAtMs)
+      result(nil)
+
+    case "clearCallState":
+      let args = call.arguments as? [String: Any]
+      guard let callId = args?["callId"] as? String else {
+        result(FlutterError(code: "invalid_call_id", message: "callId is required", details: nil))
+        return
+      }
+      callManager.clearCallState(callId: callId)
+      result(nil)
+
     case "getActiveCallIds":
       result(callManager.activeCallIds())
 

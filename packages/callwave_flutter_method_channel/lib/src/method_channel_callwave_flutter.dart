@@ -123,6 +123,30 @@ class MethodChannelCallwaveFlutter extends CallwaveFlutterPlatform {
   }
 
   @override
+  Future<void> syncCallConnectedState(
+    String callId, {
+    required int connectedAtMs,
+  }) async {
+    await initialize();
+    await _methodChannel.invokeMethod<void>(
+      'syncCallConnectedState',
+      <String, dynamic>{
+        PayloadCodec.keyCallId: callId,
+        PayloadCodec.keyConnectedAtMs: connectedAtMs,
+      },
+    );
+  }
+
+  @override
+  Future<void> clearCallState(String callId) async {
+    await initialize();
+    await _methodChannel.invokeMethod<void>(
+      'clearCallState',
+      <String, dynamic>{PayloadCodec.keyCallId: callId},
+    );
+  }
+
+  @override
   Future<List<String>> getActiveCallIds() async {
     await initialize();
     final raw = await _methodChannel.invokeMethod<List<dynamic>>(

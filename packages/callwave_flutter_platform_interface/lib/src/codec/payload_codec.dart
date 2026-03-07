@@ -22,6 +22,7 @@ class PayloadCodec {
       'backgroundDispatcherHandle';
   static const String keyBackgroundCallbackHandle = 'backgroundCallbackHandle';
   static const String keyStartupActionType = 'startupActionType';
+  static const String keyConnectedAtMs = 'connectedAtMs';
 
   static Map<String, dynamic> callDataToMap(CallDataDto data) {
     return <String, dynamic>{

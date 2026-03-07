@@ -40,6 +40,8 @@ class CallScreenController extends ChangeNotifier {
 
   bool get isVideo => session.callData.callType == CallType.video;
 
+  String get statusText => _statusText();
+
   void toggleMute() {
     unawaited(session.toggleMute());
   }
@@ -86,13 +88,29 @@ class CallScreenController extends ChangeNotifier {
         return CallStatus.ringing;
       case CallSessionState.validating:
       case CallSessionState.connecting:
-      case CallSessionState.reconnecting:
         return CallStatus.connecting;
       case CallSessionState.connected:
+      case CallSessionState.reconnecting:
         return CallStatus.connected;
       case CallSessionState.ended:
       case CallSessionState.failed:
         return CallStatus.ended;
+    }
+  }
+
+  String _statusText() {
+    if (session.state == CallSessionState.failed && session.didAttemptResume) {
+      return 'Unable to rejoin call';
+    }
+    switch (_status) {
+      case CallStatus.ringing:
+        return 'Ringing...';
+      case CallStatus.connecting:
+        return 'Connecting...';
+      case CallStatus.connected:
+        return '';
+      case CallStatus.ended:
+        return 'Call Ended';
     }
   }
 

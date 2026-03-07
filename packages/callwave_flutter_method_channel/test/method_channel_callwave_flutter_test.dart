@@ -124,6 +124,60 @@ void main() {
     );
   });
 
+  test('syncCallConnectedState sends connected timestamp payload', () async {
+    const channel = MethodChannel('callwave_flutter/methods');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+
+    final plugin = MethodChannelCallwaveFlutter();
+    await plugin.syncCallConnectedState(
+      'c-789',
+      connectedAtMs: 1700000000000,
+    );
+
+    expect(calls.map((call) => call.method), <String>[
+      'initialize',
+      'syncCallConnectedState',
+    ]);
+
+    final args = calls.last.arguments as Map<dynamic, dynamic>;
+    expect(args[PayloadCodec.keyCallId], 'c-789');
+    expect(args[PayloadCodec.keyConnectedAtMs], 1700000000000);
+  });
+
+  test('clearCallState sends call id payload', () async {
+    const channel = MethodChannel('callwave_flutter/methods');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+
+    final plugin = MethodChannelCallwaveFlutter();
+    await plugin.clearCallState('c-clear-native');
+
+    expect(calls.map((call) => call.method), <String>[
+      'initialize',
+      'clearCallState',
+    ]);
+
+    final args = calls.last.arguments as Map<dynamic, dynamic>;
+    expect(args[PayloadCodec.keyCallId], 'c-clear-native');
+  });
+
   test('takePendingStartupAction decodes startup action payload', () async {
     const channel = MethodChannel('callwave_flutter/methods');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

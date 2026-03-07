@@ -139,6 +139,32 @@ class CallwaveMethodHandler(
                 result.success(null)
             }
 
+            "syncCallConnectedState" -> {
+                val callId = call.argument<String>(CallwaveConstants.EXTRA_CALL_ID)
+                val connectedAtMs =
+                    call.argument<Number>(CallwaveConstants.EXTRA_CONNECTED_AT_MS)?.toLong()
+                if (callId.isNullOrBlank() || connectedAtMs == null || connectedAtMs <= 0L) {
+                    result.error(
+                        "invalid_connected_state",
+                        "callId and connectedAtMs are required",
+                        null,
+                    )
+                    return
+                }
+                callManager.syncCallConnectedState(callId, connectedAtMs)
+                result.success(null)
+            }
+
+            "clearCallState" -> {
+                val callId = call.argument<String>(CallwaveConstants.EXTRA_CALL_ID)
+                if (callId.isNullOrBlank()) {
+                    result.error("invalid_call_id", "callId is required", null)
+                    return
+                }
+                callManager.clearCallState(callId)
+                result.success(null)
+            }
+
             "getActiveCallIds" -> {
                 result.success(callManager.getActiveCallIds())
             }

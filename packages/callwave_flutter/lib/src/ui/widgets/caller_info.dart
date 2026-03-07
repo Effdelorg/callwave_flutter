@@ -11,6 +11,7 @@ class CallerInfo extends StatelessWidget {
     required this.callerName,
     required this.handle,
     required this.status,
+    required this.statusText,
     required this.elapsed,
     super.key,
   });
@@ -18,6 +19,7 @@ class CallerInfo extends StatelessWidget {
   final String callerName;
   final String handle;
   final CallStatus status;
+  final String statusText;
   final Duration elapsed;
 
   @override
@@ -44,25 +46,12 @@ class CallerInfo extends StatelessWidget {
           child: status == CallStatus.connected
               ? CallTimer(key: const ValueKey('timer'), elapsed: elapsed)
               : Text(
-                  _statusLabel(),
+                  statusText,
                   key: ValueKey(status),
                   style: CallScreenTheme.statusStyle,
                 ),
         ),
       ],
     );
-  }
-
-  String _statusLabel() {
-    switch (status) {
-      case CallStatus.ringing:
-        return 'Ringing...';
-      case CallStatus.connecting:
-        return 'Connecting...';
-      case CallStatus.connected:
-        return ''; // handled by CallTimer
-      case CallStatus.ended:
-        return 'Call Ended';
-    }
   }
 }

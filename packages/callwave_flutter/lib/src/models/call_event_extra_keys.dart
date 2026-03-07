@@ -27,6 +27,10 @@ abstract final class CallEventExtraKeys {
   /// Value for [acceptanceState] once the accepted call is confirmed.
   static const String acceptanceStateConfirmed = 'confirmed';
 
+  /// Connected timestamp persisted by the native layer for ongoing-call
+  /// restoration after app process death.
+  static const String connectedAtMs = 'connectedAtMs';
+
   /// Machine-readable rejection/end reason surfaced on missed/failure flows.
   static const String outcomeReason = 'outcomeReason';
 

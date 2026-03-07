@@ -34,6 +34,7 @@ class CallwaveFlutter {
   final Map<String, void Function()> _sessionListeners =
       <String, void Function()>{};
   final Map<String, Timer> _sessionCleanupTimers = <String, Timer>{};
+  final Map<String, int> _syncedConnectedAtMsByCallId = <String, int>{};
   final Map<String, int> _acceptFlowVersions = <String, int>{};
   final Set<String> _acceptValidationsInFlight = <String>{};
   final Set<String> _announcedRoutableSessions = <String>{};
@@ -65,6 +66,7 @@ class CallwaveFlutter {
   /// toggle.
   void configure(CallwaveConfiguration configuration) {
     _disposeAllSessions();
+    _syncedConnectedAtMsByCallId.clear();
     _acceptFlowVersions.clear();
     _acceptValidationsInFlight.clear();
     _announcedRoutableSessions.clear();
@@ -112,6 +114,7 @@ class CallwaveFlutter {
     required CallData callData,
     required bool isOutgoing,
     CallSessionState initialState = CallSessionState.idle,
+    DateTime? initialConnectedAt,
   }) {
     _requireEngineConfigured();
     final existing = _sessions[callData.callId];
@@ -120,6 +123,9 @@ class CallwaveFlutter {
         _disposeSession(callData.callId);
       } else {
         existing.updateCallData(callData);
+        if (initialConnectedAt != null) {
+          existing.restoreConnectedTimeline(initialConnectedAt);
+        }
         _reconcileSessionState(existing, initialState);
         return existing;
       }
@@ -129,6 +135,7 @@ class CallwaveFlutter {
       callData: callData,
       isOutgoing: isOutgoing,
       initialState: initialState,
+      initialConnectedAt: initialConnectedAt,
       engineProvider: () => _engine,
       acceptNative: acceptCall,
       declineNative: declineCall,
@@ -207,6 +214,14 @@ class CallwaveFlutter {
         await session.applyNativeEvent(event);
         return;
       case CallEventType.accepted:
+        if (_isRestoredOngoingEvent(event.extra)) {
+          final session = _ensureRestoredOngoingSession(
+            event: event,
+            isOutgoing: false,
+          );
+          await _beginRestoredOngoingSession(session);
+          return;
+        }
         final session = _ensureSessionFromEvent(
           event: event,
           isOutgoing: false,
@@ -215,6 +230,14 @@ class CallwaveFlutter {
         await _handleAcceptedEvent(session, event);
         return;
       case CallEventType.started:
+        if (_isRestoredOngoingEvent(event.extra)) {
+          final session = _ensureRestoredOngoingSession(
+            event: event,
+            isOutgoing: true,
+          );
+          await _beginRestoredOngoingSession(session);
+          return;
+        }
         final session = _ensureSessionFromEvent(
           event: event,
           isOutgoing: true,
@@ -337,6 +360,19 @@ class CallwaveFlutter {
         unawaited(session.applyNativeEvent(event));
         return;
       case CallEventType.accepted:
+        if (_isRestoredOngoingEvent(event.extra)) {
+          final session = _ensureRestoredOngoingSession(
+            event: event,
+            isOutgoing: false,
+          );
+          unawaited(
+            _beginRestoredOngoingSession(
+              session,
+              shouldAnnounceWhenReady: _isOpenOngoingLaunchAction(event.extra),
+            ),
+          );
+          return;
+        }
         final session = _ensureSessionFromEvent(
           event: event,
           isOutgoing: false,
@@ -351,6 +387,19 @@ class CallwaveFlutter {
         );
         return;
       case CallEventType.started:
+        if (_isRestoredOngoingEvent(event.extra)) {
+          final session = _ensureRestoredOngoingSession(
+            event: event,
+            isOutgoing: true,
+          );
+          unawaited(
+            _beginRestoredOngoingSession(
+              session,
+              shouldAnnounceWhenReady: _isOpenOngoingLaunchAction(event.extra),
+            ),
+          );
+          return;
+        }
         final session = _ensureSessionFromEvent(
           event: event,
           isOutgoing: true,
@@ -499,6 +548,18 @@ class CallwaveFlutter {
     unawaited(beginAnsweringFuture);
   }
 
+  Future<void> _beginRestoredOngoingSession(
+    CallSession session, {
+    bool shouldAnnounceWhenReady = false,
+  }) async {
+    final beginResumeFuture = session.beginResume();
+    if (shouldAnnounceWhenReady) {
+      _announcedRoutableSessions.add(session.callId);
+      _sessionController.add(session);
+    }
+    unawaited(beginResumeFuture);
+  }
+
   void _onEngineEventStreamError(Object error, StackTrace stackTrace) {
     Zone.current.handleUncaughtError(error, stackTrace);
   }
@@ -525,6 +586,8 @@ class CallwaveFlutter {
     if (session.isEnded) {
       _invalidateAcceptFlow(callId);
       _announcedRoutableSessions.remove(callId);
+      _syncedConnectedAtMsByCallId.remove(callId);
+      unawaited(_clearNativeCallState(callId));
       // Terminal states are absorbing; schedule cleanup once.
       if (_sessionCleanupTimers.containsKey(callId)) {
         return;
@@ -534,6 +597,25 @@ class CallwaveFlutter {
         () => _disposeSession(callId),
       );
       return;
+    }
+    if (session.state == CallSessionState.connected) {
+      final connectedAt = session.connectedAt;
+      if (connectedAt != null) {
+        final connectedAtMs = connectedAt.millisecondsSinceEpoch;
+        if (_syncedConnectedAtMsByCallId[callId] != connectedAtMs) {
+          _syncedConnectedAtMsByCallId[callId] = connectedAtMs;
+          unawaited(
+            _platform.syncCallConnectedState(
+              callId,
+              connectedAtMs: connectedAtMs,
+            ),
+          );
+        }
+      }
+    }
+    if (session.state != CallSessionState.connected &&
+        session.state != CallSessionState.reconnecting) {
+      _syncedConnectedAtMsByCallId.remove(callId);
     }
     if (_isRoutableSessionState(session.state)) {
       if (_announcedRoutableSessions.add(callId)) {
@@ -545,10 +627,19 @@ class CallwaveFlutter {
     _sessionCleanupTimers.remove(callId)?.cancel();
   }
 
+  Future<void> _clearNativeCallState(String callId) async {
+    try {
+      await _platform.clearCallState(callId);
+    } catch (error, stackTrace) {
+      Zone.current.handleUncaughtError(error, stackTrace);
+    }
+  }
+
   void _disposeSession(String callId) {
     _sessionCleanupTimers.remove(callId)?.cancel();
     _invalidateAcceptFlow(callId);
     _announcedRoutableSessions.remove(callId);
+    _syncedConnectedAtMsByCallId.remove(callId);
     final session = _sessions.remove(callId);
     final listener = _sessionListeners.remove(callId);
     if (session == null || listener == null) {
@@ -564,6 +655,7 @@ class CallwaveFlutter {
       timer.cancel();
     }
     _sessionCleanupTimers.clear();
+    _syncedConnectedAtMsByCallId.clear();
     _acceptFlowVersions.clear();
     _acceptValidationsInFlight.clear();
     _announcedRoutableSessions.clear();
@@ -600,6 +692,21 @@ class CallwaveFlutter {
       callData: callData,
       isOutgoing: isOutgoing,
       initialState: initialState,
+    );
+  }
+
+  CallSession _ensureRestoredOngoingSession({
+    required CallEvent event,
+    required bool isOutgoing,
+  }) {
+    final connectedAt = _restoredConnectedAtFromExtra(event.extra);
+    final existing = _sessions[event.callId];
+    final callData = _callDataFromEvent(event, fallback: existing?.callData);
+    return createSession(
+      callData: callData,
+      isOutgoing: isOutgoing,
+      initialState: _restoredOngoingInitialState(),
+      initialConnectedAt: connectedAt,
     );
   }
 
@@ -697,6 +804,9 @@ class CallwaveFlutter {
   }
 
   CallSessionState _acceptedInitialState(Map<String, dynamic>? extra) {
+    if (_isRestoredOngoingEvent(extra)) {
+      return _restoredOngoingInitialState();
+    }
     if (_isConfirmedAcceptance(extra) ||
         _incomingCallHandling is RealtimeIncomingCallHandling) {
       return CallSessionState.connecting;
@@ -704,9 +814,29 @@ class CallwaveFlutter {
     return CallSessionState.validating;
   }
 
+  CallSessionState _restoredOngoingInitialState() {
+    return CallSessionState.reconnecting;
+  }
+
   bool _isConfirmedAcceptance(Map<String, dynamic>? extra) {
     return extra?[CallEventExtraKeys.acceptanceState] ==
         CallEventExtraKeys.acceptanceStateConfirmed;
+  }
+
+  bool _isRestoredOngoingEvent(Map<String, dynamic>? extra) {
+    return _restoredConnectedAtFromExtra(extra) != null;
+  }
+
+  DateTime? _restoredConnectedAtFromExtra(Map<String, dynamic>? extra) {
+    final raw = extra?[CallEventExtraKeys.connectedAtMs];
+    if (raw is! num) {
+      return null;
+    }
+    final timestampMs = raw.toInt();
+    if (timestampMs <= 0) {
+      return null;
+    }
+    return DateTime.fromMillisecondsSinceEpoch(timestampMs);
   }
 
   int _nextAcceptFlowVersion(String callId) {

@@ -64,6 +64,16 @@ abstract class CallwaveFlutterPlatform extends PlatformInterface {
   /// rejections (e.g. `outcomeReason`).
   Future<void> markMissed(String callId, {Map<String, dynamic>? extra});
 
+  /// Persists the connected timestamp for an active ongoing call so the
+  /// platform can restore timer continuity after process death.
+  Future<void> syncCallConnectedState(
+    String callId, {
+    required int connectedAtMs,
+  }) async {}
+
+  /// Clears any persisted/native call restore state for [callId].
+  Future<void> clearCallState(String callId) async {}
+
   Future<List<String>> getActiveCallIds();
 
   /// Returns a snapshot of active call event state (as opposed to emitting via
@@ -151,6 +161,15 @@ class _StubCallwaveFlutterPlatform extends CallwaveFlutterPlatform {
   Future<void> markMissed(String callId, {Map<String, dynamic>? extra}) {
     throw UnimplementedError('markMissed() has not been implemented.');
   }
+
+  @override
+  Future<void> syncCallConnectedState(
+    String callId, {
+    required int connectedAtMs,
+  }) async {}
+
+  @override
+  Future<void> clearCallState(String callId) async {}
 
   @override
   Future<void> requestFullScreenIntentPermission() {

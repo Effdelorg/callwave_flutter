@@ -29,6 +29,7 @@ class AndroidCallManager(
     private val eventSinkBridge: EventSinkBridge,
 ) {
     private val pendingStartupActionStore = PendingStartupActionStore(context)
+    private val ongoingCallStore = OngoingCallStore(context)
     private val payloadStore = HashMap<String, CallPayload>()
     private val openedIncomingCalls = HashSet<String>()
     private val pendingAcceptedCalls = HashSet<String>()
@@ -36,6 +37,7 @@ class AndroidCallManager(
     private val pendingLaunchAfterConfirm = HashSet<String>()
     private val launchActionOverrides = HashMap<String, String>()
     private val outgoingCalls = HashSet<String>()
+    private val connectedAtByCallId = HashMap<String, Long>()
     private val backgroundValidator = AndroidBackgroundValidator(context)
     private val backgroundValidatorRegistrationStore =
         BackgroundValidatorRegistrationStore(context)
@@ -52,6 +54,7 @@ class AndroidCallManager(
 
     init {
         restoreBackgroundIncomingCallValidatorRegistration()
+        restorePersistedOngoingCall()
     }
 
     fun initialize() {
@@ -86,6 +89,7 @@ class AndroidCallManager(
         pendingLaunchAfterConfirm.remove(payload.callId)
         launchActionOverrides.remove(payload.callId)
         outgoingCalls.remove(payload.callId)
+        connectedAtByCallId.remove(payload.callId)
 
         notificationManager.showIncomingCall(
             payload = payload,
@@ -113,6 +117,7 @@ class AndroidCallManager(
         pendingLaunchAfterConfirm.remove(payload.callId)
         launchActionOverrides.remove(payload.callId)
         outgoingCalls.add(payload.callId)
+        connectedAtByCallId.remove(payload.callId)
         notificationManager.showOngoingCall(
             payload = payload,
             openIntent = openOngoingIntent(payload),
@@ -122,6 +127,10 @@ class AndroidCallManager(
                 extra = payload.extra,
                 payload = payload,
             ),
+        )
+        persistOngoingCall(
+            payload = payload,
+            eventType = CallwaveConstants.EVENT_STARTED,
         )
         emitEvent(payload.callId, CallwaveConstants.EVENT_STARTED, payload.extra)
     }
@@ -177,6 +186,10 @@ class AndroidCallManager(
                 extra = payload.extra,
                 payload = payload,
             ),
+        )
+        persistOngoingCall(
+            payload = payload,
+            eventType = CallwaveConstants.EVENT_ACCEPTED,
         )
         if (pendingLaunchAfterConfirm.remove(callId)) {
             launchHostApp(CallwaveConstants.ACTION_OPEN_ONGOING, payload)
@@ -460,12 +473,14 @@ class AndroidCallManager(
                     acceptedEventExtra(
                         payload = payload,
                         fallbackExtra = extra,
+                        callId = callId,
                         acceptanceState = acceptanceState,
                     )
                 } else {
                     eventExtra(
                         payload = payload,
                         fallbackExtra = extra,
+                        callId = callId,
                     )
                 },
                 CallwaveConstants.ACTION_OPEN_ONGOING,
@@ -556,6 +571,7 @@ class AndroidCallManager(
                 acceptedEventExtra(
                     payload = payload,
                     fallbackExtra = payload?.extra,
+                    callId = callId,
                 )
             } else if (type == CallwaveConstants.EVENT_INCOMING) {
                 incomingEventExtra(
@@ -568,6 +584,7 @@ class AndroidCallManager(
                 eventExtra(
                     payload = payload,
                     fallbackExtra = payload?.extra,
+                    callId = callId,
                 )
             }
             snapshots.add(
@@ -598,6 +615,7 @@ class AndroidCallManager(
                     acceptedEventExtra(
                         payload = payload,
                         fallbackExtra = payload?.extra,
+                        callId = callId,
                     )
                 } else if (type == CallwaveConstants.EVENT_INCOMING) {
                     incomingEventExtra(
@@ -610,6 +628,7 @@ class AndroidCallManager(
                     eventExtra(
                         payload = payload,
                         fallbackExtra = payload?.extra,
+                        callId = callId,
                     )
                 },
             )
@@ -656,6 +675,19 @@ class AndroidCallManager(
         postCallBehavior = PostCallBehavior.fromWireValue(rawBehavior)
     }
 
+    fun syncCallConnectedState(callId: String, connectedAtMs: Long) {
+        if (!activeCallRegistry.contains(callId)) {
+            return
+        }
+        connectedAtByCallId[callId] = connectedAtMs
+        ongoingCallStore.updateConnectedAt(callId, connectedAtMs)
+    }
+
+    fun clearCallState(callId: String) {
+        clearCallRuntimeState(callId, dismissMissed = true)
+        payloadStore.remove(callId)
+    }
+
     fun shouldOpenImmediatelyOnAccept(payload: CallPayload?): Boolean {
         return payload?.incomingAcceptStrategy !=
             CallwaveConstants.INCOMING_ACCEPT_STRATEGY_DEFER_OPEN_UNTIL_CONFIRMED
@@ -700,6 +732,48 @@ class AndroidCallManager(
         currentActivity.runOnUiThread {
             currentActivity.moveTaskToBack(true)
         }
+    }
+
+    private fun restorePersistedOngoingCall() {
+        val snapshot = ongoingCallStore.restore() ?: return
+        val payload = snapshot.payload
+        if (!activeCallRegistry.tryStart(payload.callId)) {
+            ongoingCallStore.clear(payload.callId)
+            return
+        }
+        payloadStore[payload.callId] = payload
+        openedIncomingCalls.remove(payload.callId)
+        pendingAcceptedCalls.remove(payload.callId)
+        confirmedAcceptedCalls.remove(payload.callId)
+        pendingLaunchAfterConfirm.remove(payload.callId)
+        launchActionOverrides.remove(payload.callId)
+        outgoingCalls.remove(payload.callId)
+        when (snapshot.eventType) {
+            CallwaveConstants.EVENT_ACCEPTED -> {
+                confirmedAcceptedCalls.add(payload.callId)
+            }
+            CallwaveConstants.EVENT_STARTED -> {
+                outgoingCalls.add(payload.callId)
+            }
+            else -> {
+                ongoingCallStore.clear(payload.callId)
+                clearCallRuntimeState(payload.callId, dismissMissed = true)
+                payloadStore.remove(payload.callId)
+                return
+            }
+        }
+        snapshot.connectedAtMs?.let { connectedAtByCallId[payload.callId] = it }
+    }
+
+    private fun persistOngoingCall(
+        payload: CallPayload,
+        eventType: String,
+    ) {
+        ongoingCallStore.save(
+            payload = payload,
+            eventType = eventType,
+            connectedAtMs = connectedAtByCallId[payload.callId],
+        )
     }
 
     private fun handleMissedCallStartupIntent(
@@ -948,6 +1022,8 @@ class AndroidCallManager(
         pendingLaunchAfterConfirm.remove(callId)
         launchActionOverrides.remove(callId)
         outgoingCalls.remove(callId)
+        connectedAtByCallId.remove(callId)
+        ongoingCallStore.clear(callId)
     }
 
     private fun fallbackPayload(callId: String): CallPayload {
@@ -997,6 +1073,7 @@ class AndroidCallManager(
     private fun eventExtra(
         payload: CallPayload?,
         fallbackExtra: Map<String, Any?>?,
+        callId: String? = payload?.callId,
         callerName: String? = null,
         handle: String? = null,
         avatarUrl: String? = null,
@@ -1025,20 +1102,28 @@ class AndroidCallManager(
             ?: callType
             ?: merged[CallwaveConstants.EXTRA_CALL_TYPE]
             ?: "audio"
+        val connectedAtMs = callId?.let(connectedAtByCallId::get)
+        if (connectedAtMs != null) {
+            merged[CallwaveConstants.EXTRA_CONNECTED_AT_MS] = connectedAtMs
+        } else {
+            merged.remove(CallwaveConstants.EXTRA_CONNECTED_AT_MS)
+        }
         return merged
     }
 
     private fun acceptedEventExtra(
         payload: CallPayload?,
         fallbackExtra: Map<String, Any?>?,
+        callId: String? = payload?.callId,
         acceptanceState: String? = null,
     ): Map<String, Any?> {
         val merged = eventExtra(
             payload = payload,
             fallbackExtra = fallbackExtra,
+            callId = callId,
         ).toMutableMap()
         merged[CallwaveConstants.EXTRA_ACCEPTANCE_STATE] =
-            acceptanceState ?: acceptedStateFor(payload?.callId)
+            acceptanceState ?: acceptedStateFor(callId)
         return merged
     }
 
