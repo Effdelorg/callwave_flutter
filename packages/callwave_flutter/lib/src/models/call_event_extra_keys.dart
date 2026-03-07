@@ -34,4 +34,9 @@ abstract final class CallEventExtraKeys {
   /// notification (Android).
   static const String launchActionOpenOngoing =
       'com.callwave.flutter.methodchannel.ACTION_OPEN_ONGOING';
+
+  /// Value for [launchAction] when the user opened from the native incoming
+  /// call UI without answering yet.
+  static const String launchActionOpenIncoming =
+      'com.callwave.flutter.methodchannel.ACTION_OPEN_INCOMING';
 }

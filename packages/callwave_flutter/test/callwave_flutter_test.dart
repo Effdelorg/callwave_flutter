@@ -355,6 +355,37 @@ void main() {
     expect(identical(routedSession, existing), isTrue);
   });
 
+  test('open incoming launch action re-emits existing ringing session',
+      () async {
+    const callId = 'c-open-incoming';
+    final existing = CallwaveFlutter.instance.createSession(
+      callData: const CallData(
+        callId: callId,
+        callerName: 'Ava',
+        handle: '+1 555 0101',
+      ),
+      isOutgoing: false,
+      initialState: CallSessionState.ringing,
+    );
+
+    final routedSessionFuture = CallwaveFlutter.instance.sessions.first;
+    fakePlatform.emit(
+      platform.CallEventDto(
+        callId: callId,
+        type: platform.CallEventType.incoming,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        extra: const <String, dynamic>{
+          CallEventExtraKeys.launchAction:
+              CallEventExtraKeys.launchActionOpenIncoming,
+        },
+      ),
+    );
+
+    final routedSession = await routedSessionFuture;
+    expect(identical(routedSession, existing), isTrue);
+    expect(routedSession.state, CallSessionState.ringing);
+  });
+
   test('started launchAction re-emits existing outgoing session for routing',
       () async {
     const callId = 'c-open-ongoing-started';
@@ -552,6 +583,33 @@ void main() {
     expect(decision.sessionState, isNull);
   });
 
+  test(
+      'prepareStartupRouteDecision opens for explicit incoming startup without auto-answer',
+      () async {
+    final engine = _FakeEngine();
+    fakePlatform.activeCallIds = <String>['c-startup-open-incoming'];
+    fakePlatform.activeCallSnapshots = <platform.CallEventDto>[
+      platform.CallEventDto(
+        callId: 'c-startup-open-incoming',
+        type: platform.CallEventType.incoming,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        extra: const <String, dynamic>{
+          CallEventExtraKeys.launchAction:
+              CallEventExtraKeys.launchActionOpenIncoming,
+        },
+      ),
+    ];
+
+    CallwaveFlutter.instance.setEngine(engine);
+    final decision =
+        await CallwaveFlutter.instance.prepareStartupRouteDecision();
+
+    expect(decision.shouldOpenCall, isTrue);
+    expect(decision.callId, 'c-startup-open-incoming');
+    expect(decision.sessionState, CallSessionState.ringing);
+    expect(engine.answerCount, 0);
+  });
+
   test('prepareStartupRouteDecision stays home for validated rejected startup',
       () async {
     fakePlatform.activeCallIds = <String>['c-startup-validated-reject'];
@@ -615,6 +673,87 @@ void main() {
     expect(decision.sessionState, CallSessionState.connecting);
     expect(fakePlatform.lastConfirmedCallId, 'c-startup-validated-allow');
   });
+
+  test('validated accept does not reopen after terminal event wins the race',
+      () async {
+    final engine = _FakeEngine();
+    final validationGate = Completer<CallAcceptDecision>();
+    final sessionFuture = CallwaveFlutter.instance.sessions.first;
+
+    CallwaveFlutter.instance.configure(
+      CallwaveConfiguration(
+        engine: engine,
+        incomingCallHandling: IncomingCallHandling.validated(
+          validator: (_) => validationGate.future,
+        ),
+      ),
+    );
+    fakePlatform.emit(
+      platform.CallEventDto(
+        callId: 'c-validation-race',
+        type: platform.CallEventType.accepted,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+
+    final session = await sessionFuture;
+    await Future<void>.delayed(Duration.zero);
+    expect(session.state, CallSessionState.validating);
+
+    fakePlatform.emit(
+      platform.CallEventDto(
+        callId: 'c-validation-race',
+        type: platform.CallEventType.ended,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    validationGate.complete(const CallAcceptDecision.allow());
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(session.state, CallSessionState.ended);
+    expect(engine.answerCount, 0);
+    expect(fakePlatform.confirmAcceptedCallCount, 0);
+  });
+
+  test('started event replaces lingering ended session with a fresh one',
+      () async {
+    const callId = 'c-reuse-after-ended';
+    final endedSession = CallwaveFlutter.instance.createSession(
+      callData: const CallData(
+        callId: callId,
+        callerName: 'Ava',
+        handle: '+1 555 0101',
+      ),
+      isOutgoing: false,
+      initialState: CallSessionState.connecting,
+    );
+    endedSession.reportEnded();
+    await Future<void>.delayed(Duration.zero);
+
+    final sessionFuture = CallwaveFlutter.instance.sessions.first;
+    fakePlatform.emit(
+      platform.CallEventDto(
+        callId: callId,
+        type: platform.CallEventType.started,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        extra: const <String, dynamic>{
+          'callerName': 'Milo',
+          'handle': '+1 555 0202',
+        },
+      ),
+    );
+
+    final routedSession = await sessionFuture;
+    await Future<void>.delayed(Duration.zero);
+
+    expect(identical(routedSession, endedSession), isFalse);
+    expect(routedSession.isOutgoing, isTrue);
+    expect(routedSession.state, CallSessionState.connecting);
+    expect(routedSession.callData.callerName, 'Milo');
+  });
 }
 
 class _FakePlatform extends platform.CallwaveFlutterPlatform {
@@ -650,8 +789,17 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
     await _controller.close();
   }
 
+  void _removeActiveCall(String callId) {
+    activeCallIds = activeCallIds.where((id) => id != callId).toList();
+    activeCallSnapshots = activeCallSnapshots
+        .where((event) => event.callId != callId)
+        .toList(growable: false);
+  }
+
   @override
-  Future<void> endCall(String callId) async {}
+  Future<void> endCall(String callId) async {
+    _removeActiveCall(callId);
+  }
 
   @override
   Future<void> registerBackgroundIncomingCallValidator({
@@ -682,7 +830,9 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   }
 
   @override
-  Future<void> declineCall(String callId) async {}
+  Future<void> declineCall(String callId) async {
+    _removeActiveCall(callId);
+  }
 
   @override
   Future<List<String>> getActiveCallIds() async => activeCallIds;
@@ -709,6 +859,7 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
     String callId, {
     Map<String, dynamic>? extra,
   }) async {
+    _removeActiveCall(callId);
     lastMarkedMissedCallId = callId;
     lastMarkedMissedExtra = extra;
     final error = markMissedError;

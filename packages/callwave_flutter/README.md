@@ -181,11 +181,28 @@ Flow:
 decision:
 
 - Open call route when a session is `connecting`, `connected`, or `reconnecting`.
-- Stay on home route when sessions are only `ringing`, `idle`, `validating`,
-  or none exist.
+- Open call route for `ringing` only when the native layer explicitly launched
+  the app for that incoming call (for example, tapping the Android incoming
+  call body or reopening a still-ringing CallKit call on iOS).
+- Stay on home route when sessions are only ordinary `ringing`, `idle`,
+  `validating`, or none exist.
 
 If your app does not use startup routing in `main`, `CallwaveScope` still
-auto-pushes `CallScreen` as fallback once a session is routable.
+auto-pushes `CallScreen` as fallback once a live session becomes routable. On
+startup hydration it keeps ordinary restored `ringing` sessions on home unless
+the native event explicitly requested the incoming call UI.
+
+On Android, keep these intent actions on your host `Activity` so the plugin can
+reopen the correct screen:
+
+```xml
+<intent-filter>
+    <action android:name="com.callwave.flutter.methodchannel.ACTION_ACCEPT_AND_OPEN" />
+    <action android:name="com.callwave.flutter.methodchannel.ACTION_OPEN_INCOMING" />
+    <action android:name="com.callwave.flutter.methodchannel.ACTION_OPEN_ONGOING" />
+    <category android:name="android.intent.category.DEFAULT" />
+</intent-filter>
+```
 
 ## CallScreen
 

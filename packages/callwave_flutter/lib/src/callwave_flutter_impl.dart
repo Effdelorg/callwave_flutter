@@ -114,9 +114,13 @@ class CallwaveFlutter {
     _requireEngineConfigured();
     final existing = _sessions[callData.callId];
     if (existing != null) {
-      existing.updateCallData(callData);
-      _reconcileSessionState(existing, initialState);
-      return existing;
+      if (existing.isEnded) {
+        _disposeSession(callData.callId);
+      } else {
+        existing.updateCallData(callData);
+        _reconcileSessionState(existing, initialState);
+        return existing;
+      }
     }
 
     final session = CallSession(
@@ -166,10 +170,14 @@ class CallwaveFlutter {
     for (final callId in activeCallIds) {
       final existing = _sessions[callId];
       if (existing != null) {
-        if (existing.state == CallSessionState.idle) {
-          _reconcileSessionState(existing, CallSessionState.connecting);
+        if (existing.isEnded) {
+          _disposeSession(callId);
+        } else {
+          if (existing.state == CallSessionState.idle) {
+            _reconcileSessionState(existing, CallSessionState.connecting);
+          }
+          continue;
         }
-        continue;
       }
       createSession(
         callData: _fallbackCallData(callId),
@@ -227,8 +235,7 @@ class CallwaveFlutter {
   Future<CallStartupRouteDecision> prepareStartupRouteDecision() async {
     await restoreActiveSessions();
     final startupSession = _selectStartupRouteSession(activeSessions);
-    if (startupSession == null ||
-        !_shouldOpenStartupCall(startupSession.state)) {
+    if (startupSession == null || !_shouldOpenStartupSession(startupSession)) {
       return const CallStartupRouteDecision.home();
     }
     return CallStartupRouteDecision.call(
@@ -318,6 +325,9 @@ class CallwaveFlutter {
           isOutgoing: false,
           initialState: CallSessionState.ringing,
         );
+        if (_isOpenIncomingLaunchAction(event.extra)) {
+          _sessionController.add(session);
+        }
         unawaited(session.applyNativeEvent(event));
         return;
       case CallEventType.accepted:
@@ -572,9 +582,13 @@ class CallwaveFlutter {
     final existing = _sessions[event.callId];
     final callData = _callDataFromEvent(event, fallback: existing?.callData);
     if (existing != null) {
-      existing.updateCallData(callData);
-      _reconcileSessionState(existing, initialState);
-      return existing;
+      if (existing.isEnded) {
+        _disposeSession(event.callId);
+      } else {
+        existing.updateCallData(callData);
+        _reconcileSessionState(existing, initialState);
+        return existing;
+      }
     }
     return createSession(
       callData: callData,
@@ -630,7 +644,7 @@ class CallwaveFlutter {
     CallSession? selected;
     var selectedPriority = -1;
     for (final session in sessions) {
-      final priority = _startupRoutePriority(session.state);
+      final priority = _startupRoutePriority(session);
       if (priority > selectedPriority) {
         selected = session;
         selectedPriority = priority;
@@ -639,7 +653,11 @@ class CallwaveFlutter {
     return selected;
   }
 
-  int _startupRoutePriority(CallSessionState state) {
+  int _startupRoutePriority(CallSession session) {
+    if (_isExplicitIncomingStartupOpen(session)) {
+      return 5;
+    }
+    final state = session.state;
     switch (state) {
       case CallSessionState.connected:
         return 4;
@@ -656,7 +674,11 @@ class CallwaveFlutter {
     }
   }
 
-  bool _shouldOpenStartupCall(CallSessionState state) {
+  bool _shouldOpenStartupSession(CallSession session) {
+    if (_isExplicitIncomingStartupOpen(session)) {
+      return true;
+    }
+    final state = session.state;
     return state == CallSessionState.connecting ||
         state == CallSessionState.connected ||
         state == CallSessionState.reconnecting;
@@ -799,6 +821,16 @@ class CallwaveFlutter {
   bool _isOpenOngoingLaunchAction(Map<String, dynamic>? extra) {
     return extra?[CallEventExtraKeys.launchAction] ==
         CallEventExtraKeys.launchActionOpenOngoing;
+  }
+
+  bool _isOpenIncomingLaunchAction(Map<String, dynamic>? extra) {
+    return extra?[CallEventExtraKeys.launchAction] ==
+        CallEventExtraKeys.launchActionOpenIncoming;
+  }
+
+  bool _isExplicitIncomingStartupOpen(CallSession session) {
+    return session.state == CallSessionState.ringing &&
+        _isOpenIncomingLaunchAction(session.callData.extra);
   }
 
   platform.CallDataDto _toDto(CallData data) {

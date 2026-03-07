@@ -1,10 +1,12 @@
 import Foundation
 import CallKit
+import UIKit
 
 final class IOSCallManager {
   private let eventBridge: EventStreamBridge
   private let activeCallRegistry: ActiveCallRegistry
   private let provider: CXProvider
+  private let notificationCenter: NotificationCenter
   private let callController = CXCallController()
   private let delegate = CallKitProviderDelegate()
   private let backgroundValidator = IOSBackgroundValidator()
@@ -14,15 +16,23 @@ final class IOSCallManager {
   private var callIdByUuid: [UUID: String] = [:]
   private var pendingAcceptedCallIds: Set<String> = []
   private var confirmedAcceptedCallIds: Set<String> = []
+  private var launchActionOverrides: [String: String] = [:]
+  private var explicitIncomingLaunchEmittedCallIds: Set<String> = []
   private var outgoingCallIds: Set<String> = []
   private var timeoutItems: [String: DispatchWorkItem] = [:]
   private var postCallBehavior: PostCallBehavior = .stayOpen
   private var backgroundDispatcherHandle: Int64?
   private var backgroundCallbackHandle: Int64?
+  private var notificationObservers: [NSObjectProtocol] = []
 
-  init(eventBridge: EventStreamBridge, activeCallRegistry: ActiveCallRegistry) {
+  init(
+    eventBridge: EventStreamBridge,
+    activeCallRegistry: ActiveCallRegistry,
+    notificationCenter: NotificationCenter = .default
+  ) {
     self.eventBridge = eventBridge
     self.activeCallRegistry = activeCallRegistry
+    self.notificationCenter = notificationCenter
 
     let config = CXProviderConfiguration(localizedName: "Callwave")
     config.supportsVideo = true
@@ -34,6 +44,13 @@ final class IOSCallManager {
     delegate.onEnd = { [weak self] uuid, reason in self?.handleEnd(uuid: uuid, reason: reason) }
     delegate.onDidReset = { [weak self] in self?.handleReset() }
     provider.setDelegate(delegate, queue: nil)
+    registerApplicationObservers()
+  }
+
+  deinit {
+    for observer in notificationObservers {
+      notificationCenter.removeObserver(observer)
+    }
   }
 
   func showIncomingCall(_ payload: CallPayload) {
@@ -45,6 +62,8 @@ final class IOSCallManager {
     payloadStore[payload.callId] = payload
     pendingAcceptedCallIds.remove(payload.callId)
     confirmedAcceptedCallIds.remove(payload.callId)
+    launchActionOverrides.removeValue(forKey: payload.callId)
+    explicitIncomingLaunchEmittedCallIds.remove(payload.callId)
     outgoingCallIds.remove(payload.callId)
     let uuid = uuidByCallId[payload.callId] ?? UUID()
     uuidByCallId[payload.callId] = uuid
@@ -73,6 +92,8 @@ final class IOSCallManager {
     payloadStore[payload.callId] = payload
     pendingAcceptedCallIds.remove(payload.callId)
     confirmedAcceptedCallIds.remove(payload.callId)
+    launchActionOverrides.removeValue(forKey: payload.callId)
+    explicitIncomingLaunchEmittedCallIds.remove(payload.callId)
     outgoingCallIds.insert(payload.callId)
     let uuid = UUID()
     uuidByCallId[payload.callId] = uuid
@@ -118,6 +139,8 @@ final class IOSCallManager {
     }
     pendingAcceptedCallIds.remove(callId)
     confirmedAcceptedCallIds.insert(callId)
+    launchActionOverrides.removeValue(forKey: callId)
+    explicitIncomingLaunchEmittedCallIds.remove(callId)
     return true
   }
 
@@ -157,6 +180,8 @@ final class IOSCallManager {
       payloadStore.removeValue(forKey: callId)
       pendingAcceptedCallIds.remove(callId)
       confirmedAcceptedCallIds.remove(callId)
+      launchActionOverrides.removeValue(forKey: callId)
+      explicitIncomingLaunchEmittedCallIds.remove(callId)
       outgoingCallIds.remove(callId)
     }
     emit(
@@ -181,12 +206,22 @@ final class IOSCallManager {
       } else {
         type = "incoming"
       }
+      let extra: [String: Any]
+      if type == "accepted" {
+        extra = acceptedEventExtra(callId: callId, payload: payload)
+      } else if type == "incoming" {
+        extra = incomingEventExtra(
+          callId: callId,
+          payload: payload,
+          consumeLaunchActionOverride: true
+        )
+      } else {
+        extra = eventExtra(payload: payload)
+      }
       return CallEventPayload.now(
         callId: callId,
         type: type,
-        extra: type == "accepted"
-          ? acceptedEventExtra(callId: callId, payload: payload)
-          : eventExtra(payload: payload)
+        extra: extra
       ).toDictionary()
     }
   }
@@ -199,7 +234,15 @@ final class IOSCallManager {
       } else if outgoingCallIds.contains(callId) {
         emit(callId: callId, type: "started", extra: eventExtra(payload: payload))
       } else {
-        emit(callId: callId, type: "incoming", extra: eventExtra(payload: payload))
+        emit(
+          callId: callId,
+          type: "incoming",
+          extra: incomingEventExtra(
+            callId: callId,
+            payload: payload,
+            consumeLaunchActionOverride: true
+          )
+        )
       }
     }
   }
@@ -214,6 +257,8 @@ final class IOSCallManager {
     cancelTimeout(callId: callId)
     pendingAcceptedCallIds.insert(callId)
     confirmedAcceptedCallIds.remove(callId)
+    launchActionOverrides.removeValue(forKey: callId)
+    explicitIncomingLaunchEmittedCallIds.remove(callId)
     outgoingCallIds.remove(callId)
     guard let payload else { return }
     if payload.incomingAcceptStrategy == "deferOpenUntilConfirmed" {
@@ -262,6 +307,8 @@ final class IOSCallManager {
     callIdByUuid.removeAll()
     pendingAcceptedCallIds.removeAll()
     confirmedAcceptedCallIds.removeAll()
+    launchActionOverrides.removeAll()
+    explicitIncomingLaunchEmittedCallIds.removeAll()
     outgoingCallIds.removeAll()
   }
 
@@ -273,6 +320,8 @@ final class IOSCallManager {
     callIdByUuid.removeValue(forKey: uuid)
     pendingAcceptedCallIds.remove(callId)
     confirmedAcceptedCallIds.remove(callId)
+    launchActionOverrides.removeValue(forKey: callId)
+    explicitIncomingLaunchEmittedCallIds.remove(callId)
     outgoingCallIds.remove(callId)
   }
 
@@ -329,6 +378,22 @@ final class IOSCallManager {
     return merged
   }
 
+  private func incomingEventExtra(
+    callId: String,
+    payload: CallPayload?,
+    fallbackExtra: [String: Any]? = nil,
+    consumeLaunchActionOverride: Bool = false
+  ) -> [String: Any] {
+    let merged = eventExtra(payload: payload, fallbackExtra: fallbackExtra)
+    guard let launchAction = launchActionOverride(
+      callId: callId,
+      consume: consumeLaunchActionOverride
+    ) else {
+      return merged
+    }
+    return appendLaunchAction(extra: merged, launchAction: launchAction)
+  }
+
   private func acceptedEventExtra(
     callId: String,
     payload: CallPayload?,
@@ -347,6 +412,74 @@ final class IOSCallManager {
       return "pendingValidation"
     }
     return nil
+  }
+
+  private func registerApplicationObservers() {
+    notificationObservers.append(
+      notificationCenter.addObserver(
+        forName: UIApplication.didBecomeActiveNotification,
+        object: nil,
+        queue: .main
+      ) { [weak self] _ in
+        self?.handleApplicationDidBecomeActive()
+      }
+    )
+    if #available(iOS 13.0, *) {
+      notificationObservers.append(
+        notificationCenter.addObserver(
+          forName: UIScene.didActivateNotification,
+          object: nil,
+          queue: .main
+        ) { [weak self] _ in
+          self?.handleApplicationDidBecomeActive()
+        }
+      )
+    }
+  }
+
+  private func handleApplicationDidBecomeActive() {
+    guard let callId = activeIncomingCallIdForOpenLaunch() else {
+      return
+    }
+    guard !explicitIncomingLaunchEmittedCallIds.contains(callId) else {
+      return
+    }
+    guard launchActionOverrides[callId] == nil else {
+      return
+    }
+    explicitIncomingLaunchEmittedCallIds.insert(callId)
+    launchActionOverrides[callId] = Self.launchActionOpenIncoming
+    emit(
+      callId: callId,
+      type: "incoming",
+      extra: incomingEventExtra(callId: callId, payload: payloadStore[callId])
+    )
+  }
+
+  private func activeIncomingCallIdForOpenLaunch() -> String? {
+    activeCallRegistry.activeCallIds().first { callId in
+      payloadStore[callId] != nil &&
+        !pendingAcceptedCallIds.contains(callId) &&
+        !confirmedAcceptedCallIds.contains(callId) &&
+        !outgoingCallIds.contains(callId)
+    }
+  }
+
+  private func launchActionOverride(callId: String, consume: Bool) -> String? {
+    let launchAction = launchActionOverrides[callId]
+    if consume, launchAction != nil {
+      launchActionOverrides.removeValue(forKey: callId)
+    }
+    return launchAction
+  }
+
+  private func appendLaunchAction(
+    extra: [String: Any],
+    launchAction: String
+  ) -> [String: Any] {
+    var merged = extra
+    merged["launchAction"] = launchAction
+    return merged
   }
 
   private func maybeRunBackgroundValidation(callId: String, payload: CallPayload) -> Bool {
@@ -376,6 +509,9 @@ final class IOSCallManager {
     }
     return true
   }
+
+  private static let launchActionOpenIncoming =
+    "com.callwave.flutter.methodchannel.ACTION_OPEN_INCOMING"
 }
 
 private enum PostCallBehavior: String {

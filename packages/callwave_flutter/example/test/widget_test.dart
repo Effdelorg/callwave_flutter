@@ -632,6 +632,31 @@ void main() {
     await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
   });
 
+  testWidgets('incoming launchAction event opens ringing call screen',
+      (tester) async {
+    fakePlatform.initialEvents = <platform.CallEventDto>[
+      platform.CallEventDto(
+        callId: _FakePlatform.callId,
+        type: platform.CallEventType.incoming,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        extra: const <String, dynamic>{
+          CallEventExtraKeys.launchAction:
+              CallEventExtraKeys.launchActionOpenIncoming,
+        },
+      ),
+    ];
+
+    await tester.pumpWidget(const CallwaveExampleApp());
+    await _pumpUntilCallScreen(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(CallScreen), findsOneWidget);
+    expect(find.text('Accept'), findsOneWidget);
+    expect(find.text('Decline'), findsOneWidget);
+    expect(find.text('Connecting...'), findsNothing);
+    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+  });
+
   testWidgets('started launchAction event opens session-driven call screen',
       (tester) async {
     fakePlatform.initialEvents = <platform.CallEventDto>[
@@ -787,6 +812,62 @@ void main() {
     await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
   });
 
+  testWidgets('startup decision keeps plain ringing cold start on home',
+      (tester) async {
+    fakePlatform.activeCallIds = <String>[_FakePlatform.callId];
+    fakePlatform.activeCallSnapshots = <platform.CallEventDto>[
+      platform.CallEventDto(
+        callId: _FakePlatform.callId,
+        type: platform.CallEventType.incoming,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    ];
+
+    final startupDecision =
+        await CallwaveFlutter.instance.prepareStartupRouteDecision();
+    await tester.pumpWidget(
+      CallwaveExampleApp(startupDecision: startupDecision),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(startupDecision.shouldOpenCall, isFalse);
+    expect(find.byType(CallScreen), findsNothing);
+    expect(find.byType(ExampleVideoCallScreen), findsNothing);
+    expect(find.text('Incoming Video'), findsOneWidget);
+    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+  });
+
+  testWidgets(
+      'startup decision routes explicit incoming cold start directly to call',
+      (tester) async {
+    fakePlatform.activeCallIds = <String>[_FakePlatform.callId];
+    fakePlatform.activeCallSnapshots = <platform.CallEventDto>[
+      platform.CallEventDto(
+        callId: _FakePlatform.callId,
+        type: platform.CallEventType.incoming,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        extra: const <String, dynamic>{
+          CallEventExtraKeys.launchAction:
+              CallEventExtraKeys.launchActionOpenIncoming,
+        },
+      ),
+    ];
+
+    final startupDecision =
+        await CallwaveFlutter.instance.prepareStartupRouteDecision();
+    await tester.pumpWidget(
+      CallwaveExampleApp(startupDecision: startupDecision),
+    );
+    await _pumpUntilCallScreen(tester);
+
+    expect(startupDecision.shouldOpenCall, isTrue);
+    expect(startupDecision.sessionState, CallSessionState.ringing);
+    expect(find.byType(CallScreen), findsOneWidget);
+    expect(find.text('Accept'), findsOneWidget);
+    expect(find.text('Connecting...'), findsNothing);
+    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+  });
+
   testWidgets('startup decision routes started cold start directly to call',
       (tester) async {
     fakePlatform.activeCallIds = <String>[_FakePlatform.callId];
@@ -812,6 +893,7 @@ void main() {
     await tester.pump();
     await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
   });
+
 }
 
 Future<void> _pumpUntilCallScreen(WidgetTester tester) async {

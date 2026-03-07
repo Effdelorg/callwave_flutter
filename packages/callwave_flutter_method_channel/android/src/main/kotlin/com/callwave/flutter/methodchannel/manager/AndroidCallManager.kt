@@ -33,6 +33,7 @@ class AndroidCallManager(
     private val pendingAcceptedCalls = HashSet<String>()
     private val confirmedAcceptedCalls = HashSet<String>()
     private val pendingLaunchAfterConfirm = HashSet<String>()
+    private val launchActionOverrides = HashMap<String, String>()
     private val outgoingCalls = HashSet<String>()
     private val backgroundValidator = AndroidBackgroundValidator(context)
     private val backgroundValidatorRegistrationStore =
@@ -82,6 +83,7 @@ class AndroidCallManager(
         pendingAcceptedCalls.remove(payload.callId)
         confirmedAcceptedCalls.remove(payload.callId)
         pendingLaunchAfterConfirm.remove(payload.callId)
+        launchActionOverrides.remove(payload.callId)
         outgoingCalls.remove(payload.callId)
 
         notificationManager.showIncomingCall(
@@ -108,6 +110,7 @@ class AndroidCallManager(
         pendingAcceptedCalls.remove(payload.callId)
         confirmedAcceptedCalls.remove(payload.callId)
         pendingLaunchAfterConfirm.remove(payload.callId)
+        launchActionOverrides.remove(payload.callId)
         outgoingCalls.add(payload.callId)
         notificationManager.showOngoingCall(
             payload = payload,
@@ -162,6 +165,7 @@ class AndroidCallManager(
         val payload = payloadStore[callId] ?: return false
         pendingAcceptedCalls.remove(callId)
         confirmedAcceptedCalls.add(callId)
+        launchActionOverrides.remove(callId)
         notificationManager.showOngoingCall(
             payload = payload,
             openIntent = openOngoingIntent(payload),
@@ -260,7 +264,9 @@ class AndroidCallManager(
 
         val resolvedPayload = payload
             ?: return true
+        launchActionOverrides[callId] = CallwaveConstants.ACTION_OPEN_INCOMING
         val mergedExtra = incomingEventExtra(
+            callId = callId,
             payload = resolvedPayload,
             fallbackExtra = extraFromIntent,
             callerName = intent.getStringExtra(CallwaveConstants.EXTRA_CALLER_NAME),
@@ -320,6 +326,7 @@ class AndroidCallManager(
             stopForegroundService = false,
         )
         openedIncomingCalls.remove(callId)
+        launchActionOverrides.remove(callId)
         outgoingCalls.remove(callId)
         if (payload.incomingAcceptStrategy ==
             CallwaveConstants.INCOMING_ACCEPT_STRATEGY_DEFER_OPEN_UNTIL_CONFIRMED
@@ -406,6 +413,7 @@ class AndroidCallManager(
         val payload = payloadStore[callId] ?: fallbackPayload ?: return false
         payloadStore[callId] = payload
         openedIncomingCalls.remove(callId)
+        launchActionOverrides.remove(callId)
         val acceptanceState = acceptedStateFor(callId)
         val isAcceptedIncomingCall = acceptanceState != null
         val eventType = if (isAcceptedIncomingCall) {
@@ -491,21 +499,29 @@ class AndroidCallManager(
                 outgoingCalls.contains(callId) -> CallwaveConstants.EVENT_STARTED
                 else -> CallwaveConstants.EVENT_INCOMING
             }
+            val extra = if (type == CallwaveConstants.EVENT_ACCEPTED) {
+                acceptedEventExtra(
+                    payload = payload,
+                    fallbackExtra = payload?.extra,
+                )
+            } else if (type == CallwaveConstants.EVENT_INCOMING) {
+                incomingEventExtra(
+                    callId = callId,
+                    payload = payload,
+                    fallbackExtra = payload?.extra,
+                    consumeLaunchActionOverride = true,
+                )
+            } else {
+                eventExtra(
+                    payload = payload,
+                    fallbackExtra = payload?.extra,
+                )
+            }
             snapshots.add(
                 CallEventPayload.now(
                     callId = callId,
                     type = type,
-                    extra = if (type == CallwaveConstants.EVENT_ACCEPTED) {
-                        acceptedEventExtra(
-                            payload = payload,
-                            fallbackExtra = payload?.extra,
-                        )
-                    } else {
-                        eventExtra(
-                            payload = payload,
-                            fallbackExtra = payload?.extra,
-                        )
-                    },
+                    extra = extra,
                 ).toMap(),
             )
         }
@@ -529,6 +545,13 @@ class AndroidCallManager(
                     acceptedEventExtra(
                         payload = payload,
                         fallbackExtra = payload?.extra,
+                    )
+                } else if (type == CallwaveConstants.EVENT_INCOMING) {
+                    incomingEventExtra(
+                        callId = callId,
+                        payload = payload,
+                        fallbackExtra = payload?.extra,
+                        consumeLaunchActionOverride = true,
                     )
                 } else {
                     eventExtra(
@@ -809,6 +832,7 @@ class AndroidCallManager(
         pendingAcceptedCalls.remove(callId)
         confirmedAcceptedCalls.remove(callId)
         pendingLaunchAfterConfirm.remove(callId)
+        launchActionOverrides.remove(callId)
         outgoingCalls.remove(callId)
     }
 
@@ -828,14 +852,16 @@ class AndroidCallManager(
     }
 
     private fun incomingEventExtra(
+        callId: String,
         payload: CallPayload?,
         fallbackExtra: Map<String, Any?>?,
-        callerName: String?,
-        handle: String?,
-        avatarUrl: String?,
-        callType: String?,
+        callerName: String? = null,
+        handle: String? = null,
+        avatarUrl: String? = null,
+        callType: String? = null,
+        consumeLaunchActionOverride: Boolean = false,
     ): Map<String, Any?> {
-        return eventExtra(
+        val extra = eventExtra(
             payload = payload,
             fallbackExtra = fallbackExtra,
             callerName = callerName,
@@ -843,6 +869,15 @@ class AndroidCallManager(
             avatarUrl = avatarUrl,
             callType = callType,
         )
+        val launchAction = launchActionOverride(
+            callId = callId,
+            consume = consumeLaunchActionOverride,
+        )
+        return if (launchAction == null) {
+            extra
+        } else {
+            appendLaunchAction(extra, launchAction)
+        }
     }
 
     private fun eventExtra(
@@ -912,6 +947,14 @@ class AndroidCallManager(
         val merged = HashMap(extra)
         merged[CallwaveConstants.EXTRA_LAUNCH_ACTION] = launchAction
         return merged
+    }
+
+    private fun launchActionOverride(callId: String, consume: Boolean): String? {
+        val launchAction = launchActionOverrides[callId]
+        if (consume && launchAction != null) {
+            launchActionOverrides.remove(callId)
+        }
+        return launchAction
     }
 
     private fun payloadFromIntent(
