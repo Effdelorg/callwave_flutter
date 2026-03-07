@@ -278,7 +278,41 @@ class _CallwaveExampleAppState extends State<CallwaveExampleApp> {
       navigatorKey: _navigatorKey,
       title: 'Callwave Example',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+        brightness: Brightness.light,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFFC4441A),
+          brightness: Brightness.light,
+        ).copyWith(
+          primary: const Color(0xFFC4441A),
+          onPrimary: Colors.white,
+          secondary: const Color(0xFFC4441A),
+          onSecondary: Colors.white,
+        ),
+        scaffoldBackgroundColor: const Color(0xFFFAF8F5),
+        cardColor: const Color(0xFFFFFDFB),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: const Color(0xFFF5F2EE),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFFD9D3CB)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFFD9D3CB)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide:
+                const BorderSide(color: Color(0xFFC4441A), width: 1.5),
+          ),
+          labelStyle: const TextStyle(color: Color(0xFF7A7267)),
+          hintStyle: const TextStyle(color: Color(0xFFB5AFA7)),
+          helperStyle: const TextStyle(color: Color(0xFFB5AFA7)),
+        ),
+        dividerColor: const Color(0xFFE8E3DC),
         useMaterial3: true,
       ),
       builder: (context, child) {
@@ -490,36 +524,85 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
         CallwaveFlutter.instance.activeSessions.isNotEmpty;
     final incomingModeLocked = hasActiveSessions || _isCallActionInFlight;
     return Scaffold(
-      appBar: AppBar(title: const Text('Callwave Example')),
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(64),
+        child: Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFFFFFDFB),
+            border: Border(
+              bottom: BorderSide(color: Color(0xFFE8E3DC), width: 1),
+            ),
+          ),
+          child: SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              child: Row(
+                children: <Widget>[
+                  const Icon(
+                    Icons.waves_rounded,
+                    color: Color(0xFFC4441A),
+                    size: 24,
+                  ),
+                  const SizedBox(width: 10),
+                  const Text(
+                    'Callwave',
+                    style: TextStyle(
+                      color: Color(0xFF191919),
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFDF0EB),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: const Color(0xFFC4441A),
+                        width: 0.8,
+                      ),
+                    ),
+                    child: const Text(
+                      'SDK Demo',
+                      style: TextStyle(
+                        color: Color(0xFFC4441A),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
             return SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset),
+              padding: EdgeInsets.fromLTRB(18, 18, 18, 18 + bottomInset),
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  minHeight: constraints.maxHeight - 32,
+                  minHeight: constraints.maxHeight - 36,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    TextField(
-                      controller: _callIdController,
-                      decoration: const InputDecoration(labelText: 'Call ID'),
-                      onChanged: (_) => setState(() {}),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _missedNotificationTextController,
-                      decoration: const InputDecoration(
-                        labelText: 'Missed Notification Text',
-                        hintText: 'You missed a call from {name}.',
-                      ),
-                      onChanged: (_) => setState(() {}),
-                    ),
-                    const SizedBox(height: 12),
+                    // ── QUICK START BANNER ───────────────────────────────
+                    const _QuickStartBanner(),
+                    const SizedBox(height: 16),
+
+                    // Pending startup action card (shown above all sections)
                     if (_pendingStartupAction != null) ...<Widget>[
                       _PendingStartupActionCard(
                         action: _pendingStartupAction!,
@@ -539,158 +622,491 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                         },
                         onStartCallback: _startCallbackFromPendingAction,
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 16),
                     ],
-                    Text(
-                      'Incoming Flow: ${_incomingDemoMode.label}',
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: IncomingDemoMode.values.map((mode) {
-                        final isSelected = mode == _incomingDemoMode;
-                        return ChoiceChip(
-                          label: Text(
-                            mode.label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+
+                    // ── CALL CONFIGURATION ───────────────────────────────
+                    _SectionCard(
+                      icon: Icons.tune_rounded,
+                      title: 'CALL CONFIGURATION',
+                      subtitle: 'Set the call ID used by all simulate actions below.',
+                      accentColor: const Color(0xFFC4441A),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          TextField(
+                            controller: _callIdController,
+                            style: const TextStyle(
+                              color: Color(0xFF191919),
+                              fontFamily: 'monospace',
+                              fontSize: 15,
+                            ),
+                            decoration: const InputDecoration(
+                              labelText: 'Call ID',
+                              hintText: 'demo-call-001',
+                              helperText:
+                                  'Must be unique per call session. Reuse the same ID to control an active call.',
+                              prefixIcon: Icon(
+                                Icons.tag_rounded,
+                                size: 18,
+                                color: Color(0xFFB5AFA7),
+                              ),
+                            ),
+                            onChanged: (_) => setState(() {}),
                           ),
-                          selected: isSelected,
-                          onSelected: incomingModeLocked
-                              ? null
-                              : (_) {
-                                  if (isSelected) {
-                                    return;
-                                  }
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _missedNotificationTextController,
+                            style: const TextStyle(
+                              color: Color(0xFF191919),
+                              fontSize: 15,
+                            ),
+                            decoration: const InputDecoration(
+                              labelText: 'Missed Notification Text',
+                              hintText: 'You missed a call from {name}.',
+                              prefixIcon: Icon(
+                                Icons.notifications_rounded,
+                                size: 18,
+                                color: Color(0xFFB5AFA7),
+                              ),
+                              helperText:
+                                  'Shown when a call times out. Use {name} to insert the caller\'s name.',
+                            ),
+                            onChanged: (_) => setState(() {}),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // ── PERMISSIONS ──────────────────────────────────────
+                    _SectionCard(
+                      icon: Icons.lock_open_rounded,
+                      title: 'PERMISSIONS',
+                      subtitle:
+                          'Request OS permissions before triggering calls. Grant these first on a fresh install.',
+                      accentColor: const Color(0xFFC27803),
+                      child: Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: _PermissionButton(
+                              icon: Icons.notifications_rounded,
+                              label: 'Notifications',
+                              hint: 'Required to show incoming call alerts',
+                              onPressed: callId.isEmpty
+                                  ? null
+                                  : _requestNotificationPermission,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _PermissionButton(
+                              icon: Icons.fullscreen_rounded,
+                              label: 'Full Screen',
+                              hint: 'Android only — shows call over lock screen',
+                              onPressed: callId.isEmpty
+                                  ? null
+                                  : _requestFullScreenPermission,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // ── INCOMING FLOW MODE ───────────────────────────────
+                    _SectionCard(
+                      icon: Icons.swap_horiz_rounded,
+                      title: 'INCOMING FLOW MODE',
+                      subtitle:
+                          'Choose how the plugin handles accept/decline from the native call UI.',
+                      accentColor: const Color(0xFFC4441A),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: IncomingDemoMode.values.map((mode) {
+                              final isSelected = mode == _incomingDemoMode;
+                              return _ModeChip(
+                                label: mode.label,
+                                selected: isSelected,
+                                locked: incomingModeLocked,
+                                onSelected: () {
+                                  if (isSelected) return;
                                   setState(() {
                                     _incomingDemoMode = mode;
                                   });
-                                  unawaited(
-                                    persistIncomingDemoMode(mode),
-                                  );
+                                  unawaited(persistIncomingDemoMode(mode));
                                   _applyIncomingMode();
                                 },
-                        );
-                      }).toList(growable: false),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _incomingModeDescription,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: <Widget>[
-                        ElevatedButton(
-                          onPressed: callId.isEmpty
-                              ? null
-                              : _requestNotificationPermission,
-                          child: const Text('Notif Permission'),
-                        ),
-                        ElevatedButton(
-                          onPressed: callId.isEmpty
-                              ? null
-                              : _requestFullScreenPermission,
-                          child: const Text('FullScreen Permission'),
-                        ),
-                        ElevatedButton(
-                          onPressed: callId.isEmpty || _isCallActionInFlight
-                              ? null
-                              : () => _showCall(
-                                    callId: callId,
-                                    isIncoming: true,
-                                    callType: CallType.audio,
-                                  ),
-                          child: const Text('Incoming Audio'),
-                        ),
-                        ElevatedButton(
-                          onPressed: callId.isEmpty || _isCallActionInFlight
-                              ? null
-                              : () => _showCall(
-                                    callId: callId,
-                                    isIncoming: true,
-                                    callType: CallType.video,
-                                  ),
-                          child: const Text('Incoming Video'),
-                        ),
-                        ElevatedButton(
-                          onPressed: callId.isEmpty || _isCallActionInFlight
-                              ? null
-                              : () => _showCall(
-                                    callId: callId,
-                                    isIncoming: false,
-                                    callType: CallType.audio,
-                                  ),
-                          child: const Text('Outgoing Audio'),
-                        ),
-                        ElevatedButton(
-                          onPressed: callId.isEmpty || _isCallActionInFlight
-                              ? null
-                              : () => _showCall(
-                                    callId: callId,
-                                    isIncoming: false,
-                                    callType: CallType.video,
-                                  ),
-                          child: const Text('Outgoing Video'),
-                        ),
-                        ElevatedButton(
-                          onPressed:
-                              callId.isEmpty ? null : () => _endCall(callId),
-                          child: const Text('End call'),
-                        ),
-                        ElevatedButton(
-                          onPressed:
-                              callId.isEmpty ? null : () => _markMissed(callId),
-                          child: const Text('Missed'),
-                        ),
-                        ElevatedButton(
-                          onPressed: callId.isEmpty
-                              ? null
-                              : () => _openConferencePreview(
-                                  callId, CallType.audio),
-                          child: const Text('Conference Audio'),
-                        ),
-                        ElevatedButton(
-                          onPressed: callId.isEmpty
-                              ? null
-                              : () => _openConferencePreview(
-                                  callId, CallType.video),
-                          child: const Text('Conference Video'),
-                        ),
-                        ElevatedButton(
-                          onPressed: _previewCallId == null
-                              ? null
-                              : _cycleConferenceSpeaker,
-                          child: const Text('Cycle Speaker'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    const Text('Events'),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      height: 220,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.black26),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: ListView.builder(
-                          itemCount: _eventLog.length,
-                          itemBuilder: (context, index) {
-                            return ListTile(
-                              dense: true,
-                              title: Text(
-                                _eventLog[index],
-                                style: const TextStyle(fontSize: 13),
+                              );
+                            }).toList(growable: false),
+                          ),
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFDF0EB),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: const Color(0xFFE8C8B8),
                               ),
-                            );
-                          },
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                const Icon(
+                                  Icons.info_outline_rounded,
+                                  size: 15,
+                                  color: Color(0xFFC4441A),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _incomingModeDescription,
+                                    style: const TextStyle(
+                                      color: Color(0xFF3D3731),
+                                      fontSize: 13,
+                                      height: 1.5,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (incomingModeLocked) ...<Widget>[
+                            const SizedBox(height: 8),
+                            const Row(
+                              children: <Widget>[
+                                Icon(
+                                  Icons.lock_rounded,
+                                  size: 13,
+                                  color: Color(0xFFB5AFA7),
+                                ),
+                                SizedBox(width: 5),
+                                Text(
+                                  'Mode locked while a call is active.',
+                                  style: TextStyle(
+                                    color: Color(0xFFB5AFA7),
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // ── SIMULATE CALL ────────────────────────────────────
+                    _SectionCard(
+                      icon: Icons.phone_rounded,
+                      title: 'SIMULATE CALL',
+                      subtitle:
+                          'Trigger native call UI flows. Buttons are disabled when Call ID is empty.',
+                      accentColor: const Color(0xFF2D8B4E),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          // Incoming
+                          const _SubSectionLabel(
+                            text: 'INCOMING',
+                            color: Color(0xFF2D8B4E),
+                            hint: 'Simulates a call arriving on this device',
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: <Widget>[
+                              Expanded(
+                                child: _CallButton(
+                                  icon: Icons.call_received_rounded,
+                                  label: 'Audio',
+                                  color: const Color(0xFF2D8B4E),
+                                  onPressed:
+                                      callId.isEmpty || _isCallActionInFlight
+                                          ? null
+                                          : () => _showCall(
+                                                callId: callId,
+                                                isIncoming: true,
+                                                callType: CallType.audio,
+                                              ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _CallButton(
+                                  icon: Icons.video_call_rounded,
+                                  label: 'Video',
+                                  color: const Color(0xFF2D8B4E),
+                                  onPressed:
+                                      callId.isEmpty || _isCallActionInFlight
+                                          ? null
+                                          : () => _showCall(
+                                                callId: callId,
+                                                isIncoming: true,
+                                                callType: CallType.video,
+                                              ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Outgoing
+                          const _SubSectionLabel(
+                            text: 'OUTGOING',
+                            color: Color(0xFF2B6CB0),
+                            hint: 'Opens the outgoing call screen immediately',
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: <Widget>[
+                              Expanded(
+                                child: _CallButton(
+                                  icon: Icons.call_made_rounded,
+                                  label: 'Audio',
+                                  color: const Color(0xFF2B6CB0),
+                                  onPressed:
+                                      callId.isEmpty || _isCallActionInFlight
+                                          ? null
+                                          : () => _showCall(
+                                                callId: callId,
+                                                isIncoming: false,
+                                                callType: CallType.audio,
+                                              ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _CallButton(
+                                  icon: Icons.videocam_rounded,
+                                  label: 'Video',
+                                  color: const Color(0xFF2B6CB0),
+                                  onPressed:
+                                      callId.isEmpty || _isCallActionInFlight
+                                          ? null
+                                          : () => _showCall(
+                                                callId: callId,
+                                                isIncoming: false,
+                                                callType: CallType.video,
+                                              ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Call Control
+                          const _SubSectionLabel(
+                            text: 'CALL CONTROL',
+                            color: Color(0xFFC53030),
+                            hint: 'Control an active call by its ID',
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: <Widget>[
+                              Expanded(
+                                child: _CallButton(
+                                  icon: Icons.call_end_rounded,
+                                  label: 'End Call',
+                                  color: const Color(0xFFC53030),
+                                  onPressed: callId.isEmpty
+                                      ? null
+                                      : () => _endCall(callId),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _CallButton(
+                                  icon: Icons.phone_missed_rounded,
+                                  label: 'Mark Missed',
+                                  color: const Color(0xFFC53030),
+                                  onPressed: callId.isEmpty
+                                      ? null
+                                      : () => _markMissed(callId),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Conference
+                          const _SubSectionLabel(
+                            text: 'CONFERENCE',
+                            color: Color(0xFF6B46C1),
+                            hint: 'Preview multi-party call layout with mock participants',
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: <Widget>[
+                              Expanded(
+                                child: _CallButton(
+                                  icon: Icons.groups_rounded,
+                                  label: 'Audio',
+                                  color: const Color(0xFF6B46C1),
+                                  onPressed: callId.isEmpty
+                                      ? null
+                                      : () => _openConferencePreview(
+                                            callId,
+                                            CallType.audio,
+                                          ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _CallButton(
+                                  icon: Icons.duo_rounded,
+                                  label: 'Video',
+                                  color: const Color(0xFF6B46C1),
+                                  onPressed: callId.isEmpty
+                                      ? null
+                                      : () => _openConferencePreview(
+                                            callId,
+                                            CallType.video,
+                                          ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _CallButton(
+                                  icon: Icons.sync_rounded,
+                                  label: 'Cycle\nSpeaker',
+                                  color: const Color(0xFF6B46C1),
+                                  onPressed: _previewCallId == null
+                                      ? null
+                                      : _cycleConferenceSpeaker,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // ── EVENT LOG ────────────────────────────────────────
+                    _SectionCard(
+                      icon: Icons.receipt_long_rounded,
+                      title: 'EVENT LOG',
+                      subtitle: 'Real-time stream of CallEvent callbacks from the plugin.',
+                      accentColor: const Color(0xFF7A7267),
+                      trailing: TextButton(
+                        onPressed: _eventLog.isEmpty
+                            ? null
+                            : () => setState(() => _eventLog.clear()),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFFB5AFA7),
+                          padding: EdgeInsets.zero,
+                          minimumSize: const Size(48, 30),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
+                        child: const Text(
+                          'Clear',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      child: Container(
+                        height: 230,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF5F2EE),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFE8E3DC)),
+                        ),
+                        child: _eventLog.isEmpty
+                            ? const Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    Icon(
+                                      Icons.inbox_rounded,
+                                      size: 34,
+                                      color: Color(0xFFD9D3CB),
+                                    ),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      'No events yet',
+                                      style: TextStyle(
+                                        color: Color(0xFFB5AFA7),
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    SizedBox(height: 3),
+                                    Text(
+                                      'Simulate a call above to see events here',
+                                      style: TextStyle(
+                                        color: Color(0xFFD9D3CB),
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : ListView.builder(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
+                                itemCount: _eventLog.length,
+                                itemBuilder: (context, index) {
+                                  final raw = _eventLog[index];
+                                  final parts = raw.split(' ');
+                                  final timestamp =
+                                      parts.isNotEmpty ? parts[0] : raw;
+                                  final rest = parts.length > 1
+                                      ? parts.sublist(1).join(' ')
+                                      : '';
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 3,
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        const Text(
+                                          '›',
+                                          style: TextStyle(
+                                            color: Color(0xFFC4441A),
+                                            fontFamily: 'monospace',
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text.rich(
+                                            TextSpan(
+                                              children: <InlineSpan>[
+                                                TextSpan(
+                                                  text: timestamp,
+                                                  style: const TextStyle(
+                                                    color: Color(0xFFB5AFA7),
+                                                    fontFamily: 'monospace',
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                                if (rest.isNotEmpty)
+                                                  TextSpan(
+                                                    text: '  $rest',
+                                                    style: const TextStyle(
+                                                      color: Color(0xFF191919),
+                                                      fontFamily: 'monospace',
+                                                      fontSize: 13,
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
                       ),
                     ),
                   ],
@@ -1075,90 +1491,603 @@ class _PendingStartupActionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isCallback = action.type == CallStartupActionType.callback;
-    return Card(
+    return Container(
       key: const ValueKey<String>('pending-startup-action-card'),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Text(
-              isCallback ? 'Call Back' : 'Missed Call',
-              style: Theme.of(context).textTheme.titleMedium,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFDFB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFEECDB8)),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x18C4441A),
+            blurRadius: 14,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          // Terracotta accent top bar
+          Container(height: 4, color: const Color(0xFFC4441A)),
+          Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                // Header row
+                Row(
+                  children: <Widget>[
+                    Icon(
+                      isCallback
+                          ? Icons.phone_callback_rounded
+                          : Icons.phone_missed_rounded,
+                      color: const Color(0xFFC4441A),
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      isCallback ? 'CALLBACK REQUEST' : 'MISSED CALL',
+                      style: const TextStyle(
+                        color: Color(0xFFC4441A),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // Caller info
+                Row(
+                  children: <Widget>[
+                    const SizedBox(width: 28),
+                    Text(
+                      action.callerName,
+                      key: const ValueKey<String>(
+                          'pending-startup-action-summary'),
+                      style: const TextStyle(
+                        color: Color(0xFF191919),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 17,
+                      ),
+                    ),
+                    if (action.handle.isNotEmpty) ...<Widget>[
+                      const SizedBox(width: 8),
+                      Text(
+                        action.handle,
+                        style: const TextStyle(
+                          color: Color(0xFF7A7267),
+                          fontSize: 15,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                if (!isCallback) ...<Widget>[
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 28),
+                    child: Text(
+                      isCallback
+                          ? 'Choose call type and session mode, then start the callback.'
+                          : 'You have a missed call. Dismiss this card when ready.',
+                      style: const TextStyle(
+                        color: Color(0xFFB5AFA7),
+                        fontSize: 13,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: onDismiss,
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF7A7267),
+                      ),
+                      child: const Text('Dismiss'),
+                    ),
+                  ),
+                ] else ...<Widget>[
+                  const SizedBox(height: 8),
+                  const Padding(
+                    padding: EdgeInsets.only(left: 28),
+                    child: Text(
+                      'Choose call type and session mode, then start the callback.',
+                      style: TextStyle(
+                        color: Color(0xFFB5AFA7),
+                        fontSize: 13,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SegmentedButton<CallType>(
+                    showSelectedIcon: false,
+                    segments: const <ButtonSegment<CallType>>[
+                      ButtonSegment<CallType>(
+                        value: CallType.audio,
+                        label: Text('Audio'),
+                        icon: Icon(Icons.mic_rounded, size: 16),
+                      ),
+                      ButtonSegment<CallType>(
+                        value: CallType.video,
+                        label: Text('Video'),
+                        icon: Icon(Icons.videocam_rounded, size: 16),
+                      ),
+                    ],
+                    selected: <CallType>{callbackCallType},
+                    onSelectionChanged: actionInFlight
+                        ? null
+                        : (selection) => onCallTypeChanged(selection.first),
+                  ),
+                  const SizedBox(height: 8),
+                  SegmentedButton<CallbackSessionMode>(
+                    showSelectedIcon: false,
+                    segments: CallbackSessionMode.values
+                        .map(
+                          (mode) => ButtonSegment<CallbackSessionMode>(
+                            value: mode,
+                            label: Text(mode.label),
+                          ),
+                        )
+                        .toList(growable: false),
+                    selected: <CallbackSessionMode>{callbackSessionMode},
+                    onSelectionChanged: actionInFlight
+                        ? null
+                        : (selection) =>
+                            onSessionModeChanged(selection.first),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: <Widget>[
+                      TextButton(
+                        onPressed: actionInFlight ? null : onDismiss,
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF7A7267),
+                        ),
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton.icon(
+                        key: const ValueKey<String>('start-callback-button'),
+                        onPressed: actionInFlight
+                            ? null
+                            : () => unawaited(onStartCallback()),
+                        icon: const Icon(Icons.call_rounded, size: 16),
+                        label: const Text('Start Callback'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFFC4441A),
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              '${action.callerName} ${action.handle}'.trim(),
-              key: const ValueKey<String>('pending-startup-action-summary'),
-            ),
-            if (!isCallback) ...<Widget>[
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: onDismiss,
-                  child: const Text('Dismiss'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Helper Widgets ──────────────────────────────────────────────────────────
+
+class _QuickStartBanner extends StatelessWidget {
+  // ignore: unused_element
+  const _QuickStartBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: <Color>[Color(0xFFFDF0EB), Color(0xFFFBF5F1)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE8C8B8)),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.rocket_launch_rounded,
+                  size: 17, color: Color(0xFFC4441A)),
+              SizedBox(width: 8),
+              Text(
+                'QUICK START',
+                style: TextStyle(
+                  color: Color(0xFFC4441A),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.2,
                 ),
               ),
-            ] else ...<Widget>[
-              const SizedBox(height: 12),
-              SegmentedButton<CallType>(
-                showSelectedIcon: false,
-                segments: const <ButtonSegment<CallType>>[
-                  ButtonSegment<CallType>(
-                    value: CallType.audio,
-                    label: Text('Audio'),
-                  ),
-                  ButtonSegment<CallType>(
-                    value: CallType.video,
-                    label: Text('Video'),
-                  ),
-                ],
-                selected: <CallType>{callbackCallType},
-                onSelectionChanged: actionInFlight
-                    ? null
-                    : (selection) => onCallTypeChanged(selection.first),
-              ),
-              const SizedBox(height: 8),
-              SegmentedButton<CallbackSessionMode>(
-                showSelectedIcon: false,
-                segments: CallbackSessionMode.values
-                    .map(
-                      (mode) => ButtonSegment<CallbackSessionMode>(
-                        value: mode,
-                        label: Text(mode.label),
-                      ),
-                    )
-                    .toList(growable: false),
-                selected: <CallbackSessionMode>{callbackSessionMode},
-                onSelectionChanged: actionInFlight
-                    ? null
-                    : (selection) => onSessionModeChanged(selection.first),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                alignment: WrapAlignment.end,
-                spacing: 8,
-                children: <Widget>[
-                  TextButton(
-                    onPressed: actionInFlight ? null : onDismiss,
-                    child: const Text('Cancel'),
-                  ),
-                  ElevatedButton(
-                    key: const ValueKey<String>('start-callback-button'),
-                    onPressed: actionInFlight
-                        ? null
-                        : () {
-                            unawaited(onStartCallback());
-                          },
-                    child: const Text('Start Callback'),
-                  ),
-                ],
-              ),
             ],
+          ),
+          SizedBox(height: 12),
+          _QuickStartStep(
+            number: '1',
+            text: 'Grant Permissions — tap both buttons in the Permissions section.',
+          ),
+          SizedBox(height: 8),
+          _QuickStartStep(
+            number: '2',
+            text: 'Set a Call ID above (or keep the default "demo-call-001").',
+          ),
+          SizedBox(height: 8),
+          _QuickStartStep(
+            number: '3',
+            text: 'Pick an Incoming Flow Mode, then tap "Incoming Audio" to see the native call UI.',
+          ),
+          SizedBox(height: 8),
+          _QuickStartStep(
+            number: '4',
+            text: 'Accept or decline the call — watch events appear in the Event Log.',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuickStartStep extends StatelessWidget {
+  const _QuickStartStep({required this.number, required this.text});
+
+  final String number;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Container(
+          width: 20,
+          height: 20,
+          decoration: const BoxDecoration(
+            color: Color(0xFFC4441A),
+            shape: BoxShape.circle,
+          ),
+          child: Center(
+            child: Text(
+              number,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(
+              color: Color(0xFF3D3731),
+              fontSize: 14,
+              height: 1.45,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({
+    required this.icon,
+    required this.title,
+    required this.accentColor,
+    required this.child,
+    this.subtitle,
+    this.trailing,
+  });
+
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final Color accentColor;
+  final Widget child;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFDFB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE8E3DC)),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x0A000000),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            // Left accent bar
+            Container(width: 3.5, color: accentColor),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    // Section header
+                    Row(
+                      children: <Widget>[
+                        Icon(icon, color: accentColor, size: 17),
+                        const SizedBox(width: 8),
+                        Text(
+                          title,
+                          style: TextStyle(
+                            color: accentColor,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                        if (trailing != null) ...<Widget>[
+                          const Spacer(),
+                          trailing!,
+                        ],
+                      ],
+                    ),
+                    if (subtitle != null) ...<Widget>[
+                      const SizedBox(height: 5),
+                      Text(
+                        subtitle!,
+                        style: const TextStyle(
+                          color: Color(0xFFB5AFA7),
+                          fontSize: 13,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    child,
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _CallButton extends StatelessWidget {
+  const _CallButton({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final isEnabled = onPressed != null;
+    final effectiveColor =
+        isEnabled ? color : color.withValues(alpha: 0.3);
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: effectiveColor,
+        side: BorderSide(color: effectiveColor.withValues(alpha: 0.4)),
+        backgroundColor: isEnabled
+            ? color.withValues(alpha: 0.06)
+            : const Color(0xFFF5F2EE),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(icon, size: 22, color: effectiveColor),
+          const SizedBox(height: 5),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: effectiveColor,
+              height: 1.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SubSectionLabel extends StatelessWidget {
+  const _SubSectionLabel({
+    required this.text,
+    required this.color,
+    this.hint,
+  });
+
+  final String text;
+  final Color color;
+  final String? hint;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Container(
+              width: 2.5,
+              height: 14,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
+            const SizedBox(width: 7),
+            Text(
+              text,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.0,
+              ),
+            ),
+          ],
+        ),
+        if (hint != null) ...<Widget>[
+          const SizedBox(height: 3),
+          Padding(
+            padding: const EdgeInsets.only(left: 10),
+            child: Text(
+              hint!,
+              style: const TextStyle(
+                color: Color(0xFFB5AFA7),
+                fontSize: 12,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ModeChip extends StatelessWidget {
+  const _ModeChip({
+    required this.label,
+    required this.selected,
+    required this.locked,
+    required this.onSelected,
+  });
+
+  final String label;
+  final bool selected;
+  final bool locked;
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: locked ? null : onSelected,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? const Color(0xFFC4441A)
+              : const Color(0xFFF0ECE7),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected
+                ? const Color(0xFFC4441A)
+                : const Color(0xFFD9D3CB),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected
+                ? Colors.white
+                : locked
+                    ? const Color(0xFFD9D3CB)
+                    : const Color(0xFF3D3731),
+            fontSize: 14,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PermissionButton extends StatelessWidget {
+  const _PermissionButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+    this.hint,
+  });
+
+  final IconData icon;
+  final String label;
+  final String? hint;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final isEnabled = onPressed != null;
+    const color = Color(0xFFC27803);
+    final effectiveColor =
+        isEnabled ? color : color.withValues(alpha: 0.35);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        OutlinedButton.icon(
+          onPressed: onPressed,
+          icon: Icon(icon, size: 18, color: effectiveColor),
+          label: Text(
+            label,
+            style: TextStyle(
+              color: effectiveColor,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          style: OutlinedButton.styleFrom(
+            side: BorderSide(
+              color: effectiveColor.withValues(alpha: 0.5),
+            ),
+            backgroundColor: isEnabled
+                ? const Color(0xFFFFF8EB)
+                : const Color(0xFFF5F2EE),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+        if (hint != null) ...<Widget>[
+          const SizedBox(height: 5),
+          Text(
+            hint!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFFB5AFA7),
+              fontSize: 12,
+              height: 1.3,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
