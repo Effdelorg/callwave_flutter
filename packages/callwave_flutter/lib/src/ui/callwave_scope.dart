@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../callwave_flutter_impl.dart';
 import '../engine/call_session.dart';
 import '../enums/call_session_state.dart';
+import '../models/call_event_extra_keys.dart';
 import 'call_screen.dart';
 import 'call_screen_builders.dart';
 import 'inherited_call_session.dart';
@@ -68,6 +69,8 @@ class CallwaveScope extends StatefulWidget {
 class _CallwaveScopeState extends State<CallwaveScope> {
   final Map<String, CallSession> _pendingByCallId = <String, CallSession>{};
   final Set<String> _openedCallIds = <String>{};
+  final Map<String, CallSession> _preRoutedSessionsByCallId =
+      <String, CallSession>{};
   StreamSubscription<CallSession>? _subscription;
   bool _flushScheduled = false;
   bool _readyToPush = false;
@@ -94,7 +97,8 @@ class _CallwaveScopeState extends State<CallwaveScope> {
   void _hydrateExistingSessions() {
     final existingSessions = CallwaveFlutter.instance.activeSessions;
     for (final session in existingSessions) {
-      if (_isRoutableSession(session)) {
+      _trackPreRoutedSessionIfNeeded(session);
+      if (_isHydrationRoutableSession(session)) {
         _pendingByCallId[session.callId] = session;
       }
     }
@@ -103,12 +107,34 @@ class _CallwaveScopeState extends State<CallwaveScope> {
     }
   }
 
+  @override
+  void didUpdateWidget(covariant CallwaveScope oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final addedPreRoutedCallIds =
+        widget.preRoutedCallIds.difference(oldWidget.preRoutedCallIds);
+    final removedPreRoutedCallIds =
+        oldWidget.preRoutedCallIds.difference(widget.preRoutedCallIds);
+    for (final callId in addedPreRoutedCallIds) {
+      final session = CallwaveFlutter.instance.getSession(callId);
+      if (session != null && !session.isEnded) {
+        _preRoutedSessionsByCallId[callId] = session;
+      }
+    }
+    for (final callId in removedPreRoutedCallIds) {
+      _preRoutedSessionsByCallId.remove(callId);
+    }
+  }
+
   void _onSession(CallSession session) {
     if (session.isEnded) {
       _pendingByCallId.remove(session.callId);
       _openedCallIds.remove(session.callId);
+      if (identical(_preRoutedSessionsByCallId[session.callId], session)) {
+        _preRoutedSessionsByCallId.remove(session.callId);
+      }
       return;
     }
+    _trackPreRoutedSessionIfNeeded(session);
     if (!_isRoutableSession(session)) {
       _pendingByCallId.remove(session.callId);
       return;
@@ -121,6 +147,24 @@ class _CallwaveScopeState extends State<CallwaveScope> {
     return session.state != CallSessionState.validating &&
         session.state != CallSessionState.ended &&
         session.state != CallSessionState.failed;
+  }
+
+  bool _isHydrationRoutableSession(CallSession session) {
+    if (!_isRoutableSession(session)) {
+      return false;
+    }
+    if (session.state != CallSessionState.ringing) {
+      return true;
+    }
+    return session.callData.extra?[CallEventExtraKeys.launchAction] ==
+        CallEventExtraKeys.launchActionOpenIncoming;
+  }
+
+  void _trackPreRoutedSessionIfNeeded(CallSession session) {
+    if (!widget.preRoutedCallIds.contains(session.callId)) {
+      return;
+    }
+    _preRoutedSessionsByCallId.putIfAbsent(session.callId, () => session);
   }
 
   void _scheduleFlush() {
@@ -158,7 +202,7 @@ class _CallwaveScopeState extends State<CallwaveScope> {
     for (final session in pending) {
       if (session.isEnded ||
           _openedCallIds.contains(session.callId) ||
-          widget.preRoutedCallIds.contains(session.callId)) {
+          identical(_preRoutedSessionsByCallId[session.callId], session)) {
         continue;
       }
 
@@ -211,6 +255,7 @@ class _CallwaveScopeState extends State<CallwaveScope> {
     _subscription?.cancel();
     _pendingByCallId.clear();
     _openedCallIds.clear();
+    _preRoutedSessionsByCallId.clear();
     _flushScheduled = false;
     _readyToPush = false;
     super.dispose();

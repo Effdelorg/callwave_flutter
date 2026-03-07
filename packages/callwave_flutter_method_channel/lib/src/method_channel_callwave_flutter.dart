@@ -58,14 +58,19 @@ class MethodChannelCallwaveFlutter extends CallwaveFlutterPlatform {
   @override
   Future<void> registerBackgroundIncomingCallValidator({
     required int backgroundDispatcherHandle,
-    required int backgroundCallbackHandle,
+    int? backgroundCallbackHandle,
+    int? backgroundDeclineCallbackHandle,
   }) async {
     await initialize();
     await _methodChannel.invokeMethod<void>(
       'registerBackgroundIncomingCallValidator',
       <String, dynamic>{
         PayloadCodec.keyBackgroundDispatcherHandle: backgroundDispatcherHandle,
-        PayloadCodec.keyBackgroundCallbackHandle: backgroundCallbackHandle,
+        if (backgroundCallbackHandle != null)
+          PayloadCodec.keyBackgroundCallbackHandle: backgroundCallbackHandle,
+        if (backgroundDeclineCallbackHandle != null)
+          PayloadCodec.keyBackgroundDeclineCallbackHandle:
+              backgroundDeclineCallbackHandle,
       },
     );
   }
@@ -123,6 +128,30 @@ class MethodChannelCallwaveFlutter extends CallwaveFlutterPlatform {
   }
 
   @override
+  Future<void> syncCallConnectedState(
+    String callId, {
+    required int connectedAtMs,
+  }) async {
+    await initialize();
+    await _methodChannel.invokeMethod<void>(
+      'syncCallConnectedState',
+      <String, dynamic>{
+        PayloadCodec.keyCallId: callId,
+        PayloadCodec.keyConnectedAtMs: connectedAtMs,
+      },
+    );
+  }
+
+  @override
+  Future<void> clearCallState(String callId) async {
+    await initialize();
+    await _methodChannel.invokeMethod<void>(
+      'clearCallState',
+      <String, dynamic>{PayloadCodec.keyCallId: callId},
+    );
+  }
+
+  @override
   Future<List<String>> getActiveCallIds() async {
     await initialize();
     final raw = await _methodChannel.invokeMethod<List<dynamic>>(
@@ -165,6 +194,21 @@ class MethodChannelCallwaveFlutter extends CallwaveFlutterPlatform {
   Future<void> syncActiveCallsToEvents() async {
     await initialize();
     await _methodChannel.invokeMethod<void>('syncActiveCallsToEvents');
+  }
+
+  @override
+  Future<CallStartupActionDto?> takePendingStartupAction() async {
+    await initialize();
+    final raw = await _methodChannel.invokeMethod<Map<dynamic, dynamic>?>(
+      'takePendingStartupAction',
+    );
+    if (raw == null) {
+      return null;
+    }
+    final normalized = raw.map<String, dynamic>((dynamic key, dynamic value) {
+      return MapEntry(key.toString(), value);
+    });
+    return PayloadCodec.safeStartupActionFromMap(normalized);
   }
 
   @override

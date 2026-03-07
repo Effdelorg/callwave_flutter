@@ -13,6 +13,7 @@ class CallDataDto {
     this.incomingAcceptStrategy = IncomingAcceptStrategy.openImmediately,
     this.backgroundDispatcherHandle,
     this.backgroundCallbackHandle,
+    this.backgroundDeclineCallbackHandle,
   });
 
   final String callId;
@@ -25,6 +26,7 @@ class CallDataDto {
   final IncomingAcceptStrategy incomingAcceptStrategy;
   final int? backgroundDispatcherHandle;
   final int? backgroundCallbackHandle;
+  final int? backgroundDeclineCallbackHandle;
 
   CallDataDto copyWith({
     String? callId,
@@ -37,6 +39,7 @@ class CallDataDto {
     IncomingAcceptStrategy? incomingAcceptStrategy,
     int? backgroundDispatcherHandle,
     int? backgroundCallbackHandle,
+    int? backgroundDeclineCallbackHandle,
   }) {
     return CallDataDto(
       callId: callId ?? this.callId,
@@ -52,6 +55,8 @@ class CallDataDto {
           backgroundDispatcherHandle ?? this.backgroundDispatcherHandle,
       backgroundCallbackHandle:
           backgroundCallbackHandle ?? this.backgroundCallbackHandle,
+      backgroundDeclineCallbackHandle: backgroundDeclineCallbackHandle ??
+          this.backgroundDeclineCallbackHandle,
     );
   }
 }

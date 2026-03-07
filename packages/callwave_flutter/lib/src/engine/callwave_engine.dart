@@ -21,6 +21,18 @@ abstract class CallwaveEngine {
   /// when the connection is established.
   Future<void> onStartCall(CallSession session);
 
+  /// Called when the app restores a previously ongoing call after a cold start.
+  ///
+  /// Default behavior falls back to the existing fresh-call hooks so current
+  /// integrations keep working without changes.
+  Future<void> onResumeCall(CallSession session) async {
+    if (session.isOutgoing) {
+      await onStartCall(session);
+      return;
+    }
+    await onAnswerCall(session);
+  }
+
   /// Called when the call ends (user or remote).
   ///
   /// Leave your call/room and release resources here.

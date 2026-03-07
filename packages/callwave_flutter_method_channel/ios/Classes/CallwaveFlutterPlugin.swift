@@ -1,8 +1,10 @@
 import Foundation
 import Flutter
+import UserNotifications
 
 public class CallwaveFlutterPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
   private let eventBridge = EventStreamBridge(bufferStore: EventBufferStore())
+  private let notificationDelegateProxy = NotificationDelegateProxy()
   private lazy var callManager = IOSCallManager(
     eventBridge: eventBridge,
     activeCallRegistry: ActiveCallRegistry()
@@ -11,6 +13,7 @@ public class CallwaveFlutterPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let instance = CallwaveFlutterPlugin()
+    instance.installNotificationHandling()
 
     let methodChannel = FlutterMethodChannel(
       name: "callwave_flutter/methods",
@@ -23,6 +26,13 @@ public class CallwaveFlutterPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
       binaryMessenger: registrar.messenger()
     )
     eventChannel.setStreamHandler(instance)
+  }
+
+  private func installNotificationHandling() {
+    notificationDelegateProxy.responseHandler = { [weak self] response in
+      self?.callManager.handleNotificationResponse(response: response) ?? false
+    }
+    notificationDelegateProxy.install()
   }
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {

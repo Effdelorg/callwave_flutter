@@ -38,13 +38,25 @@ final class CallwaveMethodHandler {
     case "registerBackgroundIncomingCallValidator":
       let args = call.arguments as? [String: Any]
       guard
-        let dispatcherHandle = (args?["backgroundDispatcherHandle"] as? NSNumber)?.int64Value,
-        let callbackHandle = (args?["backgroundCallbackHandle"] as? NSNumber)?.int64Value
+        let dispatcherHandle = (args?["backgroundDispatcherHandle"] as? NSNumber)?.int64Value
       else {
         result(
           FlutterError(
             code: "invalid_background_validator",
-            message: "Dispatcher and callback handles are required",
+            message: "Dispatcher handle is required",
+            details: nil
+          )
+        )
+        return
+      }
+      let acceptCallbackHandle = (args?["backgroundCallbackHandle"] as? NSNumber)?.int64Value
+      let declineCallbackHandle =
+        (args?["backgroundDeclineCallbackHandle"] as? NSNumber)?.int64Value
+      guard acceptCallbackHandle != nil || declineCallbackHandle != nil else {
+        result(
+          FlutterError(
+            code: "invalid_background_validator",
+            message: "At least one callback handle is required",
             details: nil
           )
         )
@@ -52,7 +64,8 @@ final class CallwaveMethodHandler {
       }
       callManager.registerBackgroundIncomingCallValidator(
         backgroundDispatcherHandle: dispatcherHandle,
-        backgroundCallbackHandle: callbackHandle
+        backgroundAcceptCallbackHandle: acceptCallbackHandle,
+        backgroundDeclineCallbackHandle: declineCallbackHandle
       )
       result(nil)
 
@@ -133,6 +146,34 @@ final class CallwaveMethodHandler {
       callManager.markMissed(callId: callId, extra: extra)
       result(nil)
 
+    case "syncCallConnectedState":
+      let args = call.arguments as? [String: Any]
+      guard
+        let callId = args?["callId"] as? String,
+        let connectedAtMs = (args?["connectedAtMs"] as? NSNumber)?.int64Value,
+        connectedAtMs > 0
+      else {
+        result(
+          FlutterError(
+            code: "invalid_connected_state",
+            message: "callId and connectedAtMs are required",
+            details: nil
+          )
+        )
+        return
+      }
+      callManager.syncCallConnectedState(callId: callId, connectedAtMs: connectedAtMs)
+      result(nil)
+
+    case "clearCallState":
+      let args = call.arguments as? [String: Any]
+      guard let callId = args?["callId"] as? String else {
+        result(FlutterError(code: "invalid_call_id", message: "callId is required", details: nil))
+        return
+      }
+      callManager.clearCallState(callId: callId)
+      result(nil)
+
     case "getActiveCallIds":
       result(callManager.activeCallIds())
 
@@ -144,7 +185,10 @@ final class CallwaveMethodHandler {
       result(nil)
 
     case "requestNotificationPermission":
-      result(true)
+      callManager.requestNotificationPermission(result: result)
+
+    case "takePendingStartupAction":
+      result(callManager.takePendingStartupAction())
 
     case "requestFullScreenIntentPermission":
       result(nil)

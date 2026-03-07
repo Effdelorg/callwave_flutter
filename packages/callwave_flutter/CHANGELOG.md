@@ -7,12 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Ongoing-call restoration after process death: native layer persists call state
+  and `connectedAtMs`; `restoreActiveSessions()` restores sessions with correct
+  elapsed time. `CallwaveEngine.onResumeCall` for rejoin logic; default falls
+  back to `onAnswerCall`/`onStartCall`. `CallEventExtraKeys.connectedAtMs` in
+  event extra.
+- Missed-call startup actions: `CallStartupAction`, `CallStartupActionType`, and
+  `CallStartupRouteDecision.pendingAction()` for when the app is launched from a
+  missed-call notification (tap body or "Call Back")
+- `prepareStartupRouteDecision()` now returns `pendingAction` when the user
+  launched from a missed-call notification and no active call session exists
+- `CallEventExtraKeys.launchActionOpenMissedCall` and `launchActionCallback` for
+  launch action values in callback/missed events
+- `backgroundIncomingCallDeclineValidator`, `CallDeclineDecision`, and
+  `CallDeclineFailureReason` for headless decline reporting from terminated
+  incoming-call UI without opening the app
+
 ### Breaking for custom platform implementations
 
+- Custom `CallwaveFlutterPlatform` implementations must implement
+  `takePendingStartupAction()` (returns `null` by default). For ongoing-call
+  restoration, implement `syncCallConnectedState` and `clearCallState` (default
+  no-ops).
 - Custom `CallwaveFlutterPlatform` implementations must update `markMissed` to
   accept optional `extra`. Override `confirmAcceptedCall` only if using
   [IncomingAcceptStrategy.deferOpenUntilConfirmed]; it has a default no-op.
   The method channel implementation already includes these changes.
+- `registerBackgroundIncomingCallValidator` signature changed: `backgroundCallbackHandle` is now optional, and `backgroundDeclineCallbackHandle` was added. Custom platforms must update their override to accept both optional handles.
 
 ## [0.2.1] - 2026-03-06
 

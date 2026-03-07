@@ -3,6 +3,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'enums/post_call_behavior.dart';
 import 'models/call_data_dto.dart';
 import 'models/call_event_dto.dart';
+import 'models/call_startup_action_dto.dart';
 
 abstract class CallwaveFlutterPlatform extends PlatformInterface {
   CallwaveFlutterPlatform() : super(token: _token);
@@ -28,7 +29,8 @@ abstract class CallwaveFlutterPlatform extends PlatformInterface {
 
   Future<void> registerBackgroundIncomingCallValidator({
     required int backgroundDispatcherHandle,
-    required int backgroundCallbackHandle,
+    int? backgroundCallbackHandle,
+    int? backgroundDeclineCallbackHandle,
   }) async {
     throw UnimplementedError(
       'registerBackgroundIncomingCallValidator() has not been implemented.',
@@ -63,6 +65,16 @@ abstract class CallwaveFlutterPlatform extends PlatformInterface {
   /// rejections (e.g. `outcomeReason`).
   Future<void> markMissed(String callId, {Map<String, dynamic>? extra});
 
+  /// Persists the connected timestamp for an active ongoing call so the
+  /// platform can restore timer continuity after process death.
+  Future<void> syncCallConnectedState(
+    String callId, {
+    required int connectedAtMs,
+  }) async {}
+
+  /// Clears any persisted/native call restore state for [callId].
+  Future<void> clearCallState(String callId) async {}
+
   Future<List<String>> getActiveCallIds();
 
   /// Returns a snapshot of active call event state (as opposed to emitting via
@@ -81,6 +93,12 @@ abstract class CallwaveFlutterPlatform extends PlatformInterface {
   /// hydrate metadata and replay engine hooks when event delivery raced app
   /// startup.
   Future<void> syncActiveCallsToEvents() async {}
+
+  /// Returns and clears a one-shot startup action captured before Flutter
+  /// finished initializing.
+  Future<CallStartupActionDto?> takePendingStartupAction() async {
+    return null;
+  }
 
   Future<bool> requestNotificationPermission();
 
@@ -133,12 +151,26 @@ class _StubCallwaveFlutterPlatform extends CallwaveFlutterPlatform {
   Future<void> syncActiveCallsToEvents() async {}
 
   @override
+  Future<CallStartupActionDto?> takePendingStartupAction() async {
+    return null;
+  }
+
+  @override
   Future<void> initialize() async {}
 
   @override
   Future<void> markMissed(String callId, {Map<String, dynamic>? extra}) {
     throw UnimplementedError('markMissed() has not been implemented.');
   }
+
+  @override
+  Future<void> syncCallConnectedState(
+    String callId, {
+    required int connectedAtMs,
+  }) async {}
+
+  @override
+  Future<void> clearCallState(String callId) async {}
 
   @override
   Future<void> requestFullScreenIntentPermission() {
@@ -174,7 +206,8 @@ class _StubCallwaveFlutterPlatform extends CallwaveFlutterPlatform {
   @override
   Future<void> registerBackgroundIncomingCallValidator({
     required int backgroundDispatcherHandle,
-    required int backgroundCallbackHandle,
+    int? backgroundCallbackHandle,
+    int? backgroundDeclineCallbackHandle,
   }) {
     throw UnimplementedError(
       'registerBackgroundIncomingCallValidator() has not been implemented.',

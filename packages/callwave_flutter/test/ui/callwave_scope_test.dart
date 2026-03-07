@@ -80,6 +80,56 @@ void main() {
     expect(find.byType(CallScreen), findsNothing);
   });
 
+  testWidgets('preRoutedCallIds are released after that session ends',
+      (tester) async {
+    final firstSession = CallwaveFlutter.instance.createSession(
+      callData: const CallData(
+        callId: 'reused-call-id',
+        callerName: 'Ava',
+        handle: '+1 555 0101',
+      ),
+      isOutgoing: false,
+      initialState: CallSessionState.connecting,
+    );
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        builder: (context, child) {
+          return CallwaveScope(
+            navigatorKey: navigatorKey,
+            preRoutedCallIds: const <String>{'reused-call-id'},
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
+        home: const Scaffold(body: Text('Home')),
+      ),
+    );
+
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byType(CallScreen), findsNothing);
+
+    firstSession.reportEnded();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    CallwaveFlutter.instance.createSession(
+      callData: const CallData(
+        callId: 'reused-call-id',
+        callerName: 'Milo',
+        handle: '+1 555 0202',
+      ),
+      isOutgoing: true,
+      initialState: CallSessionState.connecting,
+    );
+
+    await _pumpUntilCallScreen(tester);
+
+    expect(find.byType(CallScreen), findsOneWidget);
+    expect(find.text('Connecting...'), findsOneWidget);
+  });
+
   testWidgets('onRouteSession handled session skips auto-push', (tester) async {
     CallwaveFlutter.instance.createSession(
       callData: const CallData(
@@ -185,6 +235,75 @@ void main() {
 
     expect(find.byType(CallScreen), findsOneWidget);
     expect(find.text('Connecting...'), findsOneWidget);
+  });
+
+  testWidgets(
+      'hydrated ringing session stays off call screen without launch action',
+      (tester) async {
+    CallwaveFlutter.instance.createSession(
+      callData: const CallData(
+        callId: 'startup-ringing-home',
+        callerName: 'Ava',
+        handle: '+1 555 0101',
+      ),
+      isOutgoing: false,
+      initialState: CallSessionState.ringing,
+    );
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        builder: (context, child) {
+          return CallwaveScope(
+            navigatorKey: navigatorKey,
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
+        home: const Scaffold(body: Text('Home')),
+      ),
+    );
+
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Home'), findsOneWidget);
+    expect(find.byType(CallScreen), findsNothing);
+  });
+
+  testWidgets('hydrated explicit incoming session opens call screen',
+      (tester) async {
+    CallwaveFlutter.instance.createSession(
+      callData: const CallData(
+        callId: 'startup-ringing-open',
+        callerName: 'Ava',
+        handle: '+1 555 0101',
+        extra: <String, dynamic>{
+          CallEventExtraKeys.launchAction:
+              CallEventExtraKeys.launchActionOpenIncoming,
+        },
+      ),
+      isOutgoing: false,
+      initialState: CallSessionState.ringing,
+    );
+
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        builder: (context, child) {
+          return CallwaveScope(
+            navigatorKey: navigatorKey,
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
+        home: const Scaffold(body: Text('Home')),
+      ),
+    );
+
+    await _pumpUntilCallScreen(tester);
+
+    expect(find.byType(CallScreen), findsOneWidget);
+    expect(find.text('Accept'), findsOneWidget);
   });
 
   testWidgets('forwards one-to-one builders into pushed call screen', (
@@ -308,7 +427,8 @@ class _NoopPlatform extends platform.CallwaveFlutterPlatform {
   @override
   Future<void> registerBackgroundIncomingCallValidator({
     required int backgroundDispatcherHandle,
-    required int backgroundCallbackHandle,
+    int? backgroundCallbackHandle,
+    int? backgroundDeclineCallbackHandle,
   }) async {}
 
   @override

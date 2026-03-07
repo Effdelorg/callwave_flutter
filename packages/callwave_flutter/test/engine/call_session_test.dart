@@ -24,6 +24,31 @@ void main() {
     expect(engine.answerCount, 1);
   });
 
+  test('beginResume invokes resume hook once and keeps reconnecting state',
+      () async {
+    final engine = _FakeEngine();
+    final session = CallSession(
+      callData: const CallData(
+        callId: 'c-resume-1',
+        callerName: 'Ava',
+        handle: '+1',
+      ),
+      isOutgoing: false,
+      engineProvider: () => engine,
+      initialConnectedAt: DateTime.now().subtract(const Duration(seconds: 5)),
+      initialState: CallSessionState.reconnecting,
+    );
+    addTearDown(session.dispose);
+
+    await session.beginResume();
+    await session.beginResume();
+
+    expect(session.state, CallSessionState.reconnecting);
+    expect(session.elapsed, greaterThanOrEqualTo(const Duration(seconds: 5)));
+    expect(engine.resumeCount, 1);
+    expect(engine.answerCount, 0);
+  });
+
   test('mute failure reverts optimistic toggle without failing call', () async {
     final engine = _FakeEngine(throwOnMute: true);
     final session = CallSession(
@@ -373,6 +398,7 @@ class _FakeEngine extends CallwaveEngine {
       onCameraChangedHandler;
   int answerCount = 0;
   int startCount = 0;
+  int resumeCount = 0;
 
   @override
   Future<void> onAnswerCall(CallSession session) async {
@@ -393,6 +419,11 @@ class _FakeEngine extends CallwaveEngine {
   @override
   Future<void> onStartCall(CallSession session) async {
     startCount += 1;
+  }
+
+  @override
+  Future<void> onResumeCall(CallSession session) async {
+    resumeCount += 1;
   }
 
   @override
