@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   launched from a missed-call notification and no active call session exists
 - `CallEventExtraKeys.launchActionOpenMissedCall` and `launchActionCallback` for
   launch action values in callback/missed events
+- `backgroundIncomingCallDeclineValidator`, `CallDeclineDecision`, and
+  `CallDeclineFailureReason` for headless decline reporting from terminated
+  incoming-call UI without opening the app
 
 ### Breaking for custom platform implementations
 
@@ -32,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   accept optional `extra`. Override `confirmAcceptedCall` only if using
   [IncomingAcceptStrategy.deferOpenUntilConfirmed]; it has a default no-op.
   The method channel implementation already includes these changes.
+- `registerBackgroundIncomingCallValidator` signature changed: `backgroundCallbackHandle` is now optional, and `backgroundDeclineCallbackHandle` was added. Custom platforms must update their override to accept both optional handles.
 
 ## [0.2.1] - 2026-03-06
 

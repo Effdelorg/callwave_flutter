@@ -58,14 +58,19 @@ class MethodChannelCallwaveFlutter extends CallwaveFlutterPlatform {
   @override
   Future<void> registerBackgroundIncomingCallValidator({
     required int backgroundDispatcherHandle,
-    required int backgroundCallbackHandle,
+    int? backgroundCallbackHandle,
+    int? backgroundDeclineCallbackHandle,
   }) async {
     await initialize();
     await _methodChannel.invokeMethod<void>(
       'registerBackgroundIncomingCallValidator',
       <String, dynamic>{
         PayloadCodec.keyBackgroundDispatcherHandle: backgroundDispatcherHandle,
-        PayloadCodec.keyBackgroundCallbackHandle: backgroundCallbackHandle,
+        if (backgroundCallbackHandle != null)
+          PayloadCodec.keyBackgroundCallbackHandle: backgroundCallbackHandle,
+        if (backgroundDeclineCallbackHandle != null)
+          PayloadCodec.keyBackgroundDeclineCallbackHandle:
+              backgroundDeclineCallbackHandle,
       },
     );
   }

@@ -159,6 +159,15 @@ CallwaveFlutter.instance.configure(
         );
       },
     ),
+    backgroundIncomingCallDeclineValidator: (request) async {
+      final didReport = await api.reportDeclinedCall(request.callId);
+      if (didReport) {
+        return const CallDeclineDecision.reported();
+      }
+      return const CallDeclineDecision.failed(
+        reason: CallDeclineFailureReason.failed,
+      );
+    },
   ),
 );
 ```
@@ -174,6 +183,9 @@ Flow:
 - On Android, background validated rejects stay off the foreground; terminated
   validated rejects run through a transient native bridge and can resolve
   directly to missed-call handling when a background validator is registered.
+- When the user declines from native UI while Flutter is not alive, a registered
+  `backgroundIncomingCallDeclineValidator` runs in a headless isolate. If it
+  fails, throws, or times out, the plugin falls back to missed-call handling.
 
 ## Cold Start
 

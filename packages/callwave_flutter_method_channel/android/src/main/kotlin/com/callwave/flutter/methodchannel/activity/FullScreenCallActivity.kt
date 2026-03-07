@@ -38,6 +38,11 @@ class FullScreenCallActivity : AppCompatActivity() {
                 it.hasExtra(CallwaveConstants.EXTRA_BACKGROUND_CALLBACK_HANDLE)
             }?.getLongExtra(CallwaveConstants.EXTRA_BACKGROUND_CALLBACK_HANDLE, 0L)
                 ?.takeIf { it > 0L }
+        val backgroundDeclineCallbackHandle =
+            intent.takeIf {
+                it.hasExtra(CallwaveConstants.EXTRA_BACKGROUND_DECLINE_CALLBACK_HANDLE)
+            }?.getLongExtra(CallwaveConstants.EXTRA_BACKGROUND_DECLINE_CALLBACK_HANDLE, 0L)
+                ?.takeIf { it > 0L }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -69,6 +74,7 @@ class FullScreenCallActivity : AppCompatActivity() {
                         extra = extra,
                         backgroundDispatcherHandle = backgroundDispatcherHandle,
                         backgroundCallbackHandle = backgroundCallbackHandle,
+                        backgroundDeclineCallbackHandle = backgroundDeclineCallbackHandle,
                     )
                 } else {
                     sendAction(
@@ -83,6 +89,7 @@ class FullScreenCallActivity : AppCompatActivity() {
                         extra = extra,
                         backgroundDispatcherHandle = backgroundDispatcherHandle,
                         backgroundCallbackHandle = backgroundCallbackHandle,
+                        backgroundDeclineCallbackHandle = backgroundDeclineCallbackHandle,
                     )
                 }
                 finish()
@@ -104,6 +111,7 @@ class FullScreenCallActivity : AppCompatActivity() {
                     extra = extra,
                     backgroundDispatcherHandle = backgroundDispatcherHandle,
                     backgroundCallbackHandle = backgroundCallbackHandle,
+                    backgroundDeclineCallbackHandle = backgroundDeclineCallbackHandle,
                 )
                 finish()
             }
@@ -127,6 +135,7 @@ class FullScreenCallActivity : AppCompatActivity() {
         extra: String?,
         backgroundDispatcherHandle: Long?,
         backgroundCallbackHandle: Long?,
+        backgroundDeclineCallbackHandle: Long?,
     ) {
         val intent = Intent(this, CallActionReceiver::class.java).apply {
             this.action = action
@@ -149,6 +158,10 @@ class FullScreenCallActivity : AppCompatActivity() {
                 CallwaveConstants.EXTRA_BACKGROUND_CALLBACK_HANDLE,
                 backgroundCallbackHandle,
             )
+            putExtra(
+                CallwaveConstants.EXTRA_BACKGROUND_DECLINE_CALLBACK_HANDLE,
+                backgroundDeclineCallbackHandle,
+            )
         }
         sendBroadcast(intent)
     }
@@ -164,6 +177,7 @@ class FullScreenCallActivity : AppCompatActivity() {
         extra: String?,
         backgroundDispatcherHandle: Long?,
         backgroundCallbackHandle: Long?,
+        backgroundDeclineCallbackHandle: Long?,
     ) {
         val intent = Intent(this, ValidatedAcceptBridgeActivity::class.java).apply {
             putExtra(CallwaveConstants.EXTRA_LAUNCH_ACTION, CallwaveConstants.ACTION_ACCEPT)
@@ -185,6 +199,10 @@ class FullScreenCallActivity : AppCompatActivity() {
             putExtra(
                 CallwaveConstants.EXTRA_BACKGROUND_CALLBACK_HANDLE,
                 backgroundCallbackHandle,
+            )
+            putExtra(
+                CallwaveConstants.EXTRA_BACKGROUND_DECLINE_CALLBACK_HANDLE,
+                backgroundDeclineCallbackHandle,
             )
             addFlags(
                 Intent.FLAG_ACTIVITY_SINGLE_TOP or

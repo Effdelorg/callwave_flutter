@@ -14,6 +14,7 @@ data class CallPayload(
     val incomingAcceptStrategy: String,
     val backgroundDispatcherHandle: Long?,
     val backgroundCallbackHandle: Long?,
+    val backgroundDeclineCallbackHandle: Long?,
 ) {
     fun toMethodArgs(): Map<String, Any?> {
         return mapOf(
@@ -27,6 +28,8 @@ data class CallPayload(
             CallwaveConstants.EXTRA_INCOMING_ACCEPT_STRATEGY to incomingAcceptStrategy,
             CallwaveConstants.EXTRA_BACKGROUND_DISPATCHER_HANDLE to backgroundDispatcherHandle,
             CallwaveConstants.EXTRA_BACKGROUND_CALLBACK_HANDLE to backgroundCallbackHandle,
+            CallwaveConstants.EXTRA_BACKGROUND_DECLINE_CALLBACK_HANDLE to
+                backgroundDeclineCallbackHandle,
         )
     }
 
@@ -51,6 +54,9 @@ data class CallPayload(
                 backgroundCallbackHandle =
                     (args[CallwaveConstants.EXTRA_BACKGROUND_CALLBACK_HANDLE] as? Number)
                         ?.toLong(),
+                backgroundDeclineCallbackHandle =
+                    (args[CallwaveConstants.EXTRA_BACKGROUND_DECLINE_CALLBACK_HANDLE]
+                        as? Number)?.toLong(),
             )
         }
 

@@ -34,6 +34,7 @@ class AndroidCallManager(
     private val openedIncomingCalls = HashSet<String>()
     private val pendingAcceptedCalls = HashSet<String>()
     private val confirmedAcceptedCalls = HashSet<String>()
+    private val pendingDeclinedCalls = HashSet<String>()
     private val pendingLaunchAfterConfirm = HashSet<String>()
     private val launchActionOverrides = HashMap<String, String>()
     private val outgoingCalls = HashSet<String>()
@@ -44,7 +45,8 @@ class AndroidCallManager(
     var activity: Activity? = null
     private var postCallBehavior = PostCallBehavior.STAY_OPEN
     private var backgroundDispatcherHandle: Long? = null
-    private var backgroundCallbackHandle: Long? = null
+    private var backgroundAcceptCallbackHandle: Long? = null
+    private var backgroundDeclineCallbackHandle: Long? = null
 
     private enum class BackgroundValidationStartResult {
         STARTED,
@@ -86,6 +88,7 @@ class AndroidCallManager(
         openedIncomingCalls.remove(payload.callId)
         pendingAcceptedCalls.remove(payload.callId)
         confirmedAcceptedCalls.remove(payload.callId)
+        pendingDeclinedCalls.remove(payload.callId)
         pendingLaunchAfterConfirm.remove(payload.callId)
         launchActionOverrides.remove(payload.callId)
         outgoingCalls.remove(payload.callId)
@@ -114,6 +117,7 @@ class AndroidCallManager(
         openedIncomingCalls.remove(payload.callId)
         pendingAcceptedCalls.remove(payload.callId)
         confirmedAcceptedCalls.remove(payload.callId)
+        pendingDeclinedCalls.remove(payload.callId)
         pendingLaunchAfterConfirm.remove(payload.callId)
         launchActionOverrides.remove(payload.callId)
         outgoingCalls.add(payload.callId)
@@ -199,19 +203,23 @@ class AndroidCallManager(
 
     fun registerBackgroundIncomingCallValidator(
         backgroundDispatcherHandle: Long,
-        backgroundCallbackHandle: Long,
+        backgroundAcceptCallbackHandle: Long?,
+        backgroundDeclineCallbackHandle: Long?,
     ) {
         this.backgroundDispatcherHandle = backgroundDispatcherHandle
-        this.backgroundCallbackHandle = backgroundCallbackHandle
+        this.backgroundAcceptCallbackHandle = backgroundAcceptCallbackHandle
+        this.backgroundDeclineCallbackHandle = backgroundDeclineCallbackHandle
         backgroundValidatorRegistrationStore.save(
             backgroundDispatcherHandle = backgroundDispatcherHandle,
-            backgroundCallbackHandle = backgroundCallbackHandle,
+            backgroundAcceptCallbackHandle = backgroundAcceptCallbackHandle,
+            backgroundDeclineCallbackHandle = backgroundDeclineCallbackHandle,
         )
     }
 
     fun clearBackgroundIncomingCallValidator() {
         backgroundDispatcherHandle = null
-        backgroundCallbackHandle = null
+        backgroundAcceptCallbackHandle = null
+        backgroundDeclineCallbackHandle = null
         backgroundValidatorRegistrationStore.clear()
     }
 
@@ -280,6 +288,9 @@ class AndroidCallManager(
         if (pendingAcceptedCalls.contains(callId) || confirmedAcceptedCalls.contains(callId)) {
             return true
         }
+        if (pendingDeclinedCalls.contains(callId)) {
+            return true
+        }
         if (!openedIncomingCalls.add(callId)) {
             return true
         }
@@ -334,6 +345,10 @@ class AndroidCallManager(
         )
         if (pendingAcceptedCalls.contains(callId) || confirmedAcceptedCalls.contains(callId)) {
             Log.d(TAG, "onAccept ignored for $callId because it is already accepted.")
+            return AcceptResult.IGNORED
+        }
+        if (pendingDeclinedCalls.contains(callId)) {
+            Log.d(TAG, "onAccept ignored for $callId because decline is in flight.")
             return AcceptResult.IGNORED
         }
         pendingAcceptedCalls.add(callId)
@@ -489,14 +504,25 @@ class AndroidCallManager(
         return true
     }
 
-    fun onDecline(callId: String, extra: Map<String, Any?>?) {
+    fun onDecline(
+        callId: String,
+        extra: Map<String, Any?>?,
+        fallbackPayload: CallPayload? = null,
+        preferHeadlessReporting: Boolean = false,
+    ) {
         if (pendingAcceptedCalls.contains(callId) || confirmedAcceptedCalls.contains(callId)) {
             // Ignore stale decline actions after a successful accept.
             return
         }
-        clearCallRuntimeState(callId, dismissMissed = false)
-        val payload = payloadStore.remove(callId)
-        emitEvent(callId, CallwaveConstants.EVENT_DECLINED, extra ?: payload?.extra)
+        if (pendingDeclinedCalls.contains(callId)) {
+            return
+        }
+        finalizeDecline(
+            callId = callId,
+            extra = extra,
+            fallbackPayload = fallbackPayload,
+            preferHeadlessReporting = preferHeadlessReporting,
+        )
     }
 
     fun onTimeout(callId: String) {
@@ -506,6 +532,10 @@ class AndroidCallManager(
         }
         if (pendingAcceptedCalls.contains(callId) || confirmedAcceptedCalls.contains(callId)) {
             // Ignore stale timeout broadcasts that race with an accepted call.
+            return
+        }
+        if (pendingDeclinedCalls.contains(callId)) {
+            // Ignore stale timeout broadcasts while headless decline reporting is in flight.
             return
         }
         val extra = payloadStore[callId]?.extra
@@ -539,6 +569,38 @@ class AndroidCallManager(
         )
     }
 
+    private fun finalizeDecline(
+        callId: String,
+        extra: Map<String, Any?>?,
+        fallbackPayload: CallPayload?,
+        preferHeadlessReporting: Boolean,
+    ) {
+        val payload = payloadStore[callId] ?: fallbackPayload
+        if (!preferHeadlessReporting || payload == null) {
+            emitDeclined(callId, extra, payload)
+            return
+        }
+
+        when (maybeRunBackgroundDeclineReport(payload, extra)) {
+            BackgroundValidationStartResult.STARTED -> return
+            BackgroundValidationStartResult.DEFERRED_TO_LIVE_LISTENER,
+            BackgroundValidationStartResult.UNAVAILABLE
+            -> {
+                emitDeclined(callId, extra, payload)
+            }
+        }
+    }
+
+    private fun emitDeclined(
+        callId: String,
+        extra: Map<String, Any?>?,
+        payload: CallPayload?,
+    ) {
+        clearCallRuntimeState(callId, dismissMissed = false)
+        payloadStore.remove(callId)
+        emitEvent(callId, CallwaveConstants.EVENT_DECLINED, extra ?: payload?.extra)
+    }
+
     fun payloadFromActionIntent(
         intent: Intent,
         callId: String,
@@ -560,6 +622,9 @@ class AndroidCallManager(
         val snapshots = mutableListOf<Map<String, Any?>>()
         val activeCallIds = activeCallRegistry.getActiveCallIds()
         for (callId in activeCallIds) {
+            if (pendingDeclinedCalls.contains(callId)) {
+                continue
+            }
             val payload = payloadStore[callId]
             val type = when {
                 pendingAcceptedCalls.contains(callId) ||
@@ -601,6 +666,9 @@ class AndroidCallManager(
     fun syncActiveCallsToEvents() {
         val activeCallIds = activeCallRegistry.getActiveCallIds()
         for (callId in activeCallIds) {
+            if (pendingDeclinedCalls.contains(callId)) {
+                continue
+            }
             val payload = payloadStore[callId]
             val type = when {
                 pendingAcceptedCalls.contains(callId) ||
@@ -745,6 +813,7 @@ class AndroidCallManager(
         openedIncomingCalls.remove(payload.callId)
         pendingAcceptedCalls.remove(payload.callId)
         confirmedAcceptedCalls.remove(payload.callId)
+        pendingDeclinedCalls.remove(payload.callId)
         pendingLaunchAfterConfirm.remove(payload.callId)
         launchActionOverrides.remove(payload.callId)
         outgoingCalls.remove(payload.callId)
@@ -1019,6 +1088,7 @@ class AndroidCallManager(
         openedIncomingCalls.remove(callId)
         pendingAcceptedCalls.remove(callId)
         confirmedAcceptedCalls.remove(callId)
+        pendingDeclinedCalls.remove(callId)
         pendingLaunchAfterConfirm.remove(callId)
         launchActionOverrides.remove(callId)
         outgoingCalls.remove(callId)
@@ -1038,6 +1108,7 @@ class AndroidCallManager(
             incomingAcceptStrategy = CallwaveConstants.INCOMING_ACCEPT_STRATEGY_OPEN_IMMEDIATELY,
             backgroundDispatcherHandle = null,
             backgroundCallbackHandle = null,
+            backgroundDeclineCallbackHandle = null,
         )
     }
 
@@ -1182,6 +1253,11 @@ class AndroidCallManager(
                     it.hasExtra(CallwaveConstants.EXTRA_BACKGROUND_CALLBACK_HANDLE)
                 }?.getLongExtra(CallwaveConstants.EXTRA_BACKGROUND_CALLBACK_HANDLE, 0L)
                     ?.takeIf { it > 0L },
+            backgroundDeclineCallbackHandle =
+                intent.takeIf {
+                    it.hasExtra(CallwaveConstants.EXTRA_BACKGROUND_DECLINE_CALLBACK_HANDLE)
+                }?.getLongExtra(CallwaveConstants.EXTRA_BACKGROUND_DECLINE_CALLBACK_HANDLE, 0L)
+                    ?.takeIf { it > 0L },
         )
     }
 
@@ -1235,9 +1311,11 @@ class AndroidCallManager(
             TAG,
             "maybeRunBackgroundValidation starting for ${payload.callId}.",
         )
-        backgroundValidator.validate(
+        val callbackHandle = registration.backgroundAcceptCallbackHandle
+            ?: return BackgroundValidationStartResult.UNAVAILABLE
+        backgroundValidator.validateAccept(
             backgroundDispatcherHandle = registration.backgroundDispatcherHandle,
-            backgroundCallbackHandle = registration.backgroundCallbackHandle,
+            backgroundCallbackHandle = callbackHandle,
             payload = payload,
         ) { decision ->
             try {
@@ -1246,7 +1324,7 @@ class AndroidCallManager(
                     "background validation resolved for ${payload.callId}: allowed=${decision.isAllowed}, reason=${decision.reason}",
                 )
                 if (!activeCallRegistry.contains(payload.callId)) {
-                    return@validate
+                    return@validateAccept
                 }
                 if (decision.isAllowed) {
                     confirmAcceptedCall(payload.callId)
@@ -1271,26 +1349,103 @@ class AndroidCallManager(
         return BackgroundValidationStartResult.STARTED
     }
 
+    private fun maybeRunBackgroundDeclineReport(
+        payload: CallPayload,
+        fallbackExtra: Map<String, Any?>?,
+    ): BackgroundValidationStartResult {
+        if (shouldDeferDeclineToLiveListener()) {
+            Log.d(
+                TAG,
+                "maybeRunBackgroundDeclineReport skipped for ${payload.callId} because Flutter is foreground-active.",
+            )
+            return BackgroundValidationStartResult.DEFERRED_TO_LIVE_LISTENER
+        }
+        val registration = backgroundIncomingCallValidatorRegistrationFor(payload)
+        val callbackHandle = registration?.backgroundDeclineCallbackHandle
+        if (registration == null || callbackHandle == null) {
+            Log.d(
+                TAG,
+                "maybeRunBackgroundDeclineReport skipped for ${payload.callId} because no decline reporter is available.",
+            )
+            return BackgroundValidationStartResult.UNAVAILABLE
+        }
+
+        pendingDeclinedCalls.add(payload.callId)
+        timeoutScheduler.cancel(payload.callId)
+        notificationManager.dismissIncoming(payload.callId)
+        openedIncomingCalls.remove(payload.callId)
+        pendingAcceptedCalls.remove(payload.callId)
+        confirmedAcceptedCalls.remove(payload.callId)
+        pendingLaunchAfterConfirm.remove(payload.callId)
+        launchActionOverrides.remove(payload.callId)
+        outgoingCalls.remove(payload.callId)
+
+        backgroundValidator.reportDecline(
+            backgroundDispatcherHandle = registration.backgroundDispatcherHandle,
+            backgroundCallbackHandle = callbackHandle,
+            payload = payload,
+        ) { decision ->
+            if (!activeCallRegistry.contains(payload.callId) || !pendingDeclinedCalls.contains(payload.callId)) {
+                return@reportDecline
+            }
+            if (decision.isAllowed) {
+                clearCallRuntimeState(payload.callId, dismissMissed = false)
+                payloadStore.remove(payload.callId)
+                return@reportDecline
+            }
+            markMissed(
+                payload.callId,
+                extra = eventExtra(
+                    payload = payload,
+                    fallbackExtra = decision.extra ?: fallbackExtra,
+                ).toMutableMap().apply {
+                    put(
+                        CallwaveConstants.EXTRA_OUTCOME_REASON,
+                        decision.reason ?: "failed",
+                    )
+                },
+            )
+        }
+        return BackgroundValidationStartResult.STARTED
+    }
+
+    private fun shouldDeferDeclineToLiveListener(): Boolean {
+        if (!eventSinkBridge.hasListener()) {
+            return false
+        }
+        val currentActivity = activity ?: return false
+        if (currentActivity.isFinishing || currentActivity.isDestroyed) {
+            return false
+        }
+        return currentActivity.hasWindowFocus()
+    }
+
     private fun restoreBackgroundIncomingCallValidatorRegistration() {
         val registration = backgroundValidatorRegistrationStore.load() ?: return
         backgroundDispatcherHandle = registration.backgroundDispatcherHandle
-        backgroundCallbackHandle = registration.backgroundCallbackHandle
+        backgroundAcceptCallbackHandle = registration.backgroundAcceptCallbackHandle
+        backgroundDeclineCallbackHandle = registration.backgroundDeclineCallbackHandle
     }
 
     private fun currentBackgroundIncomingCallValidatorRegistration():
         BackgroundValidatorRegistrationStore.Registration? {
         val dispatcherHandle = backgroundDispatcherHandle
-        val callbackHandle = backgroundCallbackHandle
-        if (dispatcherHandle != null && callbackHandle != null) {
+        val acceptCallbackHandle = backgroundAcceptCallbackHandle
+        val declineCallbackHandle = backgroundDeclineCallbackHandle
+        if (dispatcherHandle != null &&
+            (acceptCallbackHandle != null || declineCallbackHandle != null)
+        ) {
             return BackgroundValidatorRegistrationStore.Registration(
                 backgroundDispatcherHandle = dispatcherHandle,
-                backgroundCallbackHandle = callbackHandle,
+                backgroundAcceptCallbackHandle = acceptCallbackHandle,
+                backgroundDeclineCallbackHandle = declineCallbackHandle,
             )
         }
 
         val restored = backgroundValidatorRegistrationStore.load() ?: return null
         backgroundDispatcherHandle = restored.backgroundDispatcherHandle
-        backgroundCallbackHandle = restored.backgroundCallbackHandle
+        backgroundAcceptCallbackHandle = restored.backgroundAcceptCallbackHandle
+        backgroundDeclineCallbackHandle = restored.backgroundDeclineCallbackHandle
         return restored
     }
 
@@ -1298,11 +1453,15 @@ class AndroidCallManager(
         payload: CallPayload,
     ): BackgroundValidatorRegistrationStore.Registration? {
         val payloadDispatcherHandle = payload.backgroundDispatcherHandle
-        val payloadCallbackHandle = payload.backgroundCallbackHandle
-        if (payloadDispatcherHandle != null && payloadCallbackHandle != null) {
+        val payloadAcceptCallbackHandle = payload.backgroundCallbackHandle
+        val payloadDeclineCallbackHandle = payload.backgroundDeclineCallbackHandle
+        if (payloadDispatcherHandle != null &&
+            (payloadAcceptCallbackHandle != null || payloadDeclineCallbackHandle != null)
+        ) {
             return BackgroundValidatorRegistrationStore.Registration(
                 backgroundDispatcherHandle = payloadDispatcherHandle,
-                backgroundCallbackHandle = payloadCallbackHandle,
+                backgroundAcceptCallbackHandle = payloadAcceptCallbackHandle,
+                backgroundDeclineCallbackHandle = payloadDeclineCallbackHandle,
             )
         }
         return currentBackgroundIncomingCallValidatorRegistration()
@@ -1353,6 +1512,10 @@ class AndroidCallManager(
         putExtra(
             CallwaveConstants.EXTRA_BACKGROUND_CALLBACK_HANDLE,
             payload.backgroundCallbackHandle,
+        )
+        putExtra(
+            CallwaveConstants.EXTRA_BACKGROUND_DECLINE_CALLBACK_HANDLE,
+            payload.backgroundDeclineCallbackHandle,
         )
     }
 

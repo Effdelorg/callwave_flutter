@@ -34,11 +34,14 @@ object CallwaveConstants {
     const val EXTRA_INCOMING_ACCEPT_STRATEGY = "incomingAcceptStrategy"
     const val EXTRA_BACKGROUND_DISPATCHER_HANDLE = "backgroundDispatcherHandle"
     const val EXTRA_BACKGROUND_CALLBACK_HANDLE = "backgroundCallbackHandle"
+    const val EXTRA_BACKGROUND_DECLINE_CALLBACK_HANDLE = "backgroundDeclineCallbackHandle"
     const val EXTRA_STARTUP_ACTION_TYPE = "startupActionType"
     const val EXTRA_SKIP_STARTUP_ACTION_HANDOFF = "skipStartupActionHandoff"
 
     const val BACKGROUND_CHANNEL = "callwave_flutter/background"
     const val METHOD_VALIDATE_BACKGROUND_INCOMING_CALL = "validateBackgroundIncomingCall"
+    const val METHOD_REPORT_BACKGROUND_INCOMING_CALL_DECLINE =
+        "reportBackgroundIncomingCallDecline"
     const val METHOD_BACKGROUND_DISPATCHER_READY = "backgroundDispatcherReady"
     const val EXTRA_CALL_DATA = "callData"
 

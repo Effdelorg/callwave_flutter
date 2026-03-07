@@ -11,7 +11,9 @@ import 'mock_callwave_engine.dart';
 enum IncomingDemoMode {
   realtime('Realtime'),
   validatedAllow('Validated Allow'),
-  validatedReject('Validated Reject');
+  validatedReject('Validated Reject'),
+  declineReported('Decline Reported'),
+  declineFailed('Decline Failed');
 
   const IncomingDemoMode(this.label);
 
@@ -78,7 +80,10 @@ IncomingCallHandling exampleIncomingCallHandling({
   required CallAcceptValidator foregroundValidator,
 }) {
   return switch (incomingDemoMode) {
-    IncomingDemoMode.realtime => const IncomingCallHandling.realtime(),
+    IncomingDemoMode.realtime ||
+    IncomingDemoMode.declineReported ||
+    IncomingDemoMode.declineFailed =>
+      const IncomingCallHandling.realtime(),
     IncomingDemoMode.validatedAllow ||
     IncomingDemoMode.validatedReject =>
       IncomingCallHandling.validated(
@@ -100,6 +105,8 @@ void configureExampleCallwave({
         foregroundValidator: foregroundValidator,
       ),
       backgroundIncomingCallValidator: exampleBackgroundIncomingCallValidator,
+      backgroundIncomingCallDeclineValidator:
+          exampleBackgroundIncomingCallDeclineValidator,
     ),
   );
 }
@@ -112,6 +119,8 @@ Future<CallAcceptDecision> _decisionForMode({
   switch (mode) {
     case IncomingDemoMode.realtime:
     case IncomingDemoMode.validatedAllow:
+    case IncomingDemoMode.declineReported:
+    case IncomingDemoMode.declineFailed:
       return CallAcceptDecision.allow(
         extra: <String, dynamic>{
           'validatedByExample': true,
@@ -128,12 +137,49 @@ Future<CallAcceptDecision> _decisionForMode({
   }
 }
 
+Future<CallDeclineDecision> _declineDecisionForMode({
+  required IncomingDemoMode mode,
+  required String callId,
+}) async {
+  await Future<void>.delayed(const Duration(milliseconds: 700));
+  switch (mode) {
+    case IncomingDemoMode.declineFailed:
+      return const CallDeclineDecision.failed(
+        reason: CallDeclineFailureReason.failed,
+        extra: <String, dynamic>{
+          'declineReportedByExample': false,
+        },
+      );
+    case IncomingDemoMode.realtime:
+    case IncomingDemoMode.validatedAllow:
+    case IncomingDemoMode.validatedReject:
+    case IncomingDemoMode.declineReported:
+      return CallDeclineDecision.reported(
+        extra: <String, dynamic>{
+          'declineReportedByExample': true,
+          'declineReportedCallId': callId,
+        },
+      );
+  }
+}
+
 @pragma('vm:entry-point')
 Future<CallAcceptDecision> exampleBackgroundIncomingCallValidator(
   BackgroundIncomingCallValidationRequest request,
 ) async {
   final mode = await loadPersistedIncomingDemoMode();
   return _decisionForMode(
+    mode: mode,
+    callId: request.callId,
+  );
+}
+
+@pragma('vm:entry-point')
+Future<CallDeclineDecision> exampleBackgroundIncomingCallDeclineValidator(
+  BackgroundIncomingCallValidationRequest request,
+) async {
+  final mode = await loadPersistedIncomingDemoMode();
+  return _declineDecisionForMode(
     mode: mode,
     callId: request.callId,
   );
@@ -500,32 +546,34 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                       style: Theme.of(context).textTheme.titleSmall,
                     ),
                     const SizedBox(height: 8),
-                    SegmentedButton<IncomingDemoMode>(
-                      showSelectedIcon: false,
-                      segments: IncomingDemoMode.values
-                          .map(
-                            (mode) => ButtonSegment<IncomingDemoMode>(
-                              value: mode,
-                              label: Text(mode.label),
-                            ),
-                          )
-                          .toList(growable: false),
-                      selected: <IncomingDemoMode>{_incomingDemoMode},
-                      onSelectionChanged: incomingModeLocked
-                          ? null
-                          : (selection) {
-                              final nextMode = selection.first;
-                              if (nextMode == _incomingDemoMode) {
-                                return;
-                              }
-                              setState(() {
-                                _incomingDemoMode = nextMode;
-                              });
-                              unawaited(
-                                persistIncomingDemoMode(nextMode),
-                              );
-                              _applyIncomingMode();
-                            },
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: IncomingDemoMode.values.map((mode) {
+                        final isSelected = mode == _incomingDemoMode;
+                        return ChoiceChip(
+                          label: Text(
+                            mode.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          selected: isSelected,
+                          onSelected: incomingModeLocked
+                              ? null
+                              : (_) {
+                                  if (isSelected) {
+                                    return;
+                                  }
+                                  setState(() {
+                                    _incomingDemoMode = mode;
+                                  });
+                                  unawaited(
+                                    persistIncomingDemoMode(mode),
+                                  );
+                                  _applyIncomingMode();
+                                },
+                        );
+                      }).toList(growable: false),
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -778,6 +826,10 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
         return 'Native accept waits for backend validation, then opens the call only after approval.';
       case IncomingDemoMode.validatedReject:
         return 'Native accept waits for validation and then fails gracefully into missed-call handling without foreground fallback.';
+      case IncomingDemoMode.declineReported:
+        return 'Native decline reports to the backend in a headless Flutter isolate and dismisses the call without opening the app.';
+      case IncomingDemoMode.declineFailed:
+        return 'Native decline simulates a failed backend report, so the plugin falls back to missed-call UX.';
     }
   }
 

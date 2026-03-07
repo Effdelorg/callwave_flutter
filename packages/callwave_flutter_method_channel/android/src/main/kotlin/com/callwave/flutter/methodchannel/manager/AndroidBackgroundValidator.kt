@@ -16,6 +16,20 @@ import io.flutter.plugin.common.MethodChannel
 internal class AndroidBackgroundValidator(
     private val context: Context,
 ) {
+    private enum class BackgroundAction(
+        val methodName: String,
+        val successKey: String,
+    ) {
+        ACCEPT_VALIDATION(
+            methodName = CallwaveConstants.METHOD_VALIDATE_BACKGROUND_INCOMING_CALL,
+            successKey = "isAllowed",
+        ),
+        DECLINE_REPORT(
+            methodName = CallwaveConstants.METHOD_REPORT_BACKGROUND_INCOMING_CALL_DECLINE,
+            successKey = "isReported",
+        ),
+    }
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private val flutterLoader = FlutterLoader()
     private var engine: FlutterEngine? = null
@@ -24,7 +38,38 @@ internal class AndroidBackgroundValidator(
     private var dispatcherReady = false
     private val pendingValidations = ArrayDeque<PendingValidation>()
 
-    fun validate(
+    fun validateAccept(
+        backgroundDispatcherHandle: Long,
+        backgroundCallbackHandle: Long,
+        payload: CallPayload,
+        onComplete: (BackgroundValidationResult) -> Unit,
+    ) {
+        runAction(
+            action = BackgroundAction.ACCEPT_VALIDATION,
+            backgroundDispatcherHandle = backgroundDispatcherHandle,
+            backgroundCallbackHandle = backgroundCallbackHandle,
+            payload = payload,
+            onComplete = onComplete,
+        )
+    }
+
+    fun reportDecline(
+        backgroundDispatcherHandle: Long,
+        backgroundCallbackHandle: Long,
+        payload: CallPayload,
+        onComplete: (BackgroundValidationResult) -> Unit,
+    ) {
+        runAction(
+            action = BackgroundAction.DECLINE_REPORT,
+            backgroundDispatcherHandle = backgroundDispatcherHandle,
+            backgroundCallbackHandle = backgroundCallbackHandle,
+            payload = payload,
+            onComplete = onComplete,
+        )
+    }
+
+    private fun runAction(
+        action: BackgroundAction,
         backgroundDispatcherHandle: Long,
         backgroundCallbackHandle: Long,
         payload: CallPayload,
@@ -66,6 +111,7 @@ internal class AndroidBackgroundValidator(
         }
         pendingValidations.addLast(
             PendingValidation(
+                action = action,
                 backgroundCallbackHandle = backgroundCallbackHandle,
                 payload = payload,
                 completion = completion,
@@ -130,7 +176,7 @@ internal class AndroidBackgroundValidator(
             val pending = pendingValidations.removeFirst()
             Log.d(TAG, "Dispatching background validation for ${pending.payload.callId}.")
             currentChannel.invokeMethod(
-                CallwaveConstants.METHOD_VALIDATE_BACKGROUND_INCOMING_CALL,
+                pending.action.methodName,
                 mapOf(
                     CallwaveConstants.EXTRA_BACKGROUND_CALLBACK_HANDLE to
                         pending.backgroundCallbackHandle,
@@ -143,7 +189,8 @@ internal class AndroidBackgroundValidator(
                         val map = result as? Map<*, *>
                         pending.completion.complete(
                             BackgroundValidationResult(
-                                isAllowed = map?.get("isAllowed") as? Boolean ?: false,
+                                isAllowed = map?.get(pending.action.successKey) as? Boolean
+                                    ?: false,
                                 reason = map?.get("reason") as? String,
                                 extra = (map?.get("extra") as? Map<*, *>)
                                     ?.entries
@@ -222,6 +269,7 @@ internal class AndroidBackgroundValidator(
     )
 
     private data class PendingValidation(
+        val action: BackgroundAction,
         val backgroundCallbackHandle: Long,
         val payload: CallPayload,
         val completion: ValidationCompletion,

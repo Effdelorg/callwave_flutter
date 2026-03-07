@@ -2,6 +2,29 @@ import Foundation
 import Flutter
 
 final class IOSBackgroundValidator {
+  private enum BackgroundAction {
+    case acceptValidation
+    case declineReport
+
+    var methodName: String {
+      switch self {
+      case .acceptValidation:
+        return "validateBackgroundIncomingCall"
+      case .declineReport:
+        return "reportBackgroundIncomingCallDecline"
+      }
+    }
+
+    var successKey: String {
+      switch self {
+      case .acceptValidation:
+        return "isAllowed"
+      case .declineReport:
+        return "isReported"
+      }
+    }
+  }
+
   private var engine: FlutterEngine?
   private var channel: FlutterMethodChannel?
   private var activeDispatcherHandle: Int64?
@@ -9,7 +32,38 @@ final class IOSBackgroundValidator {
   private var pendingValidations: [PendingValidation] = []
   private var isValidationInFlight = false
 
-  func validate(
+  func validateAccept(
+    backgroundDispatcherHandle: Int64,
+    backgroundCallbackHandle: Int64,
+    payload: CallPayload,
+    onComplete: @escaping (BackgroundValidationResult) -> Void
+  ) {
+    run(
+      action: .acceptValidation,
+      backgroundDispatcherHandle: backgroundDispatcherHandle,
+      backgroundCallbackHandle: backgroundCallbackHandle,
+      payload: payload,
+      onComplete: onComplete
+    )
+  }
+
+  func reportDecline(
+    backgroundDispatcherHandle: Int64,
+    backgroundCallbackHandle: Int64,
+    payload: CallPayload,
+    onComplete: @escaping (BackgroundValidationResult) -> Void
+  ) {
+    run(
+      action: .declineReport,
+      backgroundDispatcherHandle: backgroundDispatcherHandle,
+      backgroundCallbackHandle: backgroundCallbackHandle,
+      payload: payload,
+      onComplete: onComplete
+    )
+  }
+
+  private func run(
+    action: BackgroundAction,
     backgroundDispatcherHandle: Int64,
     backgroundCallbackHandle: Int64,
     payload: CallPayload,
@@ -28,6 +82,7 @@ final class IOSBackgroundValidator {
 
     pendingValidations.append(
       PendingValidation(
+        action: action,
         backgroundCallbackHandle: backgroundCallbackHandle,
         payload: payload,
         onComplete: onComplete
@@ -94,7 +149,7 @@ final class IOSBackgroundValidator {
     isValidationInFlight = true
     let pending = pendingValidations.removeFirst()
     channel.invokeMethod(
-      "validateBackgroundIncomingCall",
+      pending.action.methodName,
       arguments: [
         "backgroundCallbackHandle": pending.backgroundCallbackHandle,
         "callData": pending.payload.dictionary,
@@ -103,7 +158,7 @@ final class IOSBackgroundValidator {
       let map = result as? [String: Any]
       pending.onComplete(
         BackgroundValidationResult(
-          isAllowed: map?["isAllowed"] as? Bool ?? false,
+          isAllowed: map?[pending.action.successKey] as? Bool ?? false,
           reason: map?["reason"] as? String,
           extra: map?["extra"] as? [String: Any]
         )
@@ -120,6 +175,7 @@ final class IOSBackgroundValidator {
   }
 
   private struct PendingValidation {
+    let action: BackgroundAction
     let backgroundCallbackHandle: Int64
     let payload: CallPayload
     let onComplete: (BackgroundValidationResult) -> Void

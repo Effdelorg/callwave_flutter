@@ -42,20 +42,26 @@ class CallwaveMethodHandler(
                 val dispatcherHandle = call.argument<Number>(
                     CallwaveConstants.EXTRA_BACKGROUND_DISPATCHER_HANDLE,
                 )?.toLong()
-                val callbackHandle = call.argument<Number>(
+                val acceptCallbackHandle = call.argument<Number>(
                     CallwaveConstants.EXTRA_BACKGROUND_CALLBACK_HANDLE,
                 )?.toLong()
-                if (dispatcherHandle == null || callbackHandle == null) {
+                val declineCallbackHandle = call.argument<Number>(
+                    CallwaveConstants.EXTRA_BACKGROUND_DECLINE_CALLBACK_HANDLE,
+                )?.toLong()
+                if (dispatcherHandle == null ||
+                    (acceptCallbackHandle == null && declineCallbackHandle == null)
+                ) {
                     result.error(
                         "invalid_background_validator",
-                        "Dispatcher and callback handles are required",
+                        "Dispatcher handle and at least one callback handle are required",
                         null,
                     )
                     return
                 }
                 callManager.registerBackgroundIncomingCallValidator(
                     backgroundDispatcherHandle = dispatcherHandle,
-                    backgroundCallbackHandle = callbackHandle,
+                    backgroundAcceptCallbackHandle = acceptCallbackHandle,
+                    backgroundDeclineCallbackHandle = declineCallbackHandle,
                 )
                 result.success(null)
             }

@@ -13,6 +13,7 @@ export 'src/models/call_data.dart';
 export 'src/models/call_data_extra_keys.dart';
 export 'src/models/background_incoming_call_validation_request.dart';
 export 'src/models/call_accept_decision.dart';
+export 'src/models/call_decline_decision.dart';
 export 'src/models/call_event_extra_keys.dart';
 export 'src/models/call_event.dart';
 export 'src/models/call_startup_action.dart';

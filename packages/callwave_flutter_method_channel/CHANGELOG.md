@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `takePendingStartupAction` method for cold-start handoff of missed-call actions
 - Android missed-call notification content intent (tap body opens app with
   `ACTION_OPEN_MISSED_CALL`)
+- Headless decline reporting for terminated incoming calls on Android and iOS,
+  with missed-call fallback when the background Dart callback fails
 
 ### Changed
 

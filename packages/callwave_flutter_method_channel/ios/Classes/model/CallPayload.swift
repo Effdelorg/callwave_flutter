@@ -9,6 +9,9 @@ struct CallPayload {
   let callType: String
   let extra: [String: Any]?
   let incomingAcceptStrategy: String
+  let backgroundDispatcherHandle: Int64?
+  let backgroundCallbackHandle: Int64?
+  let backgroundDeclineCallbackHandle: Int64?
 
   init?(dictionary: [String: Any]) {
     guard let callId = dictionary["callId"] as? String else { return nil }
@@ -21,6 +24,12 @@ struct CallPayload {
     self.extra = dictionary["extra"] as? [String: Any]
     self.incomingAcceptStrategy =
       dictionary["incomingAcceptStrategy"] as? String ?? "openImmediately"
+    self.backgroundDispatcherHandle =
+      (dictionary["backgroundDispatcherHandle"] as? NSNumber)?.int64Value
+    self.backgroundCallbackHandle =
+      (dictionary["backgroundCallbackHandle"] as? NSNumber)?.int64Value
+    self.backgroundDeclineCallbackHandle =
+      (dictionary["backgroundDeclineCallbackHandle"] as? NSNumber)?.int64Value
   }
 
   var dictionary: [String: Any] {
@@ -33,6 +42,9 @@ struct CallPayload {
       "callType": callType,
       "extra": extra as Any,
       "incomingAcceptStrategy": incomingAcceptStrategy,
+      "backgroundDispatcherHandle": backgroundDispatcherHandle as Any,
+      "backgroundCallbackHandle": backgroundCallbackHandle as Any,
+      "backgroundDeclineCallbackHandle": backgroundDeclineCallbackHandle as Any,
     ]
   }
 
@@ -47,6 +59,9 @@ struct CallPayload {
         "callType": callType,
         "extra": extra as Any,
         "incomingAcceptStrategy": incomingAcceptStrategy,
+        "backgroundDispatcherHandle": backgroundDispatcherHandle as Any,
+        "backgroundCallbackHandle": backgroundCallbackHandle as Any,
+        "backgroundDeclineCallbackHandle": backgroundDeclineCallbackHandle as Any,
       ]
     )!
   }

@@ -1077,6 +1077,7 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   Map<String, dynamic>? lastMarkedMissedExtra;
   int? lastBackgroundDispatcherHandle;
   int? lastBackgroundCallbackHandle;
+  int? lastBackgroundDeclineCallbackHandle;
   platform.CallStartupActionDto? pendingStartupAction;
   int incomingCallCount = 0;
   int outgoingCallCount = 0;
@@ -1145,16 +1146,19 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   @override
   Future<void> registerBackgroundIncomingCallValidator({
     required int backgroundDispatcherHandle,
-    required int backgroundCallbackHandle,
+    int? backgroundCallbackHandle,
+    int? backgroundDeclineCallbackHandle,
   }) async {
     lastBackgroundDispatcherHandle = backgroundDispatcherHandle;
     lastBackgroundCallbackHandle = backgroundCallbackHandle;
+    lastBackgroundDeclineCallbackHandle = backgroundDeclineCallbackHandle;
   }
 
   @override
   Future<void> clearBackgroundIncomingCallValidator() async {
     lastBackgroundDispatcherHandle = null;
     lastBackgroundCallbackHandle = null;
+    lastBackgroundDeclineCallbackHandle = null;
   }
 
   @override

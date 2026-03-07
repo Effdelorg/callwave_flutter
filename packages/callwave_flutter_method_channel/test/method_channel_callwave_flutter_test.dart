@@ -62,7 +62,8 @@ void main() {
     expect(args[PayloadCodec.keyCallId], 'c-123');
   });
 
-  test('registerBackgroundIncomingCallValidator sends callback handles',
+  test(
+      'registerBackgroundIncomingCallValidator sends accept and decline callback handles',
       () async {
     const channel = MethodChannel('callwave_flutter/methods');
     final calls = <MethodCall>[];
@@ -80,6 +81,7 @@ void main() {
     await plugin.registerBackgroundIncomingCallValidator(
       backgroundDispatcherHandle: 101,
       backgroundCallbackHandle: 202,
+      backgroundDeclineCallbackHandle: 303,
     );
 
     expect(calls.map((call) => call.method), <String>[
@@ -90,6 +92,7 @@ void main() {
     final args = calls.last.arguments as Map<dynamic, dynamic>;
     expect(args[PayloadCodec.keyBackgroundDispatcherHandle], 101);
     expect(args[PayloadCodec.keyBackgroundCallbackHandle], 202);
+    expect(args[PayloadCodec.keyBackgroundDeclineCallbackHandle], 303);
   });
 
   test('markMissed sends optional extra metadata', () async {

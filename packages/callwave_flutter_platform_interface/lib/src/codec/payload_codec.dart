@@ -21,6 +21,8 @@ class PayloadCodec {
   static const String keyBackgroundDispatcherHandle =
       'backgroundDispatcherHandle';
   static const String keyBackgroundCallbackHandle = 'backgroundCallbackHandle';
+  static const String keyBackgroundDeclineCallbackHandle =
+      'backgroundDeclineCallbackHandle';
   static const String keyStartupActionType = 'startupActionType';
   static const String keyConnectedAtMs = 'connectedAtMs';
 
@@ -36,6 +38,7 @@ class PayloadCodec {
       keyIncomingAcceptStrategy: data.incomingAcceptStrategy.wireValue,
       keyBackgroundDispatcherHandle: data.backgroundDispatcherHandle,
       keyBackgroundCallbackHandle: data.backgroundCallbackHandle,
+      keyBackgroundDeclineCallbackHandle: data.backgroundDeclineCallbackHandle,
     };
   }
 
@@ -58,6 +61,8 @@ class PayloadCodec {
           (map[keyBackgroundDispatcherHandle] as num?)?.toInt(),
       backgroundCallbackHandle:
           (map[keyBackgroundCallbackHandle] as num?)?.toInt(),
+      backgroundDeclineCallbackHandle:
+          (map[keyBackgroundDeclineCallbackHandle] as num?)?.toInt(),
     );
   }
 

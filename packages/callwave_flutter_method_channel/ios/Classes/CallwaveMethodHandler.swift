@@ -38,13 +38,25 @@ final class CallwaveMethodHandler {
     case "registerBackgroundIncomingCallValidator":
       let args = call.arguments as? [String: Any]
       guard
-        let dispatcherHandle = (args?["backgroundDispatcherHandle"] as? NSNumber)?.int64Value,
-        let callbackHandle = (args?["backgroundCallbackHandle"] as? NSNumber)?.int64Value
+        let dispatcherHandle = (args?["backgroundDispatcherHandle"] as? NSNumber)?.int64Value
       else {
         result(
           FlutterError(
             code: "invalid_background_validator",
-            message: "Dispatcher and callback handles are required",
+            message: "Dispatcher handle is required",
+            details: nil
+          )
+        )
+        return
+      }
+      let acceptCallbackHandle = (args?["backgroundCallbackHandle"] as? NSNumber)?.int64Value
+      let declineCallbackHandle =
+        (args?["backgroundDeclineCallbackHandle"] as? NSNumber)?.int64Value
+      guard acceptCallbackHandle != nil || declineCallbackHandle != nil else {
+        result(
+          FlutterError(
+            code: "invalid_background_validator",
+            message: "At least one callback handle is required",
             details: nil
           )
         )
@@ -52,7 +64,8 @@ final class CallwaveMethodHandler {
       }
       callManager.registerBackgroundIncomingCallValidator(
         backgroundDispatcherHandle: dispatcherHandle,
-        backgroundCallbackHandle: callbackHandle
+        backgroundAcceptCallbackHandle: acceptCallbackHandle,
+        backgroundDeclineCallbackHandle: declineCallbackHandle
       )
       result(nil)
 

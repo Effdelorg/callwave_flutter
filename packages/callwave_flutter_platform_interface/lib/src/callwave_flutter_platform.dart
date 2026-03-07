@@ -29,7 +29,8 @@ abstract class CallwaveFlutterPlatform extends PlatformInterface {
 
   Future<void> registerBackgroundIncomingCallValidator({
     required int backgroundDispatcherHandle,
-    required int backgroundCallbackHandle,
+    int? backgroundCallbackHandle,
+    int? backgroundDeclineCallbackHandle,
   }) async {
     throw UnimplementedError(
       'registerBackgroundIncomingCallValidator() has not been implemented.',
@@ -205,7 +206,8 @@ class _StubCallwaveFlutterPlatform extends CallwaveFlutterPlatform {
   @override
   Future<void> registerBackgroundIncomingCallValidator({
     required int backgroundDispatcherHandle,
-    required int backgroundCallbackHandle,
+    int? backgroundCallbackHandle,
+    int? backgroundDeclineCallbackHandle,
   }) {
     throw UnimplementedError(
       'registerBackgroundIncomingCallValidator() has not been implemented.',

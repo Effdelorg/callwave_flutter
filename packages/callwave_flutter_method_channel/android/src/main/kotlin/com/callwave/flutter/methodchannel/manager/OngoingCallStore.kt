@@ -36,6 +36,10 @@ internal class OngoingCallStore(context: Context) {
                 CallwaveConstants.EXTRA_BACKGROUND_CALLBACK_HANDLE,
                 payload.backgroundCallbackHandle,
             )
+            put(
+                CallwaveConstants.EXTRA_BACKGROUND_DECLINE_CALLBACK_HANDLE,
+                payload.backgroundDeclineCallbackHandle,
+            )
             put(KEY_EVENT_TYPE, eventType)
             put(KEY_CONNECTED_AT_MS, connectedAtMs)
         }
@@ -92,6 +96,11 @@ internal class OngoingCallStore(context: Context) {
                 backgroundCallbackHandle =
                     json.optLong(CallwaveConstants.EXTRA_BACKGROUND_CALLBACK_HANDLE, 0L)
                         .takeIf { it > 0L },
+                backgroundDeclineCallbackHandle =
+                    json.optLong(
+                        CallwaveConstants.EXTRA_BACKGROUND_DECLINE_CALLBACK_HANDLE,
+                        0L,
+                    ).takeIf { it > 0L },
             )
             val eventType = json.optString(KEY_EVENT_TYPE)
             if (payload.callId.isBlank() || eventType.isBlank()) {

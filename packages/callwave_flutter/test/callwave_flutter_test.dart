@@ -9,6 +9,7 @@ void main() {
   late _FakePlatform fakePlatform;
 
   setUp(() {
+    _backgroundDeclineValidatorInvocationCount = 0;
     fakePlatform = _FakePlatform();
     platform.CallwaveFlutterPlatform.instance = fakePlatform;
     CallwaveFlutter.instance.setEngine(_FakeEngine());
@@ -28,7 +29,7 @@ void main() {
   });
 
   test(
-      'validated incoming call uses defer-open strategy and registers background validator',
+      'validated incoming call uses defer-open strategy and registers background callbacks',
       () async {
     CallwaveFlutter.instance.configure(
       CallwaveConfiguration(
@@ -37,6 +38,8 @@ void main() {
           validator: (_) async => const CallAcceptDecision.allow(),
         ),
         backgroundIncomingCallValidator: _backgroundIncomingCallValidator,
+        backgroundIncomingCallDeclineValidator:
+            _backgroundIncomingCallDeclineValidator,
       ),
     );
 
@@ -50,6 +53,7 @@ void main() {
     );
     expect(fakePlatform.lastBackgroundDispatcherHandle, isNotNull);
     expect(fakePlatform.lastBackgroundCallbackHandle, isNotNull);
+    expect(fakePlatform.lastBackgroundDeclineCallbackHandle, isNotNull);
   });
 
   test('configure reports invalid background validator registration errors',
@@ -91,6 +95,48 @@ void main() {
     expect(event.callId, 'c1');
     expect(event.type, CallEventType.accepted);
     expect(event.timestamp, DateTime.fromMillisecondsSinceEpoch(5000));
+  });
+
+  test(
+      'live decline keeps using engine hook without background decline callback',
+      () async {
+    final engine = _FakeEngine();
+    final sessionFuture = CallwaveFlutter.instance.sessions.first;
+
+    CallwaveFlutter.instance.configure(
+      CallwaveConfiguration(
+        engine: engine,
+        backgroundIncomingCallDeclineValidator:
+            _backgroundIncomingCallDeclineValidator,
+      ),
+    );
+
+    fakePlatform.emit(
+      platform.CallEventDto(
+        callId: 'c-live-decline',
+        type: platform.CallEventType.incoming,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        extra: const <String, dynamic>{
+          'callerName': 'Ava',
+          'handle': '+1 555 0101',
+        },
+      ),
+    );
+    final session = await sessionFuture;
+    await Future<void>.delayed(Duration.zero);
+
+    fakePlatform.emit(
+      platform.CallEventDto(
+        callId: 'c-live-decline',
+        type: platform.CallEventType.declined,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(session.state, CallSessionState.ended);
+    expect(engine.declineCount, 1);
+    expect(_backgroundDeclineValidatorInvocationCount, 0);
   });
 
   test('setPostCallBehavior delegates to platform interface', () async {
@@ -947,6 +993,7 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   String? lastClearedCallId;
   int? lastBackgroundDispatcherHandle;
   int? lastBackgroundCallbackHandle;
+  int? lastBackgroundDeclineCallbackHandle;
   Object? markMissedError;
   Object? confirmAcceptedCallError;
   int confirmAcceptedCallCount = 0;
@@ -981,16 +1028,19 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   @override
   Future<void> registerBackgroundIncomingCallValidator({
     required int backgroundDispatcherHandle,
-    required int backgroundCallbackHandle,
+    int? backgroundCallbackHandle,
+    int? backgroundDeclineCallbackHandle,
   }) async {
     lastBackgroundDispatcherHandle = backgroundDispatcherHandle;
     lastBackgroundCallbackHandle = backgroundCallbackHandle;
+    lastBackgroundDeclineCallbackHandle = backgroundDeclineCallbackHandle;
   }
 
   @override
   Future<void> clearBackgroundIncomingCallValidator() async {
     lastBackgroundDispatcherHandle = null;
     lastBackgroundCallbackHandle = null;
+    lastBackgroundDeclineCallbackHandle = null;
   }
 
   @override
@@ -1099,6 +1149,7 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
 
 class _FakeEngine extends CallwaveEngine {
   int answerCount = 0;
+  int declineCount = 0;
   int startCount = 0;
   int resumeCount = 0;
 
@@ -1121,7 +1172,9 @@ class _FakeEngine extends CallwaveEngine {
   Future<void> onEndCall(CallSession session) async {}
 
   @override
-  Future<void> onDeclineCall(CallSession session) async {}
+  Future<void> onDeclineCall(CallSession session) async {
+    declineCount += 1;
+  }
 
   @override
   Future<void> onMuteChanged(CallSession session, bool muted) async {}
@@ -1145,6 +1198,19 @@ Future<CallAcceptDecision> _backgroundIncomingCallValidator(
   return CallAcceptDecision.allow(
     extra: <String, dynamic>{
       'validatedCallId': request.callId,
+    },
+  );
+}
+
+int _backgroundDeclineValidatorInvocationCount = 0;
+
+Future<CallDeclineDecision> _backgroundIncomingCallDeclineValidator(
+  BackgroundIncomingCallValidationRequest request,
+) async {
+  _backgroundDeclineValidatorInvocationCount += 1;
+  return CallDeclineDecision.reported(
+    extra: <String, dynamic>{
+      'reportedCallId': request.callId,
     },
   );
 }

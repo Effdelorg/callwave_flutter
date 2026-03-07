@@ -46,6 +46,8 @@ class CallwaveFlutter {
   IncomingCallHandling _incomingCallHandling =
       const IncomingCallHandling.realtime();
   BackgroundIncomingCallValidator? _backgroundIncomingCallValidator;
+  BackgroundIncomingCallDeclineValidator?
+      _backgroundIncomingCallDeclineValidator;
 
   Stream<CallEvent> get events {
     return _platform.events.map((dto) {
@@ -74,6 +76,8 @@ class CallwaveFlutter {
     _incomingCallHandling = configuration.incomingCallHandling;
     _backgroundIncomingCallValidator =
         configuration.backgroundIncomingCallValidator;
+    _backgroundIncomingCallDeclineValidator =
+        configuration.backgroundIncomingCallDeclineValidator;
     final previousSubscription = _engineEventSubscription;
     _engineEventSubscription = null;
     unawaited(previousSubscription?.cancel());
@@ -1021,7 +1025,9 @@ class CallwaveFlutter {
       backgroundDispatcherHandle:
           backgroundValidatorHandles?.backgroundDispatcherHandle,
       backgroundCallbackHandle:
-          backgroundValidatorHandles?.backgroundCallbackHandle,
+          backgroundValidatorHandles?.backgroundAcceptCallbackHandle,
+      backgroundDeclineCallbackHandle:
+          backgroundValidatorHandles?.backgroundDeclineCallbackHandle,
     );
   }
 
@@ -1034,30 +1040,40 @@ class CallwaveFlutter {
 
     await _platform.registerBackgroundIncomingCallValidator(
       backgroundDispatcherHandle: handles.backgroundDispatcherHandle,
-      backgroundCallbackHandle: handles.backgroundCallbackHandle,
+      backgroundCallbackHandle: handles.backgroundAcceptCallbackHandle,
+      backgroundDeclineCallbackHandle: handles.backgroundDeclineCallbackHandle,
     );
   }
 
   _BackgroundIncomingCallValidatorHandles?
       _backgroundIncomingCallValidatorHandlesOrNull() {
-    final validator = _backgroundIncomingCallValidator;
-    if (validator == null) {
+    final acceptValidator = _backgroundIncomingCallValidator;
+    final declineValidator = _backgroundIncomingCallDeclineValidator;
+    if (acceptValidator == null && declineValidator == null) {
       return null;
     }
 
     final dispatcherHandle = ui.PluginUtilities.getCallbackHandle(
       _backgroundIncomingCallDispatcher,
     );
-    final callbackHandle = ui.PluginUtilities.getCallbackHandle(validator);
-    if (dispatcherHandle == null || callbackHandle == null) {
+    final acceptCallbackHandle = acceptValidator == null
+        ? null
+        : ui.PluginUtilities.getCallbackHandle(acceptValidator);
+    final declineCallbackHandle = declineValidator == null
+        ? null
+        : ui.PluginUtilities.getCallbackHandle(declineValidator);
+    if (dispatcherHandle == null ||
+        (acceptValidator != null && acceptCallbackHandle == null) ||
+        (declineValidator != null && declineCallbackHandle == null)) {
       throw ArgumentError(
-        'backgroundIncomingCallValidator must be a top-level or static function.',
+        'Background incoming call validators must be top-level or static functions.',
       );
     }
 
     return _BackgroundIncomingCallValidatorHandles(
       backgroundDispatcherHandle: dispatcherHandle.toRawHandle(),
-      backgroundCallbackHandle: callbackHandle.toRawHandle(),
+      backgroundAcceptCallbackHandle: acceptCallbackHandle?.toRawHandle(),
+      backgroundDeclineCallbackHandle: declineCallbackHandle?.toRawHandle(),
     );
   }
 
@@ -1121,84 +1137,170 @@ class CallwaveFlutter {
 const MethodChannel _backgroundValidationChannel = MethodChannel(
   'callwave_flutter/background',
 );
+const String _backgroundValidationMethod = 'validateBackgroundIncomingCall';
+const String _backgroundDeclineMethod = 'reportBackgroundIncomingCallDecline';
+const String _backgroundDispatcherReadyMethod = 'backgroundDispatcherReady';
+const String _backgroundCallbackHandleKey = 'backgroundCallbackHandle';
+const String _backgroundCallDataKey = 'callData';
+const String _backgroundIsAllowedKey = 'isAllowed';
+const String _backgroundIsReportedKey = 'isReported';
+const String _backgroundReasonKey = 'reason';
+const String _backgroundExtraKey = 'extra';
 
 @pragma('vm:entry-point')
 Future<void> _backgroundIncomingCallDispatcher() async {
   WidgetsFlutterBinding.ensureInitialized();
   ui.DartPluginRegistrant.ensureInitialized();
   _backgroundValidationChannel.setMethodCallHandler((call) async {
-    if (call.method != 'validateBackgroundIncomingCall') {
-      throw MissingPluginException(
-        'Unsupported background validation method: ${call.method}',
-      );
-    }
     final arguments = call.arguments as Map<Object?, Object?>?;
-    if (arguments == null) {
-      return const <String, dynamic>{
-        'isAllowed': false,
-        'reason': 'unknown',
-      };
+    switch (call.method) {
+      case _backgroundValidationMethod:
+        return _handleBackgroundAcceptValidation(arguments);
+      case _backgroundDeclineMethod:
+        return _handleBackgroundDeclineReport(arguments);
+      default:
+        throw MissingPluginException(
+          'Unsupported background validation method: ${call.method}',
+        );
     }
-
-    final callbackHandleRaw = arguments['backgroundCallbackHandle'];
-    if (callbackHandleRaw is! int) {
-      return const <String, dynamic>{
-        'isAllowed': false,
-        'reason': 'unknown',
-      };
-    }
-
-    final callback = ui.PluginUtilities.getCallbackFromHandle(
-      ui.CallbackHandle.fromRawHandle(callbackHandleRaw),
-    );
-    if (callback is! BackgroundIncomingCallValidator) {
-      return const <String, dynamic>{
-        'isAllowed': false,
-        'reason': 'unknown',
-      };
-    }
-
-    final rawPayload = arguments['callData'];
-    if (rawPayload is! Map) {
-      return const <String, dynamic>{
-        'isAllowed': false,
-        'reason': 'unknown',
-      };
-    }
-
-    final payload = rawPayload.map<String, dynamic>((key, value) {
-      return MapEntry(key.toString(), value);
-    });
-    final dto = platform.PayloadCodec.callDataFromMap(payload);
-    final decision = await callback(
-      BackgroundIncomingCallValidationRequest(
-        callId: dto.callId,
-        callerName: dto.callerName,
-        handle: dto.handle,
-        avatarUrl: dto.avatarUrl,
-        callType: dto.callType == platform.CallType.video
-            ? CallType.video
-            : CallType.audio,
-        extra: dto.extra,
-      ),
-    );
-    return <String, dynamic>{
-      'isAllowed': decision.isAllowed,
-      'reason': decision.reason?.name,
-      'extra': decision.extra,
-    };
   });
   await _backgroundValidationChannel.invokeMethod<void>(
-    'backgroundDispatcherReady',
+    _backgroundDispatcherReadyMethod,
   );
 }
 
 final class _BackgroundIncomingCallValidatorHandles {
   const _BackgroundIncomingCallValidatorHandles({
     required this.backgroundDispatcherHandle,
-    required this.backgroundCallbackHandle,
+    this.backgroundAcceptCallbackHandle,
+    this.backgroundDeclineCallbackHandle,
   });
 
   final int backgroundDispatcherHandle;
-  final int backgroundCallbackHandle;
+  final int? backgroundAcceptCallbackHandle;
+  final int? backgroundDeclineCallbackHandle;
+}
+
+Future<Map<String, dynamic>> _handleBackgroundAcceptValidation(
+  Map<Object?, Object?>? arguments,
+) async {
+  final request = _backgroundRequestFromArguments(arguments);
+  if (request == null) {
+    return const <String, dynamic>{
+      _backgroundIsAllowedKey: false,
+      _backgroundReasonKey: 'unknown',
+    };
+  }
+
+  final callback = _backgroundAcceptCallbackFromArguments(arguments);
+  if (callback == null) {
+    return const <String, dynamic>{
+      _backgroundIsAllowedKey: false,
+      _backgroundReasonKey: 'unknown',
+    };
+  }
+
+  final decision = await callback(request);
+  return <String, dynamic>{
+    _backgroundIsAllowedKey: decision.isAllowed,
+    _backgroundReasonKey: decision.reason?.name,
+    _backgroundExtraKey: decision.extra,
+  };
+}
+
+Future<Map<String, dynamic>> _handleBackgroundDeclineReport(
+  Map<Object?, Object?>? arguments,
+) async {
+  final request = _backgroundRequestFromArguments(arguments);
+  if (request == null) {
+    return const <String, dynamic>{
+      _backgroundIsReportedKey: false,
+      _backgroundReasonKey: 'unknown',
+    };
+  }
+
+  final callback = _backgroundDeclineCallbackFromArguments(arguments);
+  if (callback == null) {
+    return const <String, dynamic>{
+      _backgroundIsReportedKey: false,
+      _backgroundReasonKey: 'unknown',
+    };
+  }
+
+  final decision = await callback(request);
+  return <String, dynamic>{
+    _backgroundIsReportedKey: decision.isReported,
+    _backgroundReasonKey: decision.reason?.name,
+    _backgroundExtraKey: decision.extra,
+  };
+}
+
+BackgroundIncomingCallValidator? _backgroundAcceptCallbackFromArguments(
+  Map<Object?, Object?>? arguments,
+) {
+  if (arguments == null) {
+    return null;
+  }
+
+  final callbackHandleRaw = arguments[_backgroundCallbackHandleKey];
+  if (callbackHandleRaw is! int) {
+    return null;
+  }
+
+  final callback = ui.PluginUtilities.getCallbackFromHandle(
+    ui.CallbackHandle.fromRawHandle(callbackHandleRaw),
+  );
+  if (callback is! BackgroundIncomingCallValidator) {
+    return null;
+  }
+  return callback;
+}
+
+BackgroundIncomingCallDeclineValidator? _backgroundDeclineCallbackFromArguments(
+  Map<Object?, Object?>? arguments,
+) {
+  if (arguments == null) {
+    return null;
+  }
+
+  final callbackHandleRaw = arguments[_backgroundCallbackHandleKey];
+  if (callbackHandleRaw is! int) {
+    return null;
+  }
+
+  final callback = ui.PluginUtilities.getCallbackFromHandle(
+    ui.CallbackHandle.fromRawHandle(callbackHandleRaw),
+  );
+  if (callback is! BackgroundIncomingCallDeclineValidator) {
+    return null;
+  }
+  return callback;
+}
+
+BackgroundIncomingCallValidationRequest? _backgroundRequestFromArguments(
+  Map<Object?, Object?>? arguments,
+) {
+  if (arguments == null) {
+    return null;
+  }
+
+  final rawPayload = arguments[_backgroundCallDataKey];
+  if (rawPayload is! Map) {
+    return null;
+  }
+
+  final payload = rawPayload.map<String, dynamic>((key, value) {
+    return MapEntry(key.toString(), value);
+  });
+  final dto = platform.PayloadCodec.callDataFromMap(payload);
+  return BackgroundIncomingCallValidationRequest(
+    callId: dto.callId,
+    callerName: dto.callerName,
+    handle: dto.handle,
+    avatarUrl: dto.avatarUrl,
+    callType: dto.callType == platform.CallType.video
+        ? CallType.video
+        : CallType.audio,
+    extra: dto.extra,
+  );
 }

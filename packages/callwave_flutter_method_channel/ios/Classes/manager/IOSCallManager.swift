@@ -29,7 +29,8 @@ final class IOSCallManager {
   private var timeoutItems: [String: DispatchWorkItem] = [:]
   private var postCallBehavior: PostCallBehavior = .stayOpen
   private var backgroundDispatcherHandle: Int64?
-  private var backgroundCallbackHandle: Int64?
+  private var backgroundAcceptCallbackHandle: Int64?
+  private var backgroundDeclineCallbackHandle: Int64?
   private var notificationObservers: [NSObjectProtocol] = []
 
   init(
@@ -179,15 +180,18 @@ final class IOSCallManager {
 
   func registerBackgroundIncomingCallValidator(
     backgroundDispatcherHandle: Int64,
-    backgroundCallbackHandle: Int64
+    backgroundAcceptCallbackHandle: Int64?,
+    backgroundDeclineCallbackHandle: Int64?
   ) {
     self.backgroundDispatcherHandle = backgroundDispatcherHandle
-    self.backgroundCallbackHandle = backgroundCallbackHandle
+    self.backgroundAcceptCallbackHandle = backgroundAcceptCallbackHandle
+    self.backgroundDeclineCallbackHandle = backgroundDeclineCallbackHandle
   }
 
   func clearBackgroundIncomingCallValidator() {
     backgroundDispatcherHandle = nil
-    backgroundCallbackHandle = nil
+    backgroundAcceptCallbackHandle = nil
+    backgroundDeclineCallbackHandle = nil
   }
 
   func syncCallConnectedState(callId: String, connectedAtMs: Int64) {
@@ -361,9 +365,22 @@ final class IOSCallManager {
   func handleEnd(uuid: UUID, reason: CXCallEndedReason?) {
     guard let callId = callIdByUuid[uuid] else { return }
     let payload = payloadStore[callId]
+    let isTimeout = reason == .unanswered
+    let wasIncomingDecline = !isTimeout && isIncomingRingingCall(callId: callId)
     cleanup(callId: callId, uuid: uuid)
 
-    let type = reason == .unanswered ? "timeout" : "ended"
+    if wasIncomingDecline {
+      guard let payload else {
+        emit(callId: callId, type: "declined", extra: nil)
+        return
+      }
+      if !maybeRunBackgroundDeclineReport(payload: payload) {
+        emit(callId: callId, type: "declined", extra: payload.extra)
+      }
+      return
+    }
+
+    let type = isTimeout ? "timeout" : "ended"
     emit(callId: callId, type: type, extra: payload?.extra)
     if type == "timeout" {
       let missedExtra = eventExtra(payload: payload)
@@ -707,12 +724,13 @@ final class IOSCallManager {
       return false
     }
     guard
-      let backgroundDispatcherHandle,
-      let backgroundCallbackHandle
+      let backgroundDispatcherHandle = payload.backgroundDispatcherHandle ?? backgroundDispatcherHandle,
+      let backgroundCallbackHandle =
+        payload.backgroundCallbackHandle ?? backgroundAcceptCallbackHandle
     else {
       return false
     }
-    backgroundValidator.validate(
+    backgroundValidator.validateAccept(
       backgroundDispatcherHandle: backgroundDispatcherHandle,
       backgroundCallbackHandle: backgroundCallbackHandle,
       payload: payload
@@ -728,6 +746,45 @@ final class IOSCallManager {
       }
     }
     return true
+  }
+
+  private func maybeRunBackgroundDeclineReport(payload: CallPayload) -> Bool {
+    guard !shouldDeferDeclineToLiveListener() else {
+      return false
+    }
+    guard
+      let backgroundDispatcherHandle = payload.backgroundDispatcherHandle ?? backgroundDispatcherHandle,
+      let backgroundCallbackHandle =
+        payload.backgroundDeclineCallbackHandle ?? backgroundDeclineCallbackHandle
+    else {
+      return false
+    }
+    backgroundValidator.reportDecline(
+      backgroundDispatcherHandle: backgroundDispatcherHandle,
+      backgroundCallbackHandle: backgroundCallbackHandle,
+      payload: payload
+    ) { [weak self] decision in
+      guard let self else { return }
+      guard !decision.isAllowed else { return }
+      var extra = self.eventExtra(payload: payload, fallbackExtra: decision.extra)
+      extra["outcomeReason"] = decision.reason ?? "failed"
+      self.markMissed(callId: payload.callId, extra: extra)
+    }
+    return true
+  }
+
+  private func shouldDeferDeclineToLiveListener() -> Bool {
+    guard eventBridge.hasListener else {
+      return false
+    }
+    return UIApplication.shared.applicationState == .active
+  }
+
+  private func isIncomingRingingCall(callId: String) -> Bool {
+    payloadStore[callId] != nil &&
+      !pendingAcceptedCallIds.contains(callId) &&
+      !confirmedAcceptedCallIds.contains(callId) &&
+      !outgoingCallIds.contains(callId)
   }
 
   private static let launchActionOpenIncoming =
