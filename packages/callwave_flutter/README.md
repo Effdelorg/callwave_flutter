@@ -183,6 +183,9 @@ Flow:
 - On Android, background validated rejects stay off the foreground; terminated
   validated rejects run through a transient native bridge and can resolve
   directly to missed-call handling when a background validator is registered.
+- In the example app, the `Validated Allow` and `Validated Reject` modes are
+  mainly demonstrated as terminated/cold-start scenarios because that is where
+  their startup-handoff behavior is most visible.
 - When the user declines from native UI while Flutter is not alive, a registered
   `backgroundIncomingCallDeclineValidator` runs in a headless isolate. If it
   fails, throws, or times out, the plugin falls back to missed-call handling.

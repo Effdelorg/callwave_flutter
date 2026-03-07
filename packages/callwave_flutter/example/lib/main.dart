@@ -305,8 +305,7 @@ class _CallwaveExampleAppState extends State<CallwaveExampleApp> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide:
-                const BorderSide(color: Color(0xFFC4441A), width: 1.5),
+            borderSide: const BorderSide(color: Color(0xFFC4441A), width: 1.5),
           ),
           labelStyle: const TextStyle(color: Color(0xFF7A7267)),
           hintStyle: const TextStyle(color: Color(0xFFB5AFA7)),
@@ -629,7 +628,8 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                     _SectionCard(
                       icon: Icons.tune_rounded,
                       title: 'CALL CONFIGURATION',
-                      subtitle: 'Set the call ID used by all simulate actions below.',
+                      subtitle:
+                          'Set the call ID used by all simulate actions below.',
                       accentColor: const Color(0xFFC4441A),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -703,7 +703,8 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                             child: _PermissionButton(
                               icon: Icons.fullscreen_rounded,
                               label: 'Full Screen',
-                              hint: 'Android only — shows call over lock screen',
+                              hint:
+                                  'Android only — shows call over lock screen',
                               onPressed: callId.isEmpty
                                   ? null
                                   : _requestFullScreenPermission,
@@ -719,7 +720,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                       icon: Icons.swap_horiz_rounded,
                       title: 'INCOMING FLOW MODE',
                       subtitle:
-                          'Choose how the plugin handles accept/decline from the native call UI.',
+                          'Choose how the plugin handles accept/decline from the native call UI. In this example, Validated Allow and Validated Reject are mainly for terminated/cold-start testing.',
                       accentColor: const Color(0xFFC4441A),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -822,7 +823,8 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                             children: <Widget>[
                               Expanded(
                                 child: _CallButton(
-                                  key: const ValueKey(CallDemoButtonKeys.incomingAudio),
+                                  key: const ValueKey(
+                                      CallDemoButtonKeys.incomingAudio),
                                   icon: Icons.call_received_rounded,
                                   label: 'Audio',
                                   color: const Color(0xFF2D8B4E),
@@ -839,7 +841,8 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                               const SizedBox(width: 10),
                               Expanded(
                                 child: _CallButton(
-                                  key: const ValueKey(CallDemoButtonKeys.incomingVideo),
+                                  key: const ValueKey(
+                                      CallDemoButtonKeys.incomingVideo),
                                   icon: Icons.video_call_rounded,
                                   label: 'Video',
                                   color: const Color(0xFF2D8B4E),
@@ -868,7 +871,8 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                             children: <Widget>[
                               Expanded(
                                 child: _CallButton(
-                                  key: const ValueKey(CallDemoButtonKeys.outgoingAudio),
+                                  key: const ValueKey(
+                                      CallDemoButtonKeys.outgoingAudio),
                                   icon: Icons.call_made_rounded,
                                   label: 'Audio',
                                   color: const Color(0xFF2B6CB0),
@@ -885,7 +889,8 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                               const SizedBox(width: 10),
                               Expanded(
                                 child: _CallButton(
-                                  key: const ValueKey(CallDemoButtonKeys.outgoingVideo),
+                                  key: const ValueKey(
+                                      CallDemoButtonKeys.outgoingVideo),
                                   icon: Icons.videocam_rounded,
                                   label: 'Video',
                                   color: const Color(0xFF2B6CB0),
@@ -941,14 +946,16 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                           const _SubSectionLabel(
                             text: 'CONFERENCE',
                             color: Color(0xFF6B46C1),
-                            hint: 'Preview multi-party call layout with mock participants',
+                            hint:
+                                'Preview multi-party call layout with mock participants',
                           ),
                           const SizedBox(height: 8),
                           Row(
                             children: <Widget>[
                               Expanded(
                                 child: _CallButton(
-                                  key: const ValueKey(CallDemoButtonKeys.conferenceAudio),
+                                  key: const ValueKey(
+                                      CallDemoButtonKeys.conferenceAudio),
                                   icon: Icons.groups_rounded,
                                   label: 'Audio',
                                   color: const Color(0xFF6B46C1),
@@ -963,7 +970,8 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                               const SizedBox(width: 10),
                               Expanded(
                                 child: _CallButton(
-                                  key: const ValueKey(CallDemoButtonKeys.conferenceVideo),
+                                  key: const ValueKey(
+                                      CallDemoButtonKeys.conferenceVideo),
                                   icon: Icons.duo_rounded,
                                   label: 'Video',
                                   color: const Color(0xFF6B46C1),
@@ -978,7 +986,8 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                               const SizedBox(width: 10),
                               Expanded(
                                 child: _CallButton(
-                                  key: const ValueKey(CallDemoButtonKeys.cycleSpeaker),
+                                  key: const ValueKey(
+                                      CallDemoButtonKeys.cycleSpeaker),
                                   icon: Icons.sync_rounded,
                                   label: 'Cycle\nSpeaker',
                                   color: const Color(0xFF6B46C1),
@@ -998,7 +1007,8 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                     _SectionCard(
                       icon: Icons.receipt_long_rounded,
                       title: 'EVENT LOG',
-                      subtitle: 'Real-time stream of CallEvent callbacks from the plugin.',
+                      subtitle:
+                          'Real-time stream of CallEvent callbacks from the plugin.',
                       accentColor: const Color(0xFF7A7267),
                       trailing: TextButton(
                         onPressed: _eventLog.isEmpty
@@ -1246,9 +1256,9 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
       case IncomingDemoMode.realtime:
         return 'Native accept opens the call flow immediately, like WhatsApp-style realtime signaling.';
       case IncomingDemoMode.validatedAllow:
-        return 'Native accept waits for backend validation, then opens the call only after approval.';
+        return 'Terminated/cold-start demo: native accept waits for backend validation, then opens the call only after approval. If the app is already alive, validation still runs through the live Flutter flow.';
       case IncomingDemoMode.validatedReject:
-        return 'Native accept waits for validation and then fails gracefully into missed-call handling without foreground fallback.';
+        return 'Terminated/cold-start demo: native accept waits for validation and then resolves into missed-call handling without foreground fallback. If the app is already alive, validation still runs through the live Flutter/system flow.';
       case IncomingDemoMode.declineReported:
         return 'Native decline reports to the backend in a headless Flutter isolate and dismisses the call without opening the app.';
       case IncomingDemoMode.declineFailed:
@@ -1645,8 +1655,7 @@ class _PendingStartupActionCard extends StatelessWidget {
                     selected: <CallbackSessionMode>{callbackSessionMode},
                     onSelectionChanged: actionInFlight
                         ? null
-                        : (selection) =>
-                            onSessionModeChanged(selection.first),
+                        : (selection) => onSessionModeChanged(selection.first),
                   ),
                   const SizedBox(height: 16),
                   Row(
@@ -1725,7 +1734,8 @@ class _QuickStartBanner extends StatelessWidget {
           SizedBox(height: 12),
           _QuickStartStep(
             number: '1',
-            text: 'Grant Permissions — tap both buttons in the Permissions section.',
+            text:
+                'Grant Permissions — tap both buttons in the Permissions section.',
           ),
           SizedBox(height: 8),
           _QuickStartStep(
@@ -1735,12 +1745,14 @@ class _QuickStartBanner extends StatelessWidget {
           SizedBox(height: 8),
           _QuickStartStep(
             number: '3',
-            text: 'Pick an Incoming Flow Mode, then tap "Incoming Audio" to see the native call UI.',
+            text:
+                'Pick an Incoming Flow Mode, then tap "Incoming Audio" to see the native call UI.',
           ),
           SizedBox(height: 8),
           _QuickStartStep(
             number: '4',
-            text: 'Accept or decline the call — watch events appear in the Event Log.',
+            text:
+                'Accept or decline the call — watch events appear in the Event Log.',
           ),
         ],
       ),
@@ -1910,16 +1922,14 @@ class _CallButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isEnabled = onPressed != null;
-    final effectiveColor =
-        isEnabled ? color : color.withValues(alpha: 0.3);
+    final effectiveColor = isEnabled ? color : color.withValues(alpha: 0.3);
     return OutlinedButton(
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
         foregroundColor: effectiveColor,
         side: BorderSide(color: effectiveColor.withValues(alpha: 0.4)),
-        backgroundColor: isEnabled
-            ? color.withValues(alpha: 0.06)
-            : const Color(0xFFF5F2EE),
+        backgroundColor:
+            isEnabled ? color.withValues(alpha: 0.06) : const Color(0xFFF5F2EE),
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
@@ -2022,14 +2032,10 @@ class _ModeChip extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: selected
-              ? const Color(0xFFC4441A)
-              : const Color(0xFFF0ECE7),
+          color: selected ? const Color(0xFFC4441A) : const Color(0xFFF0ECE7),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: selected
-                ? const Color(0xFFC4441A)
-                : const Color(0xFFD9D3CB),
+            color: selected ? const Color(0xFFC4441A) : const Color(0xFFD9D3CB),
           ),
         ),
         child: Text(
@@ -2066,8 +2072,7 @@ class _PermissionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final isEnabled = onPressed != null;
     const color = Color(0xFFC27803);
-    final effectiveColor =
-        isEnabled ? color : color.withValues(alpha: 0.35);
+    final effectiveColor = isEnabled ? color : color.withValues(alpha: 0.35);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -2086,12 +2091,11 @@ class _PermissionButton extends StatelessWidget {
             side: BorderSide(
               color: effectiveColor.withValues(alpha: 0.5),
             ),
-            backgroundColor: isEnabled
-                ? const Color(0xFFFFF8EB)
-                : const Color(0xFFF5F2EE),
+            backgroundColor:
+                isEnabled ? const Color(0xFFFFF8EB) : const Color(0xFFF5F2EE),
             padding: const EdgeInsets.symmetric(vertical: 12),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         ),
         if (hint != null) ...<Widget>[

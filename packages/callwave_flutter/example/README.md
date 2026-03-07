@@ -21,10 +21,14 @@ flutter run
 Incoming flow selector:
 - `Realtime` keeps the old behavior: native accept goes straight into
   `Connecting...` and opens the call screen.
-- `Validated Allow` waits for a short async validation, then opens the call.
+- `Validated Allow` is mainly a terminated/cold-start demo in this example:
+  native accept waits for a short async validation, then opens the call.
 - `Validated Reject` waits for validation and then converts the accept into
   missed-call handling without opening the call screen or forcing the app back
-  to foreground.
+  to foreground. In this example, it is mainly a terminated/cold-start demo.
+- If the app is already in foreground or background, those validated modes
+  still run validation, but the result stays on the live Flutter/system path
+  instead of using the startup handoff UI.
 
 Accepted ongoing notification checks (Android):
 - Accept an incoming call so the ongoing call notification appears.
