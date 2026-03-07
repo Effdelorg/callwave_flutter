@@ -152,6 +152,10 @@ class CallwaveMethodHandler(
                 result.success(null)
             }
 
+            "takePendingStartupAction" -> {
+                result.success(callManager.takePendingStartupAction())
+            }
+
             "requestNotificationPermission" -> {
                 result.success(callManager.requestNotificationPermission(activity))
             }

@@ -168,6 +168,21 @@ class MethodChannelCallwaveFlutter extends CallwaveFlutterPlatform {
   }
 
   @override
+  Future<CallStartupActionDto?> takePendingStartupAction() async {
+    await initialize();
+    final raw = await _methodChannel.invokeMethod<Map<dynamic, dynamic>?>(
+      'takePendingStartupAction',
+    );
+    if (raw == null) {
+      return null;
+    }
+    final normalized = raw.map<String, dynamic>((dynamic key, dynamic value) {
+      return MapEntry(key.toString(), value);
+    });
+    return PayloadCodec.safeStartupActionFromMap(normalized);
+  }
+
+  @override
   Future<bool> requestNotificationPermission() async {
     await initialize();
     final granted = await _methodChannel.invokeMethod<bool>(

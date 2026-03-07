@@ -163,7 +163,11 @@ class CallNotificationManager(
         CallForegroundService.start(context, notificationId, notification)
     }
 
-    fun showMissedCall(payload: CallPayload, callbackIntent: PendingIntent) {
+    fun showMissedCall(
+        payload: CallPayload,
+        contentIntent: PendingIntent,
+        callbackIntent: PendingIntent,
+    ) {
         val notification = NotificationCompat.Builder(context, CallwaveConstants.NOTIFICATION_CHANNEL_ID_MISSED)
             .setSmallIcon(android.R.drawable.sym_call_missed)
             .setContentTitle("Missed call")
@@ -171,6 +175,7 @@ class CallNotificationManager(
             .setCategory(NotificationCompat.CATEGORY_MISSED_CALL)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
+            .setContentIntent(contentIntent)
             .addAction(
                 android.R.drawable.sym_action_call,
                 "Call back",

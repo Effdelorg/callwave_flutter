@@ -18,6 +18,21 @@ enum IncomingDemoMode {
   final String label;
 }
 
+enum CallbackSessionMode {
+  oneToOne('One-to-one'),
+  conference('Conference');
+
+  const CallbackSessionMode(this.label);
+
+  final String label;
+}
+
+abstract final class _ExampleExtraKeys {
+  static const String roomType = 'roomType';
+  static const String roomTypeOneToOne = 'oneToOne';
+  static const String roomTypeConference = 'conference';
+}
+
 class _IncomingDemoModeStore {
   static File get _file => File(
         '${Directory.systemTemp.path}/callwave_example_incoming_mode.txt',
@@ -241,6 +256,7 @@ class _CallwaveExampleAppState extends State<CallwaveExampleApp> {
         _Routes.home: (_) => CallDemoScreen(
               engine: _engine,
               initialIncomingDemoMode: widget.initialIncomingDemoMode,
+              initialPendingAction: widget.startupDecision.pendingAction,
             ),
         _Routes.call: (_) => _StartupCallRoute(
               startupDecision: widget.startupDecision,
@@ -279,6 +295,7 @@ class _StartupCallRoute extends StatelessWidget {
       return CallDemoScreen(
         engine: engine,
         initialIncomingDemoMode: initialIncomingDemoMode,
+        initialPendingAction: startupDecision.pendingAction,
       );
     }
 
@@ -287,6 +304,7 @@ class _StartupCallRoute extends StatelessWidget {
       return CallDemoScreen(
         engine: engine,
         initialIncomingDemoMode: initialIncomingDemoMode,
+        initialPendingAction: startupDecision.pendingAction,
       );
     }
 
@@ -333,11 +351,13 @@ class CallDemoScreen extends StatefulWidget {
   const CallDemoScreen({
     required this.engine,
     required this.initialIncomingDemoMode,
+    this.initialPendingAction,
     super.key,
   });
 
   final CallwaveEngine engine;
   final IncomingDemoMode initialIncomingDemoMode;
+  final CallStartupAction? initialPendingAction;
 
   @override
   State<CallDemoScreen> createState() => _CallDemoScreenState();
@@ -360,12 +380,16 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
   String? _previewCallId;
   int _speakerCursor = 0;
   late IncomingDemoMode _incomingDemoMode = widget.initialIncomingDemoMode;
+  CallStartupAction? _pendingStartupAction;
+  CallType _callbackCallType = CallType.audio;
+  CallbackSessionMode _callbackSessionMode = CallbackSessionMode.oneToOne;
 
   @override
   void initState() {
     super.initState();
     _missedNotificationTextController.text = 'You missed a call from {name}.';
     _subscription = CallwaveFlutter.instance.events.listen(_onCallEvent);
+    _applyPendingStartupAction(widget.initialPendingAction, logEvent: false);
   }
 
   @override
@@ -379,6 +403,23 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
   void _onCallEvent(CallEvent event) {
     if (!mounted) {
       return;
+    }
+    if (event.type == CallEventType.callback) {
+      _applyPendingStartupAction(
+        _startupActionFromEvent(
+          event: event,
+          type: CallStartupActionType.callback,
+        ),
+      );
+    } else if (event.type == CallEventType.missed &&
+        event.extra?[CallEventExtraKeys.launchAction] ==
+            CallEventExtraKeys.launchActionOpenMissedCall) {
+      _applyPendingStartupAction(
+        _startupActionFromEvent(
+          event: event,
+          type: CallStartupActionType.openMissedCall,
+        ),
+      );
     }
     if (_previewCallId == event.callId &&
         (event.type == CallEventType.ended ||
@@ -433,6 +474,27 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                       onChanged: (_) => setState(() {}),
                     ),
                     const SizedBox(height: 12),
+                    if (_pendingStartupAction != null) ...<Widget>[
+                      _PendingStartupActionCard(
+                        action: _pendingStartupAction!,
+                        callbackCallType: _callbackCallType,
+                        callbackSessionMode: _callbackSessionMode,
+                        actionInFlight: _isCallActionInFlight,
+                        onDismiss: _dismissPendingStartupAction,
+                        onCallTypeChanged: (callType) {
+                          setState(() {
+                            _callbackCallType = callType;
+                          });
+                        },
+                        onSessionModeChanged: (sessionMode) {
+                          setState(() {
+                            _callbackSessionMode = sessionMode;
+                          });
+                        },
+                        onStartCallback: _startCallbackFromPendingAction,
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     Text(
                       'Incoming Flow: ${_incomingDemoMode.label}',
                       style: Theme.of(context).textTheme.titleSmall,
@@ -651,22 +713,27 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
     required String handle,
     required CallType callType,
     Duration timeout = const Duration(seconds: 30),
+    String? avatarUrl,
+    Map<String, dynamic>? extraOverrides,
   }) {
     final customMissedNotificationText =
         _resolvedMissedNotificationText(callerName);
+    final extra = <String, dynamic>{
+      ...?extraOverrides,
+      'callerName': callerName,
+      'handle': handle,
+      'callType': callType.name,
+      CallDataExtraKeys.androidMissedCallNotificationText:
+          customMissedNotificationText,
+    };
     return CallData(
       callId: callId,
       callerName: callerName,
       handle: handle,
+      avatarUrl: avatarUrl,
       timeout: timeout,
       callType: callType,
-      extra: <String, dynamic>{
-        'callerName': callerName,
-        'handle': handle,
-        'callType': callType.name,
-        CallDataExtraKeys.androidMissedCallNotificationText:
-            customMissedNotificationText,
-      },
+      extra: extra,
     );
   }
 
@@ -724,6 +791,9 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
         handle: 'group room',
         callType: callType,
         timeout: const Duration(seconds: 45),
+        extraOverrides: const <String, dynamic>{
+          _ExampleExtraKeys.roomType: _ExampleExtraKeys.roomTypeConference,
+        },
       ),
       isOutgoing: true,
       initialState: CallSessionState.connected,
@@ -809,5 +879,234 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
     setState(() {
       _eventLog.insert(0, '${DateTime.now().toIso8601String()} $value');
     });
+  }
+
+  void _dismissPendingStartupAction() {
+    if (_pendingStartupAction == null) {
+      return;
+    }
+    setState(() {
+      _pendingStartupAction = null;
+    });
+  }
+
+  void _applyPendingStartupAction(
+    CallStartupAction? action, {
+    bool logEvent = true,
+  }) {
+    if (action == null || !mounted) {
+      return;
+    }
+    final isConference = action.extra?[_ExampleExtraKeys.roomType] ==
+        _ExampleExtraKeys.roomTypeConference;
+    setState(() {
+      _pendingStartupAction = action;
+      _callbackCallType = action.callType;
+      _callbackSessionMode = isConference
+          ? CallbackSessionMode.conference
+          : CallbackSessionMode.oneToOne;
+      _callIdController.text = action.callId;
+    });
+    if (logEvent) {
+      _pushLog(
+        action.type == CallStartupActionType.callback
+            ? 'Callback requested for ${action.callerName}.'
+            : 'Opened missed call from ${action.callerName}.',
+      );
+    }
+  }
+
+  CallStartupAction _startupActionFromEvent({
+    required CallEvent event,
+    required CallStartupActionType type,
+  }) {
+    return CallStartupAction(
+      type: type,
+      callId: event.callId,
+      callerName: (event.extra?['callerName'] as String?) ?? 'Unknown',
+      handle: (event.extra?['handle'] as String?) ?? '',
+      avatarUrl: event.extra?['avatarUrl'] as String?,
+      callType: _callTypeFromExtra(event.extra?['callType']),
+      extra: event.extra,
+    );
+  }
+
+  CallType _callTypeFromExtra(Object? raw) {
+    return raw == CallType.video.name ? CallType.video : CallType.audio;
+  }
+
+  Future<void> _startCallbackFromPendingAction() async {
+    final action = _pendingStartupAction;
+    if (action == null || _isCallActionInFlight) {
+      return;
+    }
+    setState(() {
+      _isCallActionInFlight = true;
+    });
+
+    final callbackCallId =
+        '${action.callId}-callback-${DateTime.now().millisecondsSinceEpoch}';
+    final roomType = _callbackSessionMode == CallbackSessionMode.conference
+        ? _ExampleExtraKeys.roomTypeConference
+        : _ExampleExtraKeys.roomTypeOneToOne;
+    final callData = _buildCallData(
+      callId: callbackCallId,
+      callerName: action.callerName,
+      handle: action.handle,
+      avatarUrl: action.avatarUrl,
+      callType: _callbackCallType,
+      extraOverrides: <String, dynamic>{
+        ...?action.extra,
+        _ExampleExtraKeys.roomType: roomType,
+      },
+    );
+
+    try {
+      final session = CallwaveFlutter.instance.createSession(
+        callData: callData,
+        isOutgoing: true,
+        initialState: CallSessionState.connecting,
+      );
+      if (_callbackSessionMode == CallbackSessionMode.conference) {
+        _previewCallId = callbackCallId;
+        _speakerCursor = 0;
+        session.updateConferenceState(
+          _buildPreviewConferenceState(
+            updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+            callType: _callbackCallType,
+          ),
+        );
+      } else {
+        _previewCallId = null;
+      }
+      await CallwaveFlutter.instance.showOutgoingCall(callData);
+      _pushLog(
+        'Started callback ${_callbackCallType.name} for ${action.callerName} '
+        '(${_callbackSessionMode.label.toLowerCase()}).',
+      );
+      if (mounted) {
+        setState(() {
+          _pendingStartupAction = null;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCallActionInFlight = false;
+        });
+      }
+    }
+  }
+}
+
+class _PendingStartupActionCard extends StatelessWidget {
+  const _PendingStartupActionCard({
+    required this.action,
+    required this.callbackCallType,
+    required this.callbackSessionMode,
+    required this.actionInFlight,
+    required this.onDismiss,
+    required this.onCallTypeChanged,
+    required this.onSessionModeChanged,
+    required this.onStartCallback,
+  });
+
+  final CallStartupAction action;
+  final CallType callbackCallType;
+  final CallbackSessionMode callbackSessionMode;
+  final bool actionInFlight;
+  final VoidCallback onDismiss;
+  final ValueChanged<CallType> onCallTypeChanged;
+  final ValueChanged<CallbackSessionMode> onSessionModeChanged;
+  final Future<void> Function() onStartCallback;
+
+  @override
+  Widget build(BuildContext context) {
+    final isCallback = action.type == CallStartupActionType.callback;
+    return Card(
+      key: const ValueKey<String>('pending-startup-action-card'),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              isCallback ? 'Call Back' : 'Missed Call',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${action.callerName} ${action.handle}'.trim(),
+              key: const ValueKey<String>('pending-startup-action-summary'),
+            ),
+            if (!isCallback) ...<Widget>[
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: onDismiss,
+                  child: const Text('Dismiss'),
+                ),
+              ),
+            ] else ...<Widget>[
+              const SizedBox(height: 12),
+              SegmentedButton<CallType>(
+                showSelectedIcon: false,
+                segments: const <ButtonSegment<CallType>>[
+                  ButtonSegment<CallType>(
+                    value: CallType.audio,
+                    label: Text('Audio'),
+                  ),
+                  ButtonSegment<CallType>(
+                    value: CallType.video,
+                    label: Text('Video'),
+                  ),
+                ],
+                selected: <CallType>{callbackCallType},
+                onSelectionChanged: actionInFlight
+                    ? null
+                    : (selection) => onCallTypeChanged(selection.first),
+              ),
+              const SizedBox(height: 8),
+              SegmentedButton<CallbackSessionMode>(
+                showSelectedIcon: false,
+                segments: CallbackSessionMode.values
+                    .map(
+                      (mode) => ButtonSegment<CallbackSessionMode>(
+                        value: mode,
+                        label: Text(mode.label),
+                      ),
+                    )
+                    .toList(growable: false),
+                selected: <CallbackSessionMode>{callbackSessionMode},
+                onSelectionChanged: actionInFlight
+                    ? null
+                    : (selection) => onSessionModeChanged(selection.first),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                children: <Widget>[
+                  TextButton(
+                    onPressed: actionInFlight ? null : onDismiss,
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton(
+                    key: const ValueKey<String>('start-callback-button'),
+                    onPressed: actionInFlight
+                        ? null
+                        : () {
+                            unawaited(onStartCallback());
+                          },
+                    child: const Text('Start Callback'),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }

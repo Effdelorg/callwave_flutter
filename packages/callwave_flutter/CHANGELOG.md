@@ -7,8 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Missed-call startup actions: `CallStartupAction`, `CallStartupActionType`, and
+  `CallStartupRouteDecision.pendingAction()` for when the app is launched from a
+  missed-call notification (tap body or "Call Back")
+- `prepareStartupRouteDecision()` now returns `pendingAction` when the user
+  launched from a missed-call notification and no active call session exists
+- `CallEventExtraKeys.launchActionOpenMissedCall` and `launchActionCallback` for
+  launch action values in callback/missed events
+
 ### Breaking for custom platform implementations
 
+- Custom `CallwaveFlutterPlatform` implementations must implement
+  `takePendingStartupAction()` (returns `null` by default)
 - Custom `CallwaveFlutterPlatform` implementations must update `markMissed` to
   accept optional `extra`. Override `confirmAcceptedCall` only if using
   [IncomingAcceptStrategy.deferOpenUntilConfirmed]; it has a default no-op.

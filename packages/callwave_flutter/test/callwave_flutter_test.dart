@@ -581,6 +581,7 @@ void main() {
     expect(decision.shouldOpenCall, isFalse);
     expect(decision.callId, isNull);
     expect(decision.sessionState, isNull);
+    expect(decision.pendingAction, isNull);
   });
 
   test(
@@ -672,6 +673,78 @@ void main() {
     expect(decision.callId, 'c-startup-validated-allow');
     expect(decision.sessionState, CallSessionState.connecting);
     expect(fakePlatform.lastConfirmedCallId, 'c-startup-validated-allow');
+  });
+
+  test('prepareStartupRouteDecision returns pending missed-call open action',
+      () async {
+    fakePlatform.pendingStartupAction = const platform.CallStartupActionDto(
+      type: platform.CallStartupActionType.openMissedCall,
+      callId: 'c-missed-open',
+      callerName: 'Ava',
+      handle: '+1 555 0101',
+      extra: <String, dynamic>{'roomType': 'one-to-one'},
+    );
+
+    final decision =
+        await CallwaveFlutter.instance.prepareStartupRouteDecision();
+
+    expect(decision.shouldOpenCall, isFalse);
+    expect(decision.callId, isNull);
+    expect(decision.pendingAction, isNotNull);
+    expect(
+      decision.pendingAction!.type,
+      CallStartupActionType.openMissedCall,
+    );
+    expect(decision.pendingAction!.callId, 'c-missed-open');
+    expect(fakePlatform.takePendingStartupActionCount, 1);
+  });
+
+  test('prepareStartupRouteDecision returns pending callback action', () async {
+    fakePlatform.pendingStartupAction = const platform.CallStartupActionDto(
+      type: platform.CallStartupActionType.callback,
+      callId: 'c-missed-callback',
+      callerName: 'Ava',
+      handle: '+1 555 0101',
+      callType: platform.CallType.video,
+      extra: <String, dynamic>{'roomType': 'conference'},
+    );
+
+    final decision =
+        await CallwaveFlutter.instance.prepareStartupRouteDecision();
+
+    expect(decision.shouldOpenCall, isFalse);
+    expect(decision.pendingAction, isNotNull);
+    expect(decision.pendingAction!.type, CallStartupActionType.callback);
+    expect(decision.pendingAction!.callType, CallType.video);
+    expect(
+      decision.pendingAction!.extra,
+      <String, dynamic>{'roomType': 'conference'},
+    );
+  });
+
+  test('active startup session wins over pending missed-call action', () async {
+    fakePlatform.activeCallIds = <String>['c-startup-accepted'];
+    fakePlatform.activeCallSnapshots = <platform.CallEventDto>[
+      platform.CallEventDto(
+        callId: 'c-startup-accepted',
+        type: platform.CallEventType.accepted,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    ];
+    fakePlatform.pendingStartupAction = const platform.CallStartupActionDto(
+      type: platform.CallStartupActionType.callback,
+      callId: 'c-missed-callback',
+      callerName: 'Ava',
+      handle: '+1 555 0101',
+    );
+
+    final decision =
+        await CallwaveFlutter.instance.prepareStartupRouteDecision();
+
+    expect(decision.shouldOpenCall, isTrue);
+    expect(decision.callId, 'c-startup-accepted');
+    expect(decision.pendingAction, isNull);
+    expect(fakePlatform.pendingStartupAction, isNull);
   });
 
   test('validated accept does not reopen after terminal event wins the race',
@@ -775,8 +848,10 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   Object? markMissedError;
   Object? confirmAcceptedCallError;
   int confirmAcceptedCallCount = 0;
+  int takePendingStartupActionCount = 0;
   platform.PostCallBehavior postCallBehavior =
       platform.PostCallBehavior.stayOpen;
+  platform.CallStartupActionDto? pendingStartupAction;
 
   @override
   Stream<platform.CallEventDto> get events => _controller.stream;
@@ -849,6 +924,14 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
     for (final event in activeCallSnapshots) {
       emit(event);
     }
+  }
+
+  @override
+  Future<platform.CallStartupActionDto?> takePendingStartupAction() async {
+    takePendingStartupActionCount += 1;
+    final action = pendingStartupAction;
+    pendingStartupAction = null;
+    return action;
   }
 
   @override

@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Missed-call notifications on iOS with "Call Back" action and tap-to-open
+- `takePendingStartupAction` method for cold-start handoff of missed-call actions
+- Android missed-call notification content intent (tap body opens app with
+  `ACTION_OPEN_MISSED_CALL`)
+
+### Changed
+
+- **Android**: `CallNotificationManager.showMissedCall` now requires `contentIntent`
+  in addition to `callbackIntent`
+- **iOS**: `requestNotificationPermission` now requests permission via
+  `UNUserNotificationCenter` instead of always returning `true`
+
 ## [0.1.2] - 2026-03-06
 
 ### Added

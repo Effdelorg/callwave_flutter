@@ -68,5 +68,26 @@ void main() {
       expect(event.timestampMs, 123);
       expect(event.extra?['source'], 'push');
     });
+
+    test('startup action roundtrips through payload codec', () {
+      const action = CallStartupActionDto(
+        type: CallStartupActionType.callback,
+        callId: 'missed-1',
+        callerName: 'Ava',
+        handle: '+1 555 0101',
+        avatarUrl: 'https://x.test/a.png',
+        callType: CallType.video,
+        extra: <String, dynamic>{'roomType': 'conference'},
+      );
+
+      final map = PayloadCodec.startupActionToMap(action);
+      final decoded = PayloadCodec.safeStartupActionFromMap(map);
+
+      expect(decoded, isNotNull);
+      expect(decoded!.type, CallStartupActionType.callback);
+      expect(decoded.callId, action.callId);
+      expect(decoded.callType, action.callType);
+      expect(decoded.extra, action.extra);
+    });
   });
 }

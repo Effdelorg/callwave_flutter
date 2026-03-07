@@ -39,4 +39,14 @@ abstract final class CallEventExtraKeys {
   /// call UI without answering yet.
   static const String launchActionOpenIncoming =
       'com.callwave.flutter.methodchannel.ACTION_OPEN_INCOMING';
+
+  /// Value for [launchAction] when the user opened from the missed-call
+  /// notification body.
+  static const String launchActionOpenMissedCall =
+      'com.callwave.flutter.methodchannel.ACTION_OPEN_MISSED_CALL';
+
+  /// Value for [launchAction] when the user chose Call Back from a missed-call
+  /// notification.
+  static const String launchActionCallback =
+      'com.callwave.flutter.methodchannel.ACTION_CALLBACK';
 }

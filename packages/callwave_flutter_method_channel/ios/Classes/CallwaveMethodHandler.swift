@@ -144,7 +144,10 @@ final class CallwaveMethodHandler {
       result(nil)
 
     case "requestNotificationPermission":
-      result(true)
+      callManager.requestNotificationPermission(result: result)
+
+    case "takePendingStartupAction":
+      result(callManager.takePendingStartupAction())
 
     case "requestFullScreenIntentPermission":
       result(nil)

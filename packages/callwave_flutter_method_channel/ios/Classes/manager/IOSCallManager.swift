@@ -1,12 +1,16 @@
 import Foundation
 import CallKit
+import Flutter
 import UIKit
+import UserNotifications
 
 final class IOSCallManager {
   private let eventBridge: EventStreamBridge
   private let activeCallRegistry: ActiveCallRegistry
   private let provider: CXProvider
   private let notificationCenter: NotificationCenter
+  private let missedCallNotificationManager: MissedCallNotificationManager
+  private let pendingStartupActionStore: PendingStartupActionStore
   private let callController = CXCallController()
   private let delegate = CallKitProviderDelegate()
   private let backgroundValidator = IOSBackgroundValidator()
@@ -28,11 +32,15 @@ final class IOSCallManager {
   init(
     eventBridge: EventStreamBridge,
     activeCallRegistry: ActiveCallRegistry,
-    notificationCenter: NotificationCenter = .default
+    notificationCenter: NotificationCenter = .default,
+    missedCallNotificationManager: MissedCallNotificationManager = MissedCallNotificationManager(),
+    pendingStartupActionStore: PendingStartupActionStore = PendingStartupActionStore()
   ) {
     self.eventBridge = eventBridge
     self.activeCallRegistry = activeCallRegistry
     self.notificationCenter = notificationCenter
+    self.missedCallNotificationManager = missedCallNotificationManager
+    self.pendingStartupActionStore = pendingStartupActionStore
 
     let config = CXProviderConfiguration(localizedName: "Callwave")
     config.supportsVideo = true
@@ -44,6 +52,7 @@ final class IOSCallManager {
     delegate.onEnd = { [weak self] uuid, reason in self?.handleEnd(uuid: uuid, reason: reason) }
     delegate.onDidReset = { [weak self] in self?.handleReset() }
     provider.setDelegate(delegate, queue: nil)
+    self.missedCallNotificationManager.registerCategories()
     registerApplicationObservers()
   }
 
@@ -171,6 +180,7 @@ final class IOSCallManager {
 
   func markMissed(callId: String, extra: [String: Any]? = nil) {
     let payload = payloadStore[callId]
+    let missedExtra = eventExtra(payload: payload, fallbackExtra: extra)
     cancelTimeout(callId: callId)
     if let uuid = uuidByCallId[callId] {
       provider.reportCall(with: uuid, endedAt: Date(), reason: .unanswered)
@@ -184,11 +194,25 @@ final class IOSCallManager {
       explicitIncomingLaunchEmittedCallIds.remove(callId)
       outgoingCallIds.remove(callId)
     }
+    let notificationPayload = (payload ?? fallbackPayload(callId: callId)).copy(extra: missedExtra)
+    missedCallNotificationManager.showMissedCall(payload: notificationPayload)
     emit(
       callId: callId,
       type: "missed",
-      extra: eventExtra(payload: payload, fallbackExtra: extra)
+      extra: missedExtra
     )
+  }
+
+  func requestNotificationPermission(result: @escaping FlutterResult) {
+    missedCallNotificationManager.requestPermission { granted in
+      DispatchQueue.main.async {
+        result(granted)
+      }
+    }
+  }
+
+  func takePendingStartupAction() -> [String: Any]? {
+    pendingStartupActionStore.take()
   }
 
   func activeCallIds() -> [String] {
@@ -288,12 +312,44 @@ final class IOSCallManager {
     let type = reason == .unanswered ? "timeout" : "ended"
     emit(callId: callId, type: type, extra: payload?.extra)
     if type == "timeout" {
-      emit(callId: callId, type: "missed", extra: payload?.extra)
+      let missedExtra = eventExtra(payload: payload)
+      if let payload {
+        missedCallNotificationManager.showMissedCall(payload: payload.copy(extra: missedExtra))
+      }
+      emit(callId: callId, type: "missed", extra: missedExtra)
     }
   }
 
   func emitCallback(callId: String) {
     emit(callId: callId, type: "callback", extra: payloadStore[callId]?.extra)
+  }
+
+  func handleNotificationResponse(response: UNNotificationResponse) -> Bool {
+    guard let payload = missedCallNotificationManager.payload(from: response) else {
+      return false
+    }
+    missedCallNotificationManager.dismissMissedCall(callId: payload.callId)
+    let isCallback =
+      response.actionIdentifier == MissedCallNotificationManager.callbackActionIdentifier
+    let type = isCallback ? "callback" : "missed"
+    let launchAction = isCallback
+      ? "com.callwave.flutter.methodchannel.ACTION_CALLBACK"
+      : "com.callwave.flutter.methodchannel.ACTION_OPEN_MISSED_CALL"
+    let startupActionType = isCallback ? "callback" : "openMissedCall"
+    let mergedExtra = eventExtra(payload: payload, fallbackExtra: payload.extra)
+    if eventBridge.hasListener {
+      emit(
+        callId: payload.callId,
+        type: type,
+        extra: appendLaunchAction(extra: mergedExtra, launchAction: launchAction)
+      )
+    } else {
+      pendingStartupActionStore.save(
+        type: startupActionType,
+        payload: payload.copy(extra: mergedExtra)
+      )
+    }
+    return true
   }
 
   private func handleReset() {
@@ -314,6 +370,7 @@ final class IOSCallManager {
 
   private func cleanup(callId: String, uuid: UUID) {
     cancelTimeout(callId: callId)
+    missedCallNotificationManager.dismissMissedCall(callId: callId)
     activeCallRegistry.remove(callId: callId)
     payloadStore.removeValue(forKey: callId)
     uuidByCallId.removeValue(forKey: callId)
@@ -338,7 +395,9 @@ final class IOSCallManager {
 
       self.provider.reportCall(with: uuid, endedAt: Date(), reason: .unanswered)
       self.emit(callId: payload.callId, type: "timeout", extra: payload.extra)
-      self.emit(callId: payload.callId, type: "missed", extra: payload.extra)
+      let missedExtra = self.eventExtra(payload: payload)
+      self.missedCallNotificationManager.showMissedCall(payload: payload.copy(extra: missedExtra))
+      self.emit(callId: payload.callId, type: "missed", extra: missedExtra)
       self.cleanup(callId: payload.callId, uuid: uuid)
     }
 
@@ -376,6 +435,19 @@ final class IOSCallManager {
     merged["avatarUrl"] = payload?.avatarUrl ?? merged["avatarUrl"] ?? NSNull()
 
     return merged
+  }
+
+  private func fallbackPayload(callId: String) -> CallPayload {
+    CallPayload(
+      dictionary: [
+        "callId": callId,
+        "callerName": "Unknown",
+        "handle": "",
+        "timeoutSeconds": 30,
+        "callType": "audio",
+        "incomingAcceptStrategy": "openImmediately",
+      ]
+    )!
   }
 
   private func incomingEventExtra(

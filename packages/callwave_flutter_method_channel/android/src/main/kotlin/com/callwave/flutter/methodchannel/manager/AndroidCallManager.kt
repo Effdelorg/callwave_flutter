@@ -28,6 +28,7 @@ class AndroidCallManager(
     private val activeCallRegistry: ActiveCallRegistry,
     private val eventSinkBridge: EventSinkBridge,
 ) {
+    private val pendingStartupActionStore = PendingStartupActionStore(context)
     private val payloadStore = HashMap<String, CallPayload>()
     private val openedIncomingCalls = HashSet<String>()
     private val pendingAcceptedCalls = HashSet<String>()
@@ -142,6 +143,7 @@ class AndroidCallManager(
         clearCallRuntimeState(callId, dismissMissed = false)
         notificationManager.showMissedCall(
             payload = payload.copy(extra = missedExtra),
+            contentIntent = missedCallOpenIntent(payload.copy(extra = missedExtra)),
             callbackIntent = actionIntent(
                 action = CallwaveConstants.ACTION_CALLBACK,
                 callId = callId,
@@ -229,6 +231,32 @@ class AndroidCallManager(
             )
             val fallbackPayload = payloadFromActionIntent(intent, callId, extraFromIntent)
             return onOpenOngoing(callId, extraFromIntent, fallbackPayload)
+        }
+
+        if (intent?.getBooleanExtra(CallwaveConstants.EXTRA_SKIP_STARTUP_ACTION_HANDOFF, false) ==
+            true
+        ) {
+            return true
+        }
+
+        if (intent?.action == CallwaveConstants.ACTION_OPEN_MISSED_CALL ||
+            launchAction == CallwaveConstants.ACTION_OPEN_MISSED_CALL
+        ) {
+            return handleMissedCallStartupIntent(
+                type = CallwaveConstants.STARTUP_ACTION_OPEN_MISSED_CALL,
+                launchAction = CallwaveConstants.ACTION_OPEN_MISSED_CALL,
+                intent = intent,
+            )
+        }
+
+        if (intent?.action == CallwaveConstants.ACTION_CALLBACK ||
+            launchAction == CallwaveConstants.ACTION_CALLBACK
+        ) {
+            return handleMissedCallStartupIntent(
+                type = CallwaveConstants.STARTUP_ACTION_CALLBACK,
+                launchAction = CallwaveConstants.ACTION_CALLBACK,
+                intent = intent,
+            )
         }
 
         if (intent?.action != CallwaveConstants.ACTION_OPEN_INCOMING) {
@@ -472,7 +500,28 @@ class AndroidCallManager(
 
     fun onCallback(callId: String, extra: Map<String, Any?>?) {
         notificationManager.dismissMissed(callId)
-        emitEvent(callId, CallwaveConstants.EVENT_CALLBACK, extra ?: payloadStore[callId]?.extra)
+        val payload = payloadStore[callId] ?: fallbackPayload(callId)
+        val mergedExtra = eventExtra(
+            payload = payload,
+            fallbackExtra = extra,
+        )
+        if (eventSinkBridge.hasListener()) {
+            emitEvent(
+                callId,
+                CallwaveConstants.EVENT_CALLBACK,
+                appendLaunchAction(mergedExtra, CallwaveConstants.ACTION_CALLBACK),
+            )
+        } else {
+            pendingStartupActionStore.save(
+                type = CallwaveConstants.STARTUP_ACTION_CALLBACK,
+                payload = payload.copy(extra = mergedExtra),
+            )
+        }
+        launchHostApp(
+            action = CallwaveConstants.ACTION_CALLBACK,
+            payload = payload.copy(extra = mergedExtra),
+            skipStartupActionHandoff = true,
+        )
     }
 
     fun payloadFromActionIntent(
@@ -487,6 +536,10 @@ class AndroidCallManager(
     }
 
     fun getActiveCallIds(): List<String> = activeCallRegistry.getActiveCallIds()
+
+    fun takePendingStartupAction(): Map<String, Any?>? {
+        return pendingStartupActionStore.take()
+    }
 
     fun getActiveCallEventSnapshots(): List<Map<String, Any?>> {
         val snapshots = mutableListOf<Map<String, Any?>>()
@@ -649,6 +702,41 @@ class AndroidCallManager(
         }
     }
 
+    private fun handleMissedCallStartupIntent(
+        type: String,
+        launchAction: String,
+        intent: Intent?,
+    ): Boolean {
+        val safeIntent = intent ?: return false
+        val callId = safeIntent.getStringExtra(CallwaveConstants.EXTRA_CALL_ID) ?: return false
+        val extraFromIntent = CallPayload.fromIntentExtras(
+            safeIntent.getStringExtra(CallwaveConstants.EXTRA_EXTRA),
+        )
+        val payload = payloadFromActionIntent(safeIntent, callId, extraFromIntent)
+            ?: fallbackPayload(callId).copy(extra = extraFromIntent)
+        val mergedExtra = eventExtra(
+            payload = payload,
+            fallbackExtra = extraFromIntent,
+        )
+        if (eventSinkBridge.hasListener()) {
+            emitEvent(
+                callId,
+                if (type == CallwaveConstants.STARTUP_ACTION_CALLBACK) {
+                    CallwaveConstants.EVENT_CALLBACK
+                } else {
+                    CallwaveConstants.EVENT_MISSED
+                },
+                appendLaunchAction(mergedExtra, launchAction),
+            )
+            return true
+        }
+        pendingStartupActionStore.save(
+            type = type,
+            payload = payload.copy(extra = mergedExtra),
+        )
+        return true
+    }
+
     private fun fullScreenIntent(payload: CallPayload): PendingIntent {
         val launchIntent = hostLaunchIntentForAction(CallwaveConstants.ACTION_OPEN_INCOMING)?.apply {
             putPayloadExtras(payload)
@@ -761,6 +849,32 @@ class AndroidCallManager(
         return PendingIntent.getActivity(
             context,
             payload.callId.hashCode() + PENDING_INTENT_REQUEST_CODE_OFFSET_OPEN_ONGOING,
+            launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    private fun missedCallOpenIntent(payload: CallPayload): PendingIntent {
+        val launchIntent = (
+            hostLaunchIntentForAction(CallwaveConstants.ACTION_OPEN_MISSED_CALL)
+                ?: hostLaunchIntentForAction(CallwaveConstants.ACTION_OPEN_INCOMING)
+                ?: Intent(context, FullScreenCallActivity::class.java)
+            ).apply {
+            putPayloadExtras(payload)
+            putExtra(
+                CallwaveConstants.EXTRA_LAUNCH_ACTION,
+                CallwaveConstants.ACTION_OPEN_MISSED_CALL,
+            )
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP,
+            )
+        }
+
+        return PendingIntent.getActivity(
+            context,
+            payload.callId.hashCode() + PENDING_INTENT_REQUEST_CODE_OFFSET_OPEN_MISSED_CALL,
             launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -1109,10 +1223,18 @@ class AndroidCallManager(
         return currentBackgroundIncomingCallValidatorRegistration()
     }
 
-    fun launchHostApp(action: String, payload: CallPayload) {
+    fun launchHostApp(
+        action: String,
+        payload: CallPayload,
+        skipStartupActionHandoff: Boolean = false,
+    ) {
         val launchIntent = hostLaunchIntentForAction(action) ?: return
         launchIntent.putPayloadExtras(payload)
         launchIntent.putExtra(CallwaveConstants.EXTRA_LAUNCH_ACTION, action)
+        launchIntent.putExtra(
+            CallwaveConstants.EXTRA_SKIP_STARTUP_ACTION_HANDOFF,
+            skipStartupActionHandoff,
+        )
         launchIntent.addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_ACTIVITY_SINGLE_TOP or
@@ -1155,6 +1277,7 @@ class AndroidCallManager(
         private const val PENDING_INTENT_REQUEST_CODE_OFFSET_FULL_SCREEN = 10000
         private const val PENDING_INTENT_REQUEST_CODE_OFFSET_ACCEPT_AND_OPEN = 30000
         private const val PENDING_INTENT_REQUEST_CODE_OFFSET_OPEN_ONGOING = 35000
+        private const val PENDING_INTENT_REQUEST_CODE_OFFSET_OPEN_MISSED_CALL = 36000
     }
 }
 

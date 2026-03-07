@@ -3,6 +3,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'enums/post_call_behavior.dart';
 import 'models/call_data_dto.dart';
 import 'models/call_event_dto.dart';
+import 'models/call_startup_action_dto.dart';
 
 abstract class CallwaveFlutterPlatform extends PlatformInterface {
   CallwaveFlutterPlatform() : super(token: _token);
@@ -82,6 +83,12 @@ abstract class CallwaveFlutterPlatform extends PlatformInterface {
   /// startup.
   Future<void> syncActiveCallsToEvents() async {}
 
+  /// Returns and clears a one-shot startup action captured before Flutter
+  /// finished initializing.
+  Future<CallStartupActionDto?> takePendingStartupAction() async {
+    return null;
+  }
+
   Future<bool> requestNotificationPermission();
 
   Future<void> requestFullScreenIntentPermission();
@@ -131,6 +138,11 @@ class _StubCallwaveFlutterPlatform extends CallwaveFlutterPlatform {
 
   @override
   Future<void> syncActiveCallsToEvents() async {}
+
+  @override
+  Future<CallStartupActionDto?> takePendingStartupAction() async {
+    return null;
+  }
 
   @override
   Future<void> initialize() async {}

@@ -11,6 +11,7 @@ import 'engine/call_session.dart';
 import 'engine/callwave_engine.dart';
 import 'enums/call_event_type.dart';
 import 'enums/call_session_state.dart';
+import 'enums/call_startup_action_type.dart';
 import 'enums/call_type.dart';
 import 'enums/post_call_behavior.dart';
 import 'models/call_accept_decision.dart';
@@ -18,6 +19,7 @@ import 'models/background_incoming_call_validation_request.dart';
 import 'models/call_data.dart';
 import 'models/call_event.dart';
 import 'models/call_event_extra_keys.dart';
+import 'models/call_startup_action.dart';
 import 'models/call_startup_route_decision.dart';
 
 class CallwaveFlutter {
@@ -234,8 +236,12 @@ class CallwaveFlutter {
   /// Intended for `main()` before `runApp()` to decide initial route.
   Future<CallStartupRouteDecision> prepareStartupRouteDecision() async {
     await restoreActiveSessions();
+    final pendingStartupAction = await _takePendingStartupAction();
     final startupSession = _selectStartupRouteSession(activeSessions);
     if (startupSession == null || !_shouldOpenStartupSession(startupSession)) {
+      if (pendingStartupAction != null) {
+        return CallStartupRouteDecision.pendingAction(pendingStartupAction);
+      }
       return const CallStartupRouteDecision.home();
     }
     return CallStartupRouteDecision.call(
@@ -833,6 +839,33 @@ class CallwaveFlutter {
         _isOpenIncomingLaunchAction(session.callData.extra);
   }
 
+  Future<CallStartupAction?> _takePendingStartupAction() async {
+    final dto = await _platform.takePendingStartupAction();
+    if (dto == null) {
+      return null;
+    }
+    return CallStartupAction(
+      type: _startupActionTypeFromDto(dto.type),
+      callId: dto.callId,
+      callerName: dto.callerName,
+      handle: dto.handle,
+      avatarUrl: dto.avatarUrl,
+      callType: _callTypeFromDto(dto.callType),
+      extra: dto.extra,
+    );
+  }
+
+  CallStartupActionType _startupActionTypeFromDto(
+    platform.CallStartupActionType type,
+  ) {
+    switch (type) {
+      case platform.CallStartupActionType.openMissedCall:
+        return CallStartupActionType.openMissedCall;
+      case platform.CallStartupActionType.callback:
+        return CallStartupActionType.callback;
+    }
+  }
+
   platform.CallDataDto _toDto(CallData data) {
     return _toDtoWithStrategy(
       data,
@@ -929,6 +962,17 @@ class CallwaveFlutter {
         return platform.CallType.audio;
       case CallType.video:
         return platform.CallType.video;
+    }
+  }
+
+  CallType _callTypeFromDto(
+    platform.CallType callType,
+  ) {
+    switch (callType) {
+      case platform.CallType.audio:
+        return CallType.audio;
+      case platform.CallType.video:
+        return CallType.video;
     }
   }
 

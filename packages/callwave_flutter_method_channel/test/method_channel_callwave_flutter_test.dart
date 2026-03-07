@@ -123,4 +123,35 @@ void main() {
       const <String, dynamic>{'outcomeReason': 'cancelled'},
     );
   });
+
+  test('takePendingStartupAction decodes startup action payload', () async {
+    const channel = MethodChannel('callwave_flutter/methods');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'takePendingStartupAction') {
+        return <String, dynamic>{
+          PayloadCodec.keyStartupActionType: 'callback',
+          PayloadCodec.keyCallId: 'missed-1',
+          PayloadCodec.keyCallerName: 'Ava',
+          PayloadCodec.keyHandle: '+1 555 0101',
+          PayloadCodec.keyCallType: 'video',
+          PayloadCodec.keyExtra: <String, dynamic>{'roomType': 'conference'},
+        };
+      }
+      return null;
+    });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+
+    final plugin = MethodChannelCallwaveFlutter();
+    final action = await plugin.takePendingStartupAction();
+
+    expect(action, isNotNull);
+    expect(action!.type, CallStartupActionType.callback);
+    expect(action.callId, 'missed-1');
+    expect(action.callType, CallType.video);
+    expect(action.extra, <String, dynamic>{'roomType': 'conference'});
+  });
 }
