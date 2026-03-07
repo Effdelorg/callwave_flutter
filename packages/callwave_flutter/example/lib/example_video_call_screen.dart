@@ -707,6 +707,7 @@ class _ExampleVideoCallScreenState extends State<ExampleVideoCallScreen> {
       case CallSessionState.idle:
       case CallSessionState.ringing:
         return 'Incoming call';
+      case CallSessionState.validating:
       case CallSessionState.connecting:
       case CallSessionState.reconnecting:
         return 'Connecting...';

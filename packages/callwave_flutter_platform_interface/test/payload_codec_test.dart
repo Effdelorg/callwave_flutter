@@ -22,6 +22,8 @@ void main() {
         timeoutSeconds: 45,
         callType: CallType.video,
         extra: <String, dynamic>{'room': 'blue'},
+        backgroundDispatcherHandle: 101,
+        backgroundCallbackHandle: 202,
       );
 
       final map = PayloadCodec.callDataToMap(data);
@@ -34,6 +36,12 @@ void main() {
       expect(decoded.timeoutSeconds, data.timeoutSeconds);
       expect(decoded.callType, data.callType);
       expect(decoded.extra, data.extra);
+      expect(
+        decoded.incomingAcceptStrategy,
+        IncomingAcceptStrategy.openImmediately,
+      );
+      expect(decoded.backgroundDispatcherHandle, 101);
+      expect(decoded.backgroundCallbackHandle, 202);
     });
 
     test('safeCallEventFromMap returns null for invalid payload', () {
@@ -59,6 +67,27 @@ void main() {
       expect(event.type, CallEventType.accepted);
       expect(event.timestampMs, 123);
       expect(event.extra?['source'], 'push');
+    });
+
+    test('startup action roundtrips through payload codec', () {
+      const action = CallStartupActionDto(
+        type: CallStartupActionType.callback,
+        callId: 'missed-1',
+        callerName: 'Ava',
+        handle: '+1 555 0101',
+        avatarUrl: 'https://x.test/a.png',
+        callType: CallType.video,
+        extra: <String, dynamic>{'roomType': 'conference'},
+      );
+
+      final map = PayloadCodec.startupActionToMap(action);
+      final decoded = PayloadCodec.safeStartupActionFromMap(map);
+
+      expect(decoded, isNotNull);
+      expect(decoded!.type, CallStartupActionType.callback);
+      expect(decoded.callId, action.callId);
+      expect(decoded.callType, action.callType);
+      expect(decoded.extra, action.extra);
     });
   });
 }

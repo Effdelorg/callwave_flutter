@@ -14,14 +14,16 @@ void main() {
   late _FakePlatform fakePlatform;
   late _FakeCameraHandle fakeCamera;
 
-  setUp(() {
+  setUp(() async {
     fakePlatform = _FakePlatform();
     fakeCamera = _FakeCameraHandle();
     platform.CallwaveFlutterPlatform.instance = fakePlatform;
+    await clearPersistedIncomingDemoMode();
     CallwaveFlutter.instance.setEngine(_TestEngine());
   });
 
   tearDown(() async {
+    await clearPersistedIncomingDemoMode();
     CallwaveFlutter.instance.setEngine(_TestEngine());
     await fakePlatform.dispose();
   });
@@ -32,7 +34,7 @@ void main() {
 
     expect(find.text('Callwave Example'), findsOneWidget);
     expect(find.text('Call ID'), findsOneWidget);
-    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 300));
   });
 
   testWidgets('demo renders explicit incoming/outgoing audio-video buttons',
@@ -48,7 +50,15 @@ void main() {
     expect(find.text('Conference Video'), findsOneWidget);
     expect(find.text('Cycle Speaker'), findsOneWidget);
 
-    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+    await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
+  });
+
+  test('persisted incoming demo mode roundtrips', () async {
+    await persistIncomingDemoMode(IncomingDemoMode.validatedReject);
+    expect(
+      await loadPersistedIncomingDemoMode(),
+      IncomingDemoMode.validatedReject,
+    );
   });
 
   testWidgets('conference audio preview opens conference call UI',
@@ -81,7 +91,7 @@ void main() {
     await tester.pumpWidget(CallwaveExampleApp(cameraController: fakeCamera));
     await tester.pump();
 
-    await tester.tap(find.text('Conference Video'));
+    await _tapVisibleTextButton(tester, 'Conference Video');
     await _pumpUntilCallScreen(tester);
 
     expect(find.byType(CallScreen), findsOneWidget);
@@ -108,7 +118,7 @@ void main() {
     await tester.pumpWidget(CallwaveExampleApp(cameraController: fakeCamera));
     await tester.pump();
 
-    await tester.tap(find.text('Conference Video'));
+    await _tapVisibleTextButton(tester, 'Conference Video');
     await _pumpUntilCallScreen(tester);
     expect(find.byType(ExampleVideoCallScreen), findsOneWidget);
     final renderedScreen = tester
@@ -180,7 +190,7 @@ void main() {
     await tester.pumpWidget(CallwaveExampleApp(cameraController: fakeCamera));
     await tester.pump();
 
-    await tester.tap(find.text('Conference Video'));
+    await _tapVisibleTextButton(tester, 'Conference Video');
     await _pumpUntilCallScreen(tester);
     expect(find.byType(ExampleVideoCallScreen), findsOneWidget);
 
@@ -202,7 +212,7 @@ void main() {
       session.reportEnded();
     }
     await tester.pump(const Duration(seconds: 4));
-    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+    await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
   });
 
   testWidgets('one-to-one connected video defaults to split layout',
@@ -553,6 +563,51 @@ void main() {
     await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
   });
 
+  testWidgets(
+      'validated reject mode keeps the app off the call screen and marks missed',
+      (tester) async {
+    await tester.pumpWidget(const CallwaveExampleApp());
+    await tester.pump();
+
+    await tester.tap(find.text('Validated Reject'));
+    await tester.pumpAndSettle();
+
+    fakePlatform.emit(type: platform.CallEventType.accepted);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 800));
+
+    expect(find.byType(CallScreen), findsNothing);
+    expect(find.byType(ExampleVideoCallScreen), findsNothing);
+    expect(find.text('Incoming Video'), findsOneWidget);
+    expect(fakePlatform.lastMarkedMissedCallId, _FakePlatform.callId);
+    expect(
+      fakePlatform.lastMarkedMissedExtra?[CallEventExtraKeys.outcomeReason],
+      CallAcceptRejectReason.cancelled.name,
+    );
+
+    await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
+  });
+
+  testWidgets(
+      'validated allow mode opens the call screen after answer approval',
+      (tester) async {
+    await tester.pumpWidget(const CallwaveExampleApp());
+    await tester.pump();
+
+    await tester.tap(find.text('Validated Allow'));
+    await tester.pumpAndSettle();
+
+    fakePlatform.emit(type: platform.CallEventType.accepted);
+    await _pumpUntilCallScreen(tester);
+
+    expect(find.byType(CallScreen), findsOneWidget);
+    expect(fakePlatform.lastConfirmedCallId, _FakePlatform.callId);
+
+    fakePlatform.emit(type: platform.CallEventType.ended);
+    await tester.pump();
+    await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
+  });
+
   testWidgets('accepted launchAction event opens session-driven call screen',
       (tester) async {
     fakePlatform.initialEvents = <platform.CallEventDto>[
@@ -575,6 +630,31 @@ void main() {
     fakePlatform.emit(type: platform.CallEventType.ended);
     await tester.pump();
     await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
+  });
+
+  testWidgets('incoming launchAction event opens ringing call screen',
+      (tester) async {
+    fakePlatform.initialEvents = <platform.CallEventDto>[
+      platform.CallEventDto(
+        callId: _FakePlatform.callId,
+        type: platform.CallEventType.incoming,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        extra: const <String, dynamic>{
+          CallEventExtraKeys.launchAction:
+              CallEventExtraKeys.launchActionOpenIncoming,
+        },
+      ),
+    ];
+
+    await tester.pumpWidget(const CallwaveExampleApp());
+    await _pumpUntilCallScreen(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(CallScreen), findsOneWidget);
+    expect(find.text('Accept'), findsOneWidget);
+    expect(find.text('Decline'), findsOneWidget);
+    expect(find.text('Connecting...'), findsNothing);
+    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
   });
 
   testWidgets('started launchAction event opens session-driven call screen',
@@ -732,6 +812,62 @@ void main() {
     await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
   });
 
+  testWidgets('startup decision keeps plain ringing cold start on home',
+      (tester) async {
+    fakePlatform.activeCallIds = <String>[_FakePlatform.callId];
+    fakePlatform.activeCallSnapshots = <platform.CallEventDto>[
+      platform.CallEventDto(
+        callId: _FakePlatform.callId,
+        type: platform.CallEventType.incoming,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    ];
+
+    final startupDecision =
+        await CallwaveFlutter.instance.prepareStartupRouteDecision();
+    await tester.pumpWidget(
+      CallwaveExampleApp(startupDecision: startupDecision),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(startupDecision.shouldOpenCall, isFalse);
+    expect(find.byType(CallScreen), findsNothing);
+    expect(find.byType(ExampleVideoCallScreen), findsNothing);
+    expect(find.text('Incoming Video'), findsOneWidget);
+    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+  });
+
+  testWidgets(
+      'startup decision routes explicit incoming cold start directly to call',
+      (tester) async {
+    fakePlatform.activeCallIds = <String>[_FakePlatform.callId];
+    fakePlatform.activeCallSnapshots = <platform.CallEventDto>[
+      platform.CallEventDto(
+        callId: _FakePlatform.callId,
+        type: platform.CallEventType.incoming,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        extra: const <String, dynamic>{
+          CallEventExtraKeys.launchAction:
+              CallEventExtraKeys.launchActionOpenIncoming,
+        },
+      ),
+    ];
+
+    final startupDecision =
+        await CallwaveFlutter.instance.prepareStartupRouteDecision();
+    await tester.pumpWidget(
+      CallwaveExampleApp(startupDecision: startupDecision),
+    );
+    await _pumpUntilCallScreen(tester);
+
+    expect(startupDecision.shouldOpenCall, isTrue);
+    expect(startupDecision.sessionState, CallSessionState.ringing);
+    expect(find.byType(CallScreen), findsOneWidget);
+    expect(find.text('Accept'), findsOneWidget);
+    expect(find.text('Connecting...'), findsNothing);
+    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+  });
+
   testWidgets('startup decision routes started cold start directly to call',
       (tester) async {
     fakePlatform.activeCallIds = <String>[_FakePlatform.callId];
@@ -757,6 +893,142 @@ void main() {
     await tester.pump();
     await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
   });
+
+  testWidgets('missed-call startup action opens home and preserves context',
+      (tester) async {
+    const startupDecision = CallStartupRouteDecision.pendingAction(
+      CallStartupAction(
+        type: CallStartupActionType.openMissedCall,
+        callId: 'missed-open-1',
+        callerName: 'Ava',
+        handle: '+1 555 0101',
+      ),
+    );
+
+    await tester.pumpWidget(
+      const CallwaveExampleApp(startupDecision: startupDecision),
+    );
+    await tester.pump();
+
+    expect(find.text('Callwave Example'), findsOneWidget);
+    expect(find.byType(CallScreen), findsNothing);
+    expect(find.byKey(const ValueKey<String>('pending-startup-action-card')),
+        findsOneWidget);
+    expect(find.text('Missed Call'), findsOneWidget);
+    expect(find.textContaining('Ava'), findsWidgets);
+
+    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+  });
+
+  testWidgets('callback startup action starts outgoing video call',
+      (tester) async {
+    const startupDecision = CallStartupRouteDecision.pendingAction(
+      CallStartupAction(
+        type: CallStartupActionType.callback,
+        callId: 'missed-callback-1',
+        callerName: 'Ava',
+        handle: '+1 555 0101',
+        callType: CallType.video,
+      ),
+    );
+
+    await tester.pumpWidget(
+      CallwaveExampleApp(
+        startupDecision: startupDecision,
+        cameraController: fakeCamera,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Call Back'), findsOneWidget);
+    await _tapVisibleTextButton(tester, 'Start Callback');
+    await tester.pump();
+    await _pumpUntilCallScreen(tester);
+
+    expect(fakePlatform.lastOutgoingCallData, isNotNull);
+    expect(
+        fakePlatform.lastOutgoingCallData!.callType, platform.CallType.video);
+    expect(
+      fakePlatform.lastOutgoingCallData!.callId,
+      isNot('missed-callback-1'),
+    );
+    expect(find.byType(ExampleVideoCallScreen), findsOneWidget);
+
+    for (final session in CallwaveFlutter.instance.activeSessions) {
+      session.reportEnded();
+    }
+    await tester.pump(const Duration(seconds: 4));
+    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+  });
+
+  testWidgets('conference callback startup opens conference UI',
+      (tester) async {
+    const startupDecision = CallStartupRouteDecision.pendingAction(
+      CallStartupAction(
+        type: CallStartupActionType.callback,
+        callId: 'missed-callback-conference',
+        callerName: 'Ava',
+        handle: '+1 555 0101',
+        callType: CallType.audio,
+        extra: <String, dynamic>{'roomType': 'conference'},
+      ),
+    );
+
+    await tester.pumpWidget(
+      const CallwaveExampleApp(startupDecision: startupDecision),
+    );
+    await tester.pump();
+
+    await _tapVisibleTextButton(tester, 'Start Callback');
+    await tester.pump();
+    await _pumpUntilCallScreen(tester);
+
+    expect(fakePlatform.lastOutgoingCallData, isNotNull);
+    expect(
+      fakePlatform.lastOutgoingCallData!.extra?['roomType'],
+      'conference',
+    );
+    expect(
+        find.byKey(const ValueKey<String>('conference-view')), findsOneWidget);
+
+    for (final session in CallwaveFlutter.instance.activeSessions) {
+      session.reportEnded();
+    }
+    await tester.pump(const Duration(seconds: 4));
+    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+  });
+
+  testWidgets('warm callback event reuses callback composer flow',
+      (tester) async {
+    await tester.pumpWidget(const CallwaveExampleApp());
+    await tester.pump();
+
+    fakePlatform.emit(
+      type: platform.CallEventType.callback,
+      extra: const <String, dynamic>{
+        'callerName': 'Ava',
+        'handle': '+1 555 0101',
+        'callType': 'audio',
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Call Back'), findsOneWidget);
+    await _tapVisibleTextButton(tester, 'Start Callback');
+    await tester.pump();
+    await _pumpUntilCallScreen(tester);
+
+    expect(fakePlatform.lastOutgoingCallData, isNotNull);
+    expect(
+        fakePlatform.lastOutgoingCallData!.callType, platform.CallType.audio);
+
+    for (final session in CallwaveFlutter.instance.activeSessions) {
+      session.reportEnded();
+    }
+    await tester.pump(const Duration(seconds: 4));
+    await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
+  });
 }
 
 Future<void> _pumpUntilCallScreen(WidgetTester tester) async {
@@ -767,6 +1039,12 @@ Future<void> _pumpUntilCallScreen(WidgetTester tester) async {
       return;
     }
   }
+}
+
+Future<void> _tapVisibleTextButton(WidgetTester tester, String label) async {
+  final finder = find.text(label);
+  await tester.ensureVisible(finder);
+  await tester.tap(finder);
 }
 
 Future<void> _disposeRenderedApp(
@@ -794,6 +1072,13 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
       const <platform.CallEventDto>[];
   platform.CallDataDto? lastIncomingCallData;
   platform.CallDataDto? lastOutgoingCallData;
+  String? lastConfirmedCallId;
+  String? lastMarkedMissedCallId;
+  Map<String, dynamic>? lastMarkedMissedExtra;
+  int? lastBackgroundDispatcherHandle;
+  int? lastBackgroundCallbackHandle;
+  int? lastBackgroundDeclineCallbackHandle;
+  platform.CallStartupActionDto? pendingStartupAction;
   int incomingCallCount = 0;
   int outgoingCallCount = 0;
   Completer<void>? pendingIncomingCallCompleter;
@@ -859,6 +1144,29 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   Future<void> acceptCall(String callId) async {}
 
   @override
+  Future<void> registerBackgroundIncomingCallValidator({
+    required int backgroundDispatcherHandle,
+    int? backgroundCallbackHandle,
+    int? backgroundDeclineCallbackHandle,
+  }) async {
+    lastBackgroundDispatcherHandle = backgroundDispatcherHandle;
+    lastBackgroundCallbackHandle = backgroundCallbackHandle;
+    lastBackgroundDeclineCallbackHandle = backgroundDeclineCallbackHandle;
+  }
+
+  @override
+  Future<void> clearBackgroundIncomingCallValidator() async {
+    lastBackgroundDispatcherHandle = null;
+    lastBackgroundCallbackHandle = null;
+    lastBackgroundDeclineCallbackHandle = null;
+  }
+
+  @override
+  Future<void> confirmAcceptedCall(String callId) async {
+    lastConfirmedCallId = callId;
+  }
+
+  @override
   Future<void> declineCall(String callId) async {}
 
   @override
@@ -881,10 +1189,24 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   }
 
   @override
+  Future<platform.CallStartupActionDto?> takePendingStartupAction() async {
+    final action = pendingStartupAction;
+    pendingStartupAction = null;
+    return action;
+  }
+
+  @override
   Future<void> initialize() async {}
 
   @override
-  Future<void> markMissed(String callId) async {}
+  Future<void> markMissed(
+    String callId, {
+    Map<String, dynamic>? extra,
+  }) async {
+    lastMarkedMissedCallId = callId;
+    lastMarkedMissedExtra = extra;
+    emit(type: platform.CallEventType.missed, extra: extra);
+  }
 
   @override
   Future<void> requestFullScreenIntentPermission() async {}

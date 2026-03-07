@@ -38,6 +38,39 @@ class CallwaveMethodHandler(
                 result.success(null)
             }
 
+            "registerBackgroundIncomingCallValidator" -> {
+                val dispatcherHandle = call.argument<Number>(
+                    CallwaveConstants.EXTRA_BACKGROUND_DISPATCHER_HANDLE,
+                )?.toLong()
+                val acceptCallbackHandle = call.argument<Number>(
+                    CallwaveConstants.EXTRA_BACKGROUND_CALLBACK_HANDLE,
+                )?.toLong()
+                val declineCallbackHandle = call.argument<Number>(
+                    CallwaveConstants.EXTRA_BACKGROUND_DECLINE_CALLBACK_HANDLE,
+                )?.toLong()
+                if (dispatcherHandle == null ||
+                    (acceptCallbackHandle == null && declineCallbackHandle == null)
+                ) {
+                    result.error(
+                        "invalid_background_validator",
+                        "Dispatcher handle and at least one callback handle are required",
+                        null,
+                    )
+                    return
+                }
+                callManager.registerBackgroundIncomingCallValidator(
+                    backgroundDispatcherHandle = dispatcherHandle,
+                    backgroundAcceptCallbackHandle = acceptCallbackHandle,
+                    backgroundDeclineCallbackHandle = declineCallbackHandle,
+                )
+                result.success(null)
+            }
+
+            "clearBackgroundIncomingCallValidator" -> {
+                callManager.clearBackgroundIncomingCallValidator()
+                result.success(null)
+            }
+
             "endCall" -> {
                 val callId = call.argument<String>(CallwaveConstants.EXTRA_CALL_ID)
                 if (callId.isNullOrBlank()) {
@@ -58,6 +91,23 @@ class CallwaveMethodHandler(
                     result.error(
                         "invalid_call_id",
                         "No active incoming call found for callId=$callId",
+                        null,
+                    )
+                    return
+                }
+                result.success(null)
+            }
+
+            "confirmAcceptedCall" -> {
+                val callId = call.argument<String>(CallwaveConstants.EXTRA_CALL_ID)
+                if (callId.isNullOrBlank()) {
+                    result.error("invalid_call_id", "callId is required", null)
+                    return
+                }
+                if (!callManager.confirmAcceptedCall(callId)) {
+                    result.error(
+                        "invalid_call_id",
+                        "No active accepted call found for callId=$callId",
                         null,
                     )
                     return
@@ -88,7 +138,36 @@ class CallwaveMethodHandler(
                     result.error("invalid_call_id", "callId is required", null)
                     return
                 }
-                callManager.markMissed(callId)
+                val extra = (call.argument<Map<*, *>>(CallwaveConstants.EXTRA_EXTRA))
+                    ?.entries
+                    ?.associate { it.key.toString() to it.value }
+                callManager.markMissed(callId, extra)
+                result.success(null)
+            }
+
+            "syncCallConnectedState" -> {
+                val callId = call.argument<String>(CallwaveConstants.EXTRA_CALL_ID)
+                val connectedAtMs =
+                    call.argument<Number>(CallwaveConstants.EXTRA_CONNECTED_AT_MS)?.toLong()
+                if (callId.isNullOrBlank() || connectedAtMs == null || connectedAtMs <= 0L) {
+                    result.error(
+                        "invalid_connected_state",
+                        "callId and connectedAtMs are required",
+                        null,
+                    )
+                    return
+                }
+                callManager.syncCallConnectedState(callId, connectedAtMs)
+                result.success(null)
+            }
+
+            "clearCallState" -> {
+                val callId = call.argument<String>(CallwaveConstants.EXTRA_CALL_ID)
+                if (callId.isNullOrBlank()) {
+                    result.error("invalid_call_id", "callId is required", null)
+                    return
+                }
+                callManager.clearCallState(callId)
                 result.success(null)
             }
 
@@ -103,6 +182,10 @@ class CallwaveMethodHandler(
             "syncActiveCallsToEvents" -> {
                 callManager.syncActiveCallsToEvents()
                 result.success(null)
+            }
+
+            "takePendingStartupAction" -> {
+                result.success(callManager.takePendingStartupAction())
             }
 
             "requestNotificationPermission" -> {

@@ -23,7 +23,8 @@ enum _SessionToggleControl { mute, speaker, camera }
 /// Apps receive [CallSession] from [CallwaveFlutter.sessions] or
 /// [CallwaveFlutter.getSession]. Do not construct directly.
 ///
-/// Lifecycle: idle → ringing → connecting → connected → ended/failed.
+/// Lifecycle: idle → ringing → validating → connecting → connected →
+/// ended/failed.
 /// Use [state], [elapsed], [isMuted], etc. to drive [CallScreen].
 /// Call [reportConnected], [reportEnded], etc. from your [CallwaveEngine]
 /// to update state.
@@ -33,6 +34,7 @@ class CallSession extends ChangeNotifier {
     required this.isOutgoing,
     CallSessionState initialState = CallSessionState.idle,
     ConferenceState initialConferenceState = ConferenceState.empty,
+    DateTime? initialConnectedAt,
     _CallwaveEngineProvider? engineProvider,
     _CallIdAction? acceptNative,
     _CallIdAction? declineNative,
@@ -40,14 +42,17 @@ class CallSession extends ChangeNotifier {
     _OutgoingStartAction? startOutgoingNative,
   })  : _callData = callData,
         _state = initialState,
+        _connectedAt = initialConnectedAt,
         _conferenceState = _normalizeConferenceState(initialConferenceState),
         _engineProvider = engineProvider ?? _defaultEngineProvider,
         _acceptNative = acceptNative ?? _defaultCallIdAction,
         _declineNative = declineNative ?? _defaultCallIdAction,
         _endNative = endNative ?? _defaultCallIdAction,
         _startOutgoingNative = startOutgoingNative ?? _defaultOutgoingAction {
-    if (_state == CallSessionState.connected) {
-      _connectedAt = DateTime.now();
+    if (_state == CallSessionState.connected ||
+        (_state == CallSessionState.reconnecting && _connectedAt != null)) {
+      _connectedAt ??= DateTime.now();
+      _elapsed = DateTime.now().difference(_connectedAt!);
       _startTimerIfNeeded();
     }
   }
@@ -84,6 +89,7 @@ class CallSession extends ChangeNotifier {
   bool _startRequested = false;
   bool _answerEngineInvoked = false;
   bool _startEngineInvoked = false;
+  bool _resumeEngineInvoked = false;
   bool _endEngineInvoked = false;
   bool _declineEngineInvoked = false;
   bool _disposed = false;
@@ -97,6 +103,7 @@ class CallSession extends ChangeNotifier {
   DateTime? get connectedAt => _connectedAt;
   Duration get elapsed => _elapsed;
   Object? get error => _error;
+  bool get didAttemptResume => _resumeEngineInvoked;
   ConferenceState get conferenceState => _conferenceState;
   int get participantCount => _conferenceState.participants.length;
   bool get isEnded =>
@@ -279,20 +286,9 @@ class CallSession extends ChangeNotifier {
         reportRinging();
         return;
       case CallEventType.accepted:
-        if (_state == CallSessionState.connected ||
-            _state == CallSessionState.reconnecting) {
-          return;
-        }
-        reportConnecting();
-        await _invokeAnswerEngineOnce();
         return;
       case CallEventType.started:
-        if (_state == CallSessionState.connected ||
-            _state == CallSessionState.reconnecting) {
-          return;
-        }
-        reportConnecting();
-        await _invokeStartEngineOnce();
+        await beginOutgoingStart();
         return;
       case CallEventType.ended:
         reportEnded();
@@ -304,7 +300,8 @@ class CallSession extends ChangeNotifier {
       case CallEventType.timeout:
       case CallEventType.missed:
         if (_state == CallSessionState.idle ||
-            _state == CallSessionState.ringing) {
+            _state == CallSessionState.ringing ||
+            _state == CallSessionState.validating) {
           reportEnded();
         }
         return;
@@ -314,6 +311,8 @@ class CallSession extends ChangeNotifier {
   }
 
   void reportRinging() => _transitionTo(CallSessionState.ringing);
+
+  void reportValidating() => _transitionTo(CallSessionState.validating);
 
   void reportConnecting() => _transitionTo(CallSessionState.connecting);
 
@@ -326,6 +325,46 @@ class CallSession extends ChangeNotifier {
   void reportFailed([Object? error]) {
     _error = error ?? StateError('Call session failed.');
     _transitionTo(CallSessionState.failed);
+  }
+
+  Future<void> beginAnswering() async {
+    if (_state == CallSessionState.connected ||
+        _state == CallSessionState.reconnecting) {
+      return;
+    }
+    reportConnecting();
+    await _invokeAnswerEngineOnce();
+  }
+
+  Future<void> beginOutgoingStart() async {
+    if (_state == CallSessionState.connected ||
+        _state == CallSessionState.reconnecting) {
+      return;
+    }
+    reportConnecting();
+    await _invokeStartEngineOnce();
+  }
+
+  /// Resumes a previously ongoing call after cold start; invokes [CallwaveEngine.onResumeCall].
+  Future<void> beginResume() async {
+    if (isEnded || _resumeEngineInvoked) {
+      return;
+    }
+    reportReconnecting();
+    await _invokeResumeEngineOnce();
+  }
+
+  /// Updates [connectedAt] and [elapsed] for restored ongoing calls.
+  void restoreConnectedTimeline(DateTime connectedAt) {
+    if (isEnded) {
+      return;
+    }
+    if (_connectedAt == null || connectedAt.isBefore(_connectedAt!)) {
+      _connectedAt = connectedAt;
+    }
+    _elapsed = DateTime.now().difference(_connectedAt!);
+    _startTimerIfNeeded();
+    notifyListeners();
   }
 
   Future<void> _invokeAnswerEngineOnce() async {
@@ -350,6 +389,19 @@ class CallSession extends ChangeNotifier {
       await _engineProvider()?.onStartCall(this);
     } catch (error, stackTrace) {
       _logError('onStartCall', error, stackTrace);
+      reportFailed(error);
+    }
+  }
+
+  Future<void> _invokeResumeEngineOnce() async {
+    if (_resumeEngineInvoked || isEnded) {
+      return;
+    }
+    _resumeEngineInvoked = true;
+    try {
+      await _engineProvider()?.onResumeCall(this);
+    } catch (error, stackTrace) {
+      _logError('onResumeCall', error, stackTrace);
       reportFailed(error);
     }
   }
@@ -383,7 +435,8 @@ class CallSession extends ChangeNotifier {
       return;
     }
     _state = next;
-    if (next == CallSessionState.connected) {
+    if (next == CallSessionState.connected ||
+        (next == CallSessionState.reconnecting && _connectedAt != null)) {
       _connectedAt ??= DateTime.now();
       _elapsed = DateTime.now().difference(_connectedAt!);
       _startTimerIfNeeded();

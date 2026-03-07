@@ -78,7 +78,12 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final navKey = GlobalKey<NavigatorState>();
-  CallwaveFlutter.instance.setEngine(MyCallwaveEngine());
+  CallwaveFlutter.instance.configure(
+    CallwaveConfiguration(
+      engine: MyCallwaveEngine(),
+      incomingCallHandling: const IncomingCallHandling.realtime(),
+    ),
+  );
   final startup = await CallwaveFlutter.instance.prepareStartupRouteDecision();
 
   runApp(
@@ -101,16 +106,115 @@ Future<void> main() async {
 }
 ```
 
+`setEngine(engine)` still works and keeps the same realtime behavior for apps
+that do not need extra configuration.
+
+Calling `configure(...)` or `setEngine(...)` again resets the singleton's
+tracked sessions. Treat it as startup/setup configuration, not something to
+switch while a call is already active.
+
+## Incoming Call Models
+
+callwave_flutter now supports two explicit incoming-call behaviors.
+
+### 1. Realtime
+
+Use this for WhatsApp-style signaling where the caller can cancel the ring
+before answer and native `accepted` should immediately continue into the
+in-app call flow.
+
+```dart
+CallwaveFlutter.instance.configure(
+  CallwaveConfiguration(
+    engine: MyCallwaveEngine(),
+    incomingCallHandling: const IncomingCallHandling.realtime(),
+  ),
+);
+```
+
+Flow:
+
+- Native accept arrives.
+- The package confirms the accepted call.
+- Session moves to `connecting`.
+- `onAnswerCall()` runs and `CallwaveScope` can open the call UI.
+
+### 2. Validated
+
+Use this for push-driven ringing where the user may accept after the call is
+already cancelled, ended, or expired on the backend.
+
+```dart
+CallwaveFlutter.instance.configure(
+  CallwaveConfiguration(
+    engine: MyCallwaveEngine(),
+    incomingCallHandling: IncomingCallHandling.validated(
+      validator: (session) async {
+        final isStillActive = await api.validateIncomingAccept(session.callId);
+        if (isStillActive) {
+          return const CallAcceptDecision.allow();
+        }
+        return const CallAcceptDecision.reject(
+          reason: CallAcceptRejectReason.cancelled,
+        );
+      },
+    ),
+    backgroundIncomingCallDeclineValidator: (request) async {
+      final didReport = await api.reportDeclinedCall(request.callId);
+      if (didReport) {
+        return const CallDeclineDecision.reported();
+      }
+      return const CallDeclineDecision.failed(
+        reason: CallDeclineFailureReason.failed,
+      );
+    },
+  ),
+);
+```
+
+Flow:
+
+- Native accept arrives.
+- Session moves to `validating` and stays off the full call screen.
+- If validation allows, the package confirms the accepted call, moves the
+  session to `connecting`, and runs `onAnswerCall()`.
+- If validation rejects, the package emits missed-call handling with
+  `CallEventExtraKeys.outcomeReason` and does not open the call screen.
+- On Android, background validated rejects stay off the foreground; terminated
+  validated rejects run through a transient native bridge and can resolve
+  directly to missed-call handling when a background validator is registered.
+- When the user declines from native UI while Flutter is not alive, a registered
+  `backgroundIncomingCallDeclineValidator` runs in a headless isolate. If it
+  fails, throws, or times out, the plugin falls back to missed-call handling.
+
 ## Cold Start
 
 `prepareStartupRouteDecision()` restores active sessions and returns a route
 decision:
 
 - Open call route when a session is `connecting`, `connected`, or `reconnecting`.
-- Stay on home route when sessions are only `ringing`/`idle`, or none exist.
+- Open call route for `ringing` only when the native layer explicitly launched
+  the app for that incoming call (for example, tapping the Android incoming
+  call body or reopening a still-ringing CallKit call on iOS).
+- Stay on home route when sessions are only ordinary `ringing`, `idle`,
+  `validating`, or none exist.
 
 If your app does not use startup routing in `main`, `CallwaveScope` still
-auto-pushes `CallScreen` as fallback.
+auto-pushes `CallScreen` as fallback once a live session becomes routable. On
+startup hydration it keeps ordinary restored `ringing` sessions on home unless
+the native event explicitly requested the incoming call UI.
+
+On Android, keep these intent actions on your host `Activity` so the plugin can
+reopen the correct screen:
+
+```xml
+<intent-filter>
+    <action android:name="com.callwave.flutter.methodchannel.ACTION_ACCEPT_AND_OPEN" />
+    <action android:name="com.callwave.flutter.methodchannel.ACTION_OPEN_INCOMING" />
+    <action android:name="com.callwave.flutter.methodchannel.ACTION_OPEN_ONGOING" />
+    <category android:name="android.intent.category.DEFAULT" />
+</intent-filter>
+```
 
 ## CallScreen
 
@@ -257,6 +361,9 @@ oneToOneLocalVideoBuilder: (context, session) {
 
 - Native accept/decline/end remains authoritative.
 - `CallSession` is the single source of truth for UI state.
+- Accepted events may include `CallEventExtraKeys.acceptanceState` with
+  `pendingValidation` or `confirmed`.
+- Missed/rejected validation flows surface `CallEventExtraKeys.outcomeReason`.
 - `CallwaveScope` auto-pushes one call screen per `callId` and does not auto-pop.
 - `CallwaveScope.navigatorKey` must be the same key used by your app's `MaterialApp`.
 - `CallwaveEngine` must be set before session operations (including `restoreActiveSessions`).

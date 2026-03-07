@@ -36,4 +36,179 @@ void main() {
     final args = calls.last.arguments as Map<dynamic, dynamic>;
     expect(args[PayloadCodec.keyPostCallBehavior], 'backgroundOnEnded');
   });
+
+  test('confirmAcceptedCall sends method channel payload', () async {
+    const channel = MethodChannel('callwave_flutter/methods');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+
+    final plugin = MethodChannelCallwaveFlutter();
+    await plugin.confirmAcceptedCall('c-123');
+
+    expect(calls.map((call) => call.method), <String>[
+      'initialize',
+      'confirmAcceptedCall',
+    ]);
+
+    final args = calls.last.arguments as Map<dynamic, dynamic>;
+    expect(args[PayloadCodec.keyCallId], 'c-123');
+  });
+
+  test(
+      'registerBackgroundIncomingCallValidator sends accept and decline callback handles',
+      () async {
+    const channel = MethodChannel('callwave_flutter/methods');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+
+    final plugin = MethodChannelCallwaveFlutter();
+    await plugin.registerBackgroundIncomingCallValidator(
+      backgroundDispatcherHandle: 101,
+      backgroundCallbackHandle: 202,
+      backgroundDeclineCallbackHandle: 303,
+    );
+
+    expect(calls.map((call) => call.method), <String>[
+      'initialize',
+      'registerBackgroundIncomingCallValidator',
+    ]);
+
+    final args = calls.last.arguments as Map<dynamic, dynamic>;
+    expect(args[PayloadCodec.keyBackgroundDispatcherHandle], 101);
+    expect(args[PayloadCodec.keyBackgroundCallbackHandle], 202);
+    expect(args[PayloadCodec.keyBackgroundDeclineCallbackHandle], 303);
+  });
+
+  test('markMissed sends optional extra metadata', () async {
+    const channel = MethodChannel('callwave_flutter/methods');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+
+    final plugin = MethodChannelCallwaveFlutter();
+    await plugin.markMissed(
+      'c-456',
+      extra: const <String, dynamic>{'outcomeReason': 'cancelled'},
+    );
+
+    expect(calls.map((call) => call.method), <String>[
+      'initialize',
+      'markMissed',
+    ]);
+
+    final args = calls.last.arguments as Map<dynamic, dynamic>;
+    expect(args[PayloadCodec.keyCallId], 'c-456');
+    expect(
+      args[PayloadCodec.keyExtra],
+      const <String, dynamic>{'outcomeReason': 'cancelled'},
+    );
+  });
+
+  test('syncCallConnectedState sends connected timestamp payload', () async {
+    const channel = MethodChannel('callwave_flutter/methods');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+
+    final plugin = MethodChannelCallwaveFlutter();
+    await plugin.syncCallConnectedState(
+      'c-789',
+      connectedAtMs: 1700000000000,
+    );
+
+    expect(calls.map((call) => call.method), <String>[
+      'initialize',
+      'syncCallConnectedState',
+    ]);
+
+    final args = calls.last.arguments as Map<dynamic, dynamic>;
+    expect(args[PayloadCodec.keyCallId], 'c-789');
+    expect(args[PayloadCodec.keyConnectedAtMs], 1700000000000);
+  });
+
+  test('clearCallState sends call id payload', () async {
+    const channel = MethodChannel('callwave_flutter/methods');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+
+    final plugin = MethodChannelCallwaveFlutter();
+    await plugin.clearCallState('c-clear-native');
+
+    expect(calls.map((call) => call.method), <String>[
+      'initialize',
+      'clearCallState',
+    ]);
+
+    final args = calls.last.arguments as Map<dynamic, dynamic>;
+    expect(args[PayloadCodec.keyCallId], 'c-clear-native');
+  });
+
+  test('takePendingStartupAction decodes startup action payload', () async {
+    const channel = MethodChannel('callwave_flutter/methods');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'takePendingStartupAction') {
+        return <String, dynamic>{
+          PayloadCodec.keyStartupActionType: 'callback',
+          PayloadCodec.keyCallId: 'missed-1',
+          PayloadCodec.keyCallerName: 'Ava',
+          PayloadCodec.keyHandle: '+1 555 0101',
+          PayloadCodec.keyCallType: 'video',
+          PayloadCodec.keyExtra: <String, dynamic>{'roomType': 'conference'},
+        };
+      }
+      return null;
+    });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+
+    final plugin = MethodChannelCallwaveFlutter();
+    final action = await plugin.takePendingStartupAction();
+
+    expect(action, isNotNull);
+    expect(action!.type, CallStartupActionType.callback);
+    expect(action.callId, 'missed-1');
+    expect(action.callType, CallType.video);
+    expect(action.extra, <String, dynamic>{'roomType': 'conference'});
+  });
 }

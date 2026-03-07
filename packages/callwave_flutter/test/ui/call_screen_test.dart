@@ -473,6 +473,36 @@ void main() {
     await _pumpThroughAutoDismiss(tester);
   });
 
+  testWidgets('failed restored call shows unable to rejoin message', (
+    tester,
+  ) async {
+    final session = CallSession(
+      callData: const CallData(
+        callId: 'test-call-id',
+        callerName: 'Ava',
+        handle: '+1 555 0101',
+      ),
+      isOutgoing: false,
+      initialState: CallSessionState.reconnecting,
+      initialConnectedAt: DateTime.now().subtract(const Duration(seconds: 20)),
+      engineProvider: () => _ThrowingResumeEngine(),
+    );
+    addTearDown(session.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CallScreen(session: session),
+      ),
+    );
+    await tester.pump();
+
+    await session.beginResume();
+    await tester.pump();
+
+    expect(find.text('Unable to rejoin call'), findsOneWidget);
+    await _pumpThroughAutoDismiss(tester);
+  });
+
   testWidgets('non-string local display name extra falls back safely', (
     tester,
   ) async {
@@ -747,4 +777,38 @@ void _expectDetachedPipLayout({
   expect(pipRect.right, lessThanOrEqualTo(screenRect.right + tolerance));
   expect(pipRect.bottom, lessThanOrEqualTo(screenRect.bottom + tolerance));
   expect(pipRect.bottom, lessThanOrEqualTo(controlsRect.top + tolerance));
+}
+
+class _ThrowingResumeEngine extends CallwaveEngine {
+  @override
+  Future<void> onAnswerCall(CallSession session) async {}
+
+  @override
+  Future<void> onStartCall(CallSession session) async {}
+
+  @override
+  Future<void> onResumeCall(CallSession session) async {
+    throw StateError('resume failed');
+  }
+
+  @override
+  Future<void> onEndCall(CallSession session) async {}
+
+  @override
+  Future<void> onDeclineCall(CallSession session) async {}
+
+  @override
+  Future<void> onMuteChanged(CallSession session, bool muted) async {}
+
+  @override
+  Future<void> onSpeakerChanged(CallSession session, bool speakerOn) async {}
+
+  @override
+  Future<void> onCameraChanged(CallSession session, bool enabled) async {}
+
+  @override
+  Future<void> onCameraSwitch(CallSession session) async {}
+
+  @override
+  Future<void> onDispose(CallSession session) async {}
 }

@@ -6,7 +6,8 @@ import 'call_session.dart';
 /// actual call logic. The package handles native notifications, CallKit,
 /// and session state; you handle connection, media, and signaling.
 ///
-/// Must be set via [CallwaveFlutter.setEngine] before any session operations.
+/// Must be set via [CallwaveFlutter.setEngine] or [CallwaveFlutter.configure]
+/// before any session operations.
 abstract class CallwaveEngine {
   /// Called when the user accepts an incoming call.
   ///
@@ -19,6 +20,18 @@ abstract class CallwaveEngine {
   /// Initiate your call here, then call [CallSession.reportConnected]
   /// when the connection is established.
   Future<void> onStartCall(CallSession session);
+
+  /// Called when the app restores a previously ongoing call after a cold start.
+  ///
+  /// Default behavior falls back to the existing fresh-call hooks so current
+  /// integrations keep working without changes.
+  Future<void> onResumeCall(CallSession session) async {
+    if (session.isOutgoing) {
+      await onStartCall(session);
+      return;
+    }
+    await onAnswerCall(session);
+  }
 
   /// Called when the call ends (user or remote).
   ///

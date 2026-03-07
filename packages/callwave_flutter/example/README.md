@@ -18,6 +18,14 @@ flutter run
 5. Tap `Accept` or `Decline` from that custom UI.
 6. Check the in-app event log.
 
+Incoming flow selector:
+- `Realtime` keeps the old behavior: native accept goes straight into
+  `Connecting...` and opens the call screen.
+- `Validated Allow` waits for a short async validation, then opens the call.
+- `Validated Reject` waits for validation and then converts the accept into
+  missed-call handling without opening the call screen or forcing the app back
+  to foreground.
+
 Accepted ongoing notification checks (Android):
 - Accept an incoming call so the ongoing call notification appears.
 - Try to swipe the ongoing notification away. It should stay visible.
@@ -48,12 +56,15 @@ Note: the custom incoming screen trigger on notification/details tap is Android 
 Cold-start example:
 - Trigger `Incoming`.
 - Kill the app (or swipe it away).
-- Tap `Accept` on the incoming UI shown (native full-screen overlay when app was killed; custom Flutter UI if app was merely in background).
-- The app is brought to foreground, custom call UI opens in joined flow
-  (`Connecting...` then timer), and
-  an ongoing call notification is shown.
-- The ongoing notification cannot be swiped away and includes `End call`.
-- Confirm the event log contains one `accepted` event for that tap.
+- In `Realtime`, tap `Accept` on the incoming UI shown. The app opens the call
+  flow immediately and shows the ongoing call notification.
+- In `Validated Reject`, tap `Accept` on the incoming UI shown. The example
+  runs validation in a transient native Android bridge and resolves directly
+  into missed-call handling without showing the Flutter call UI.
+- In `Validated Allow`, tap `Accept` on the incoming UI shown. The example
+  waits for validation and then opens the call only after approval.
+- If the app was only in background, `Validated Reject` should stay off the
+  foreground and end in missed-call handling.
 
 Timeout behavior:
 - Foreground/background: if `CallScreen` is open and the call times out, the
