@@ -1,6 +1,6 @@
 name: callwave_flutter_platform_interface
 description: Platform interface for callwave_flutter. Defines the contract, DTOs, and wire serialization for the federated VoIP call UX plugin. Used by method channel and other platform implementations.
-version: 0.1.1
+version: 0.1.2
 homepage: https://github.com/Effdelorg/callwave_flutter
 repository: https://github.com/Effdelorg/callwave_flutter
 issue_tracker: https://github.com/Effdelorg/callwave_flutter/issues
