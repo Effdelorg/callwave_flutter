@@ -32,7 +32,7 @@ void main() {
     await tester.pumpWidget(const CallwaveExampleApp());
     await tester.pump();
 
-    expect(find.text('Callwave Example'), findsOneWidget);
+    expect(find.text('Callwave'), findsOneWidget);
     expect(find.text('Call ID'), findsOneWidget);
     await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 300));
   });
@@ -42,13 +42,13 @@ void main() {
     await tester.pumpWidget(const CallwaveExampleApp());
     await tester.pump();
 
-    expect(find.text('Incoming Audio'), findsOneWidget);
-    expect(find.text('Incoming Video'), findsOneWidget);
-    expect(find.text('Outgoing Audio'), findsOneWidget);
-    expect(find.text('Outgoing Video'), findsOneWidget);
-    expect(find.text('Conference Audio'), findsOneWidget);
-    expect(find.text('Conference Video'), findsOneWidget);
-    expect(find.text('Cycle Speaker'), findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.incomingAudio)), findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.incomingVideo)), findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.outgoingAudio)), findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.outgoingVideo)), findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.conferenceAudio)), findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.conferenceVideo)), findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.cycleSpeaker)), findsOneWidget);
 
     await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
   });
@@ -66,7 +66,7 @@ void main() {
     await tester.pumpWidget(const CallwaveExampleApp());
     await tester.pump();
 
-    await tester.tap(find.text('Conference Audio'));
+    await _tapKeyedButton(tester, CallDemoButtonKeys.conferenceAudio);
     await _pumpUntilCallScreen(tester);
 
     expect(find.byType(CallScreen), findsOneWidget);
@@ -91,7 +91,7 @@ void main() {
     await tester.pumpWidget(CallwaveExampleApp(cameraController: fakeCamera));
     await tester.pump();
 
-    await _tapVisibleTextButton(tester, 'Conference Video');
+    await _tapKeyedButton(tester, CallDemoButtonKeys.conferenceVideo);
     await _pumpUntilCallScreen(tester);
 
     expect(find.byType(CallScreen), findsOneWidget);
@@ -113,12 +113,12 @@ void main() {
 
   testWidgets('conference video renders preview only for local tile',
       (tester) async {
-    await tester.binding.setSurfaceSize(const Size(390, 844));
+    await tester.binding.setSurfaceSize(const Size(600, 844));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(CallwaveExampleApp(cameraController: fakeCamera));
     await tester.pump();
 
-    await _tapVisibleTextButton(tester, 'Conference Video');
+    await _tapKeyedButton(tester, CallDemoButtonKeys.conferenceVideo);
     await _pumpUntilCallScreen(tester);
     expect(find.byType(ExampleVideoCallScreen), findsOneWidget);
     final renderedScreen = tester
@@ -190,7 +190,7 @@ void main() {
     await tester.pumpWidget(CallwaveExampleApp(cameraController: fakeCamera));
     await tester.pump();
 
-    await _tapVisibleTextButton(tester, 'Conference Video');
+    await _tapKeyedButton(tester, CallDemoButtonKeys.conferenceVideo);
     await _pumpUntilCallScreen(tester);
     expect(find.byType(ExampleVideoCallScreen), findsOneWidget);
 
@@ -472,7 +472,7 @@ void main() {
     await tester.pumpWidget(CallwaveExampleApp(cameraController: fakeCamera));
     await tester.pump();
 
-    await tester.tap(find.text('Conference Video'));
+    await _tapKeyedButton(tester, CallDemoButtonKeys.conferenceVideo);
     await _pumpUntilCallScreen(tester);
     expect(find.byType(ExampleVideoCallScreen), findsOneWidget);
     await tester.pumpAndSettle(const Duration(milliseconds: 200));
@@ -494,7 +494,7 @@ void main() {
     await tester.pumpWidget(const CallwaveExampleApp());
     await tester.pump();
 
-    await tester.tap(find.text('Incoming Video'));
+    await _tapKeyedButton(tester, CallDemoButtonKeys.incomingVideo);
     await tester.pump();
     expect(fakePlatform.lastIncomingCallData, isNotNull);
     expect(
@@ -512,7 +512,7 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.text('Outgoing Audio'));
+    await _tapKeyedButton(tester, CallDemoButtonKeys.outgoingAudio);
     await tester.pump();
     expect(fakePlatform.lastOutgoingCallData, isNotNull);
     expect(
@@ -534,8 +534,8 @@ void main() {
     await tester.pumpWidget(const CallwaveExampleApp());
     await tester.pump();
 
-    await tester.tap(find.text('Incoming Video'));
-    await tester.tap(find.text('Incoming Video'));
+    await _tapKeyedButton(tester, CallDemoButtonKeys.incomingVideo);
+    await _tapKeyedButton(tester, CallDemoButtonKeys.incomingVideo);
     await tester.pump();
 
     expect(fakePlatform.incomingCallCount, 1);
@@ -569,6 +569,7 @@ void main() {
     await tester.pumpWidget(const CallwaveExampleApp());
     await tester.pump();
 
+    await tester.ensureVisible(find.text('Validated Reject'));
     await tester.tap(find.text('Validated Reject'));
     await tester.pumpAndSettle();
 
@@ -578,7 +579,7 @@ void main() {
 
     expect(find.byType(CallScreen), findsNothing);
     expect(find.byType(ExampleVideoCallScreen), findsNothing);
-    expect(find.text('Incoming Video'), findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.incomingVideo)), findsOneWidget);
     expect(fakePlatform.lastMarkedMissedCallId, _FakePlatform.callId);
     expect(
       fakePlatform.lastMarkedMissedExtra?[CallEventExtraKeys.outcomeReason],
@@ -594,6 +595,7 @@ void main() {
     await tester.pumpWidget(const CallwaveExampleApp());
     await tester.pump();
 
+    await tester.ensureVisible(find.text('Validated Allow'));
     await tester.tap(find.text('Validated Allow'));
     await tester.pumpAndSettle();
 
@@ -833,7 +835,7 @@ void main() {
     expect(startupDecision.shouldOpenCall, isFalse);
     expect(find.byType(CallScreen), findsNothing);
     expect(find.byType(ExampleVideoCallScreen), findsNothing);
-    expect(find.text('Incoming Video'), findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.incomingVideo)), findsOneWidget);
     await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
   });
 
@@ -910,11 +912,11 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Callwave Example'), findsOneWidget);
+    expect(find.text('Callwave'), findsOneWidget);
     expect(find.byType(CallScreen), findsNothing);
     expect(find.byKey(const ValueKey<String>('pending-startup-action-card')),
         findsOneWidget);
-    expect(find.text('Missed Call'), findsOneWidget);
+    expect(find.text('MISSED CALL'), findsOneWidget);
     expect(find.textContaining('Ava'), findsWidgets);
 
     await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
@@ -940,8 +942,8 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Call Back'), findsOneWidget);
-    await _tapVisibleTextButton(tester, 'Start Callback');
+    expect(find.text('CALLBACK REQUEST'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey<String>('start-callback-button')));
     await tester.pump();
     await _pumpUntilCallScreen(tester);
 
@@ -979,7 +981,7 @@ void main() {
     );
     await tester.pump();
 
-    await _tapVisibleTextButton(tester, 'Start Callback');
+    await tester.tap(find.byKey(const ValueKey<String>('start-callback-button')));
     await tester.pump();
     await _pumpUntilCallScreen(tester);
 
@@ -1014,8 +1016,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('Call Back'), findsOneWidget);
-    await _tapVisibleTextButton(tester, 'Start Callback');
+    expect(find.text('CALLBACK REQUEST'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey<String>('start-callback-button')));
     await tester.pump();
     await _pumpUntilCallScreen(tester);
 
@@ -1041,8 +1043,8 @@ Future<void> _pumpUntilCallScreen(WidgetTester tester) async {
   }
 }
 
-Future<void> _tapVisibleTextButton(WidgetTester tester, String label) async {
-  final finder = find.text(label);
+Future<void> _tapKeyedButton(WidgetTester tester, String key) async {
+  final finder = find.byKey(ValueKey(key));
   await tester.ensureVisible(finder);
   await tester.tap(finder);
 }

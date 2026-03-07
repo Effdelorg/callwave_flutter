@@ -822,6 +822,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                             children: <Widget>[
                               Expanded(
                                 child: _CallButton(
+                                  key: const ValueKey(CallDemoButtonKeys.incomingAudio),
                                   icon: Icons.call_received_rounded,
                                   label: 'Audio',
                                   color: const Color(0xFF2D8B4E),
@@ -838,6 +839,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                               const SizedBox(width: 10),
                               Expanded(
                                 child: _CallButton(
+                                  key: const ValueKey(CallDemoButtonKeys.incomingVideo),
                                   icon: Icons.video_call_rounded,
                                   label: 'Video',
                                   color: const Color(0xFF2D8B4E),
@@ -866,6 +868,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                             children: <Widget>[
                               Expanded(
                                 child: _CallButton(
+                                  key: const ValueKey(CallDemoButtonKeys.outgoingAudio),
                                   icon: Icons.call_made_rounded,
                                   label: 'Audio',
                                   color: const Color(0xFF2B6CB0),
@@ -882,6 +885,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                               const SizedBox(width: 10),
                               Expanded(
                                 child: _CallButton(
+                                  key: const ValueKey(CallDemoButtonKeys.outgoingVideo),
                                   icon: Icons.videocam_rounded,
                                   label: 'Video',
                                   color: const Color(0xFF2B6CB0),
@@ -944,6 +948,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                             children: <Widget>[
                               Expanded(
                                 child: _CallButton(
+                                  key: const ValueKey(CallDemoButtonKeys.conferenceAudio),
                                   icon: Icons.groups_rounded,
                                   label: 'Audio',
                                   color: const Color(0xFF6B46C1),
@@ -958,6 +963,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                               const SizedBox(width: 10),
                               Expanded(
                                 child: _CallButton(
+                                  key: const ValueKey(CallDemoButtonKeys.conferenceVideo),
                                   icon: Icons.duo_rounded,
                                   label: 'Video',
                                   color: const Color(0xFF6B46C1),
@@ -972,6 +978,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                               const SizedBox(width: 10),
                               Expanded(
                                 child: _CallButton(
+                                  key: const ValueKey(CallDemoButtonKeys.cycleSpeaker),
                                   icon: Icons.sync_rounded,
                                   label: 'Cycle\nSpeaker',
                                   color: const Color(0xFF6B46C1),
@@ -1875,8 +1882,20 @@ class _SectionCard extends StatelessWidget {
   }
 }
 
+/// Keys for test targeting. Exported for widget_test.dart.
+abstract final class CallDemoButtonKeys {
+  static const String incomingAudio = 'incoming-audio';
+  static const String incomingVideo = 'incoming-video';
+  static const String outgoingAudio = 'outgoing-audio';
+  static const String outgoingVideo = 'outgoing-video';
+  static const String conferenceAudio = 'conference-audio';
+  static const String conferenceVideo = 'conference-video';
+  static const String cycleSpeaker = 'cycle-speaker';
+}
+
 class _CallButton extends StatelessWidget {
   const _CallButton({
+    super.key,
     required this.icon,
     required this.label,
     required this.color,
