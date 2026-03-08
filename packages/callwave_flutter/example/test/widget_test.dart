@@ -42,13 +42,20 @@ void main() {
     await tester.pumpWidget(const CallwaveExampleApp());
     await tester.pump();
 
-    expect(find.byKey(const ValueKey(CallDemoButtonKeys.incomingAudio)), findsOneWidget);
-    expect(find.byKey(const ValueKey(CallDemoButtonKeys.incomingVideo)), findsOneWidget);
-    expect(find.byKey(const ValueKey(CallDemoButtonKeys.outgoingAudio)), findsOneWidget);
-    expect(find.byKey(const ValueKey(CallDemoButtonKeys.outgoingVideo)), findsOneWidget);
-    expect(find.byKey(const ValueKey(CallDemoButtonKeys.conferenceAudio)), findsOneWidget);
-    expect(find.byKey(const ValueKey(CallDemoButtonKeys.conferenceVideo)), findsOneWidget);
-    expect(find.byKey(const ValueKey(CallDemoButtonKeys.cycleSpeaker)), findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.incomingAudio)),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.incomingVideo)),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.outgoingAudio)),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.outgoingVideo)),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.conferenceAudio)),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.conferenceVideo)),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.cycleSpeaker)),
+        findsOneWidget);
 
     await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
   });
@@ -579,8 +586,10 @@ void main() {
 
     expect(find.byType(CallScreen), findsNothing);
     expect(find.byType(ExampleVideoCallScreen), findsNothing);
-    expect(find.byKey(const ValueKey(CallDemoButtonKeys.incomingVideo)), findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.incomingVideo)),
+        findsOneWidget);
     expect(fakePlatform.lastMarkedMissedCallId, _FakePlatform.callId);
+    expect(fakePlatform.lastClearedCallId, isNull);
     expect(
       fakePlatform.lastMarkedMissedExtra?[CallEventExtraKeys.outcomeReason],
       CallAcceptRejectReason.cancelled.name,
@@ -835,7 +844,8 @@ void main() {
     expect(startupDecision.shouldOpenCall, isFalse);
     expect(find.byType(CallScreen), findsNothing);
     expect(find.byType(ExampleVideoCallScreen), findsNothing);
-    expect(find.byKey(const ValueKey(CallDemoButtonKeys.incomingVideo)), findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.incomingVideo)),
+        findsOneWidget);
     await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
   });
 
@@ -943,7 +953,8 @@ void main() {
     await tester.pump();
 
     expect(find.text('CALLBACK REQUEST'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey<String>('start-callback-button')));
+    await tester
+        .tap(find.byKey(const ValueKey<String>('start-callback-button')));
     await tester.pump();
     await _pumpUntilCallScreen(tester);
 
@@ -981,7 +992,8 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.byKey(const ValueKey<String>('start-callback-button')));
+    await tester
+        .tap(find.byKey(const ValueKey<String>('start-callback-button')));
     await tester.pump();
     await _pumpUntilCallScreen(tester);
 
@@ -1017,7 +1029,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text('CALLBACK REQUEST'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey<String>('start-callback-button')));
+    await tester
+        .tap(find.byKey(const ValueKey<String>('start-callback-button')));
     await tester.pump();
     await _pumpUntilCallScreen(tester);
 
@@ -1077,6 +1090,7 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   String? lastConfirmedCallId;
   String? lastMarkedMissedCallId;
   Map<String, dynamic>? lastMarkedMissedExtra;
+  String? lastClearedCallId;
   int? lastBackgroundDispatcherHandle;
   int? lastBackgroundCallbackHandle;
   int? lastBackgroundDeclineCallbackHandle;
@@ -1208,6 +1222,11 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
     lastMarkedMissedCallId = callId;
     lastMarkedMissedExtra = extra;
     emit(type: platform.CallEventType.missed, extra: extra);
+  }
+
+  @override
+  Future<void> clearCallState(String callId) async {
+    lastClearedCallId = callId;
   }
 
   @override

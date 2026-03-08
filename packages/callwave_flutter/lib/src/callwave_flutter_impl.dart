@@ -36,6 +36,8 @@ class CallwaveFlutter {
   final Map<String, Timer> _sessionCleanupTimers = <String, Timer>{};
   final Map<String, int> _syncedConnectedAtMsByCallId = <String, int>{};
   final Map<String, int> _acceptFlowVersions = <String, int>{};
+  final Map<String, CallEventType> _terminalEventTypesByCallId =
+      <String, CallEventType>{};
   final Set<String> _acceptValidationsInFlight = <String>{};
   final Set<String> _announcedRoutableSessions = <String>{};
   final StreamController<CallSession> _sessionController =
@@ -70,6 +72,7 @@ class CallwaveFlutter {
     _disposeAllSessions();
     _syncedConnectedAtMsByCallId.clear();
     _acceptFlowVersions.clear();
+    _terminalEventTypesByCallId.clear();
     _acceptValidationsInFlight.clear();
     _announcedRoutableSessions.clear();
     _engine = configuration.engine;
@@ -134,6 +137,8 @@ class CallwaveFlutter {
         return existing;
       }
     }
+
+    _terminalEventTypesByCallId.remove(callData.callId);
 
     final session = CallSession(
       callData: callData,
@@ -418,6 +423,7 @@ class CallwaveFlutter {
       case CallEventType.ended:
       case CallEventType.timeout:
       case CallEventType.missed:
+        _recordTerminalEventType(event);
         _invalidateAcceptFlow(event.callId);
         final session = _sessions[event.callId];
         if (session != null) {
@@ -591,7 +597,9 @@ class CallwaveFlutter {
       _invalidateAcceptFlow(callId);
       _announcedRoutableSessions.remove(callId);
       _syncedConnectedAtMsByCallId.remove(callId);
-      unawaited(_clearNativeCallState(callId));
+      if (_shouldClearNativeCallStateOnSessionEnd(callId)) {
+        unawaited(_clearNativeCallState(callId));
+      }
       // Terminal states are absorbing; schedule cleanup once.
       if (_sessionCleanupTimers.containsKey(callId)) {
         return;
@@ -642,6 +650,7 @@ class CallwaveFlutter {
   void _disposeSession(String callId) {
     _sessionCleanupTimers.remove(callId)?.cancel();
     _invalidateAcceptFlow(callId);
+    _terminalEventTypesByCallId.remove(callId);
     _announcedRoutableSessions.remove(callId);
     _syncedConnectedAtMsByCallId.remove(callId);
     final session = _sessions.remove(callId);
@@ -661,6 +670,7 @@ class CallwaveFlutter {
     _sessionCleanupTimers.clear();
     _syncedConnectedAtMsByCallId.clear();
     _acceptFlowVersions.clear();
+    _terminalEventTypesByCallId.clear();
     _acceptValidationsInFlight.clear();
     _announcedRoutableSessions.clear();
 
@@ -847,6 +857,16 @@ class CallwaveFlutter {
     final nextVersion = (_acceptFlowVersions[callId] ?? 0) + 1;
     _acceptFlowVersions[callId] = nextVersion;
     return nextVersion;
+  }
+
+  void _recordTerminalEventType(CallEvent event) {
+    _terminalEventTypesByCallId[event.callId] = event.type;
+  }
+
+  bool _shouldClearNativeCallStateOnSessionEnd(String callId) {
+    final terminalEventType = _terminalEventTypesByCallId[callId];
+    return terminalEventType != CallEventType.missed &&
+        terminalEventType != CallEventType.timeout;
   }
 
   void _invalidateAcceptFlow(String callId) {
