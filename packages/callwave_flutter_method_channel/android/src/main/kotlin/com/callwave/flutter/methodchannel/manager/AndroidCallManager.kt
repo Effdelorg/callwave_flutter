@@ -1472,19 +1472,27 @@ class AndroidCallManager(
     private fun backgroundIncomingCallValidatorRegistrationFor(
         payload: CallPayload,
     ): BackgroundValidatorRegistrationStore.Registration? {
-        val payloadDispatcherHandle = payload.backgroundDispatcherHandle
-        val payloadAcceptCallbackHandle = payload.backgroundCallbackHandle
-        val payloadDeclineCallbackHandle = payload.backgroundDeclineCallbackHandle
-        if (payloadDispatcherHandle != null &&
-            (payloadAcceptCallbackHandle != null || payloadDeclineCallbackHandle != null)
+        val restored = currentBackgroundIncomingCallValidatorRegistration()
+        val payloadDispatcherHandle = payload.backgroundDispatcherHandle?.takeIf { it > 0L }
+        val payloadAcceptCallbackHandle = payload.backgroundCallbackHandle?.takeIf { it > 0L }
+        val payloadDeclineCallbackHandle =
+            payload.backgroundDeclineCallbackHandle?.takeIf { it > 0L }
+        val mergedDispatcherHandle = payloadDispatcherHandle
+            ?: restored?.backgroundDispatcherHandle
+        val mergedAcceptCallbackHandle = payloadAcceptCallbackHandle
+            ?: restored?.backgroundAcceptCallbackHandle
+        val mergedDeclineCallbackHandle = payloadDeclineCallbackHandle
+            ?: restored?.backgroundDeclineCallbackHandle
+        if (mergedDispatcherHandle != null &&
+            (mergedAcceptCallbackHandle != null || mergedDeclineCallbackHandle != null)
         ) {
             return BackgroundValidatorRegistrationStore.Registration(
-                backgroundDispatcherHandle = payloadDispatcherHandle,
-                backgroundAcceptCallbackHandle = payloadAcceptCallbackHandle,
-                backgroundDeclineCallbackHandle = payloadDeclineCallbackHandle,
+                backgroundDispatcherHandle = mergedDispatcherHandle,
+                backgroundAcceptCallbackHandle = mergedAcceptCallbackHandle,
+                backgroundDeclineCallbackHandle = mergedDeclineCallbackHandle,
             )
         }
-        return currentBackgroundIncomingCallValidatorRegistration()
+        return null
     }
 
     fun launchHostApp(

@@ -50,13 +50,15 @@ data class CallPayload(
                     as? String ?: CallwaveConstants.INCOMING_ACCEPT_STRATEGY_OPEN_IMMEDIATELY,
                 backgroundDispatcherHandle =
                     (args[CallwaveConstants.EXTRA_BACKGROUND_DISPATCHER_HANDLE] as? Number)
-                        ?.toLong(),
+                        ?.toLong()
+                        ?.takeIf { it > 0L },
                 backgroundCallbackHandle =
                     (args[CallwaveConstants.EXTRA_BACKGROUND_CALLBACK_HANDLE] as? Number)
-                        ?.toLong(),
+                        ?.toLong()
+                        ?.takeIf { it > 0L },
                 backgroundDeclineCallbackHandle =
                     (args[CallwaveConstants.EXTRA_BACKGROUND_DECLINE_CALLBACK_HANDLE]
-                        as? Number)?.toLong(),
+                        as? Number)?.toLong()?.takeIf { it > 0L },
             )
         }
 

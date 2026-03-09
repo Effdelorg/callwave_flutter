@@ -43,7 +43,51 @@ public class CallwaveFlutterPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
   static func registerPluginsForBackgroundEngine(
     _ registry: FlutterPluginRegistry
   ) {
-    backgroundFlutterPluginRegistrant?(registry)
+    if let backgroundFlutterPluginRegistrant {
+      backgroundFlutterPluginRegistrant(registry)
+      return
+    }
+    registerGeneratedPluginsForBackgroundEngine(registry)
+  }
+
+  private static func registerGeneratedPluginsForBackgroundEngine(
+    _ registry: FlutterPluginRegistry
+  ) {
+    let selector = NSSelectorFromString("registerWithRegistry:")
+    guard let generatedPluginRegistrantClass = generatedPluginRegistrantClass() else {
+      return
+    }
+    let generatedPluginRegistrantObject = generatedPluginRegistrantClass as AnyObject
+    guard generatedPluginRegistrantObject.responds(to: selector) else {
+      return
+    }
+    _ = generatedPluginRegistrantObject.perform(selector, with: registry)
+  }
+
+  private static func generatedPluginRegistrantClass() -> AnyClass? {
+    for candidate in generatedPluginRegistrantClassNames() {
+      if let generatedPluginRegistrantClass = NSClassFromString(candidate) {
+        return generatedPluginRegistrantClass
+      }
+    }
+    return nil
+  }
+
+  private static func generatedPluginRegistrantClassNames() -> [String] {
+    var candidates = ["GeneratedPluginRegistrant"]
+    if let bundleName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String {
+      candidates.append("\(normalizedSwiftModuleName(bundleName)).GeneratedPluginRegistrant")
+    }
+    if let executableName = Bundle.main.object(forInfoDictionaryKey: "CFBundleExecutable") as? String {
+      candidates.append("\(normalizedSwiftModuleName(executableName)).GeneratedPluginRegistrant")
+    }
+    return Array(NSOrderedSet(array: candidates)) as? [String] ?? candidates
+  }
+
+  private static func normalizedSwiftModuleName(_ value: String) -> String {
+    let invalidCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_")).inverted
+    let components = value.components(separatedBy: invalidCharacters).filter { !$0.isEmpty }
+    return components.joined(separator: "_")
   }
 
   private func installNotificationHandling() {
