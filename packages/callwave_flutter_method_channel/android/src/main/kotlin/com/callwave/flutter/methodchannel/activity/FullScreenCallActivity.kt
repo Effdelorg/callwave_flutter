@@ -11,6 +11,8 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.callwave.flutter.methodchannel.CallwaveConstants
+import com.callwave.flutter.methodchannel.CallwaveRuntime
+import com.callwave.flutter.methodchannel.model.CallPayload
 import com.callwave.flutter.methodchannel.receiver.CallActionReceiver
 
 class FullScreenCallActivity : AppCompatActivity() {
@@ -99,20 +101,40 @@ class FullScreenCallActivity : AppCompatActivity() {
         val decline = Button(this).apply {
             text = "Decline"
             setOnClickListener {
-                sendAction(
-                    action = CallwaveConstants.ACTION_DECLINE,
+                val payload = CallPayload(
                     callId = callId,
                     callerName = callerName,
                     handle = handle,
                     avatarUrl = avatarUrl,
                     timeoutSeconds = timeoutSeconds,
                     callType = callType,
-                    incomingAcceptStrategy = incomingAcceptStrategy,
-                    extra = extra,
+                    extra = CallPayload.fromIntentExtras(extra),
+                    incomingAcceptStrategy = incomingAcceptStrategy
+                        ?: CallwaveConstants.INCOMING_ACCEPT_STRATEGY_OPEN_IMMEDIATELY,
                     backgroundDispatcherHandle = backgroundDispatcherHandle,
                     backgroundCallbackHandle = backgroundCallbackHandle,
                     backgroundDeclineCallbackHandle = backgroundDeclineCallbackHandle,
                 )
+                CallwaveRuntime.ensureInitialized(applicationContext)
+                if (CallwaveRuntime.callManager.shouldHandleDeclineInBridge(payload)) {
+                    Log.d(TAG, "FullScreenCallActivity launching decline bridge for $callId.")
+                    CallwaveRuntime.callManager.launchDeclineReportBridge(payload)
+                } else {
+                    sendAction(
+                        action = CallwaveConstants.ACTION_DECLINE,
+                        callId = callId,
+                        callerName = callerName,
+                        handle = handle,
+                        avatarUrl = avatarUrl,
+                        timeoutSeconds = timeoutSeconds,
+                        callType = callType,
+                        incomingAcceptStrategy = incomingAcceptStrategy,
+                        extra = extra,
+                        backgroundDispatcherHandle = backgroundDispatcherHandle,
+                        backgroundCallbackHandle = backgroundCallbackHandle,
+                        backgroundDeclineCallbackHandle = backgroundDeclineCallbackHandle,
+                    )
+                }
                 finish()
             }
         }

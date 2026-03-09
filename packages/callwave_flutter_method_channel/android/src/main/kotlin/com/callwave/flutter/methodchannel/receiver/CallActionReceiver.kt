@@ -65,6 +65,11 @@ class CallActionReceiver : BroadcastReceiver() {
                     callId = callId,
                     fallbackExtra = extra,
                 )
+                if (CallwaveRuntime.callManager.shouldHandleDeclineInBridge(fallbackPayload)) {
+                    Log.d(TAG, "CallActionReceiver redirecting $callId to decline bridge.")
+                    fallbackPayload?.let(CallwaveRuntime.callManager::launchDeclineReportBridge)
+                    return
+                }
                 val pendingResult = goAsync()
                 var shouldFinishPendingResult = true
                 try {

@@ -13,6 +13,7 @@ import android.provider.Settings
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.callwave.flutter.methodchannel.CallwaveConstants
+import com.callwave.flutter.methodchannel.activity.DeclineReportBridgeActivity
 import com.callwave.flutter.methodchannel.activity.FullScreenCallActivity
 import com.callwave.flutter.methodchannel.activity.ValidatedAcceptBridgeActivity
 import com.callwave.flutter.methodchannel.events.EventSinkBridge
@@ -509,6 +510,7 @@ class AndroidCallManager(
         extra: Map<String, Any?>?,
         fallbackPayload: CallPayload? = null,
         preferHeadlessReporting: Boolean = false,
+        requireBackgroundDeclineReport: Boolean = false,
         onBackgroundDeclineResolved: (() -> Unit)? = null,
     ) {
         if (pendingAcceptedCalls.contains(callId) || confirmedAcceptedCalls.contains(callId)) {
@@ -525,6 +527,7 @@ class AndroidCallManager(
             extra = extra,
             fallbackPayload = fallbackPayload,
             preferHeadlessReporting = preferHeadlessReporting,
+            requireBackgroundDeclineReport = requireBackgroundDeclineReport,
             onBackgroundDeclineResolved = onBackgroundDeclineResolved,
         )
     }
@@ -578,11 +581,20 @@ class AndroidCallManager(
         extra: Map<String, Any?>?,
         fallbackPayload: CallPayload?,
         preferHeadlessReporting: Boolean,
+        requireBackgroundDeclineReport: Boolean,
         onBackgroundDeclineResolved: (() -> Unit)?,
     ) {
         val payload = payloadStore[callId] ?: fallbackPayload
         if (!preferHeadlessReporting || payload == null) {
-            emitDeclined(callId, extra, payload)
+            if (requireBackgroundDeclineReport) {
+                markDeclineReportFailed(
+                    callId = callId,
+                    payload = payload,
+                    fallbackExtra = extra,
+                )
+            } else {
+                emitDeclined(callId, extra, payload)
+            }
             onBackgroundDeclineResolved?.invoke()
             return
         }
@@ -595,10 +607,20 @@ class AndroidCallManager(
             )
         ) {
             BackgroundValidationStartResult.STARTED -> return
-            BackgroundValidationStartResult.DEFERRED_TO_LIVE_LISTENER,
-            BackgroundValidationStartResult.UNAVAILABLE
-            -> {
+            BackgroundValidationStartResult.DEFERRED_TO_LIVE_LISTENER -> {
                 emitDeclined(callId, extra, payload)
+                onBackgroundDeclineResolved?.invoke()
+            }
+            BackgroundValidationStartResult.UNAVAILABLE -> {
+                if (requireBackgroundDeclineReport) {
+                    markDeclineReportFailed(
+                        callId = callId,
+                        payload = payload,
+                        fallbackExtra = extra,
+                    )
+                } else {
+                    emitDeclined(callId, extra, payload)
+                }
                 onBackgroundDeclineResolved?.invoke()
             }
         }
@@ -612,6 +634,22 @@ class AndroidCallManager(
         clearCallRuntimeState(callId, dismissMissed = false)
         payloadStore.remove(callId)
         emitEvent(callId, CallwaveConstants.EVENT_DECLINED, extra ?: payload?.extra)
+    }
+
+    private fun markDeclineReportFailed(
+        callId: String,
+        payload: CallPayload?,
+        fallbackExtra: Map<String, Any?>?,
+    ) {
+        markMissed(
+            callId,
+            extra = eventExtra(
+                payload = payload,
+                fallbackExtra = fallbackExtra,
+            ).toMutableMap().apply {
+                put(CallwaveConstants.EXTRA_OUTCOME_REASON, "failed")
+            },
+        )
     }
 
     fun payloadFromActionIntent(
@@ -781,10 +819,31 @@ class AndroidCallManager(
             !eventSinkBridge.hasListener()
     }
 
+    fun shouldHandleDeclineInBridge(payload: CallPayload?): Boolean {
+        return payload != null &&
+            !eventSinkBridge.hasListener() &&
+            backgroundIncomingCallValidatorRegistrationFor(payload)
+                ?.backgroundDeclineCallbackHandle != null
+    }
+
     fun launchValidatedAcceptBridge(payload: CallPayload) {
         Log.d(TAG, "launchValidatedAcceptBridge(callId=${payload.callId})")
         val intent = validatedAcceptBridgeIntent(payload).apply {
             putExtra(CallwaveConstants.EXTRA_LAUNCH_ACTION, CallwaveConstants.ACTION_ACCEPT)
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_NO_ANIMATION,
+            )
+        }
+        context.startActivity(intent)
+    }
+
+    fun launchDeclineReportBridge(payload: CallPayload) {
+        Log.d(TAG, "launchDeclineReportBridge(callId=${payload.callId})")
+        val intent = declineReportBridgeIntent(payload).apply {
+            putExtra(CallwaveConstants.EXTRA_LAUNCH_ACTION, CallwaveConstants.ACTION_DECLINE)
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_SINGLE_TOP or
@@ -1517,6 +1576,12 @@ class AndroidCallManager(
 
     private fun validatedAcceptBridgeIntent(payload: CallPayload): Intent {
         return Intent(context, ValidatedAcceptBridgeActivity::class.java).apply {
+            putPayloadExtras(payload)
+        }
+    }
+
+    private fun declineReportBridgeIntent(payload: CallPayload): Intent {
+        return Intent(context, DeclineReportBridgeActivity::class.java).apply {
             putPayloadExtras(payload)
         }
     }

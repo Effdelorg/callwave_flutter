@@ -5,24 +5,23 @@ import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import com.callwave.flutter.methodchannel.CallwaveConstants
 import com.callwave.flutter.methodchannel.CallwaveRuntime
-import com.callwave.flutter.methodchannel.manager.AcceptResult
 import com.callwave.flutter.methodchannel.model.CallPayload
 
-internal class ValidatedAcceptBridgeActivity : AppCompatActivity() {
-    private var acceptStarted = false
+internal class DeclineReportBridgeActivity : AppCompatActivity() {
+    private var declineStarted = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        acceptStarted = savedInstanceState?.getBoolean(KEY_ACCEPT_STARTED, false) == true
-        Log.d(TAG, "ValidatedAcceptBridgeActivity created.")
+        declineStarted = savedInstanceState?.getBoolean(KEY_DECLINE_STARTED, false) == true
+        Log.d(TAG, "DeclineReportBridgeActivity created.")
         overridePendingTransition(0, 0)
-        startValidatedAcceptIfNeeded()
+        startDeclineReportIfNeeded()
     }
 
     override fun onNewIntent(intent: android.content.Intent?) {
         super.onNewIntent(intent)
         setIntent(intent)
-        startValidatedAcceptIfNeeded()
+        startDeclineReportIfNeeded()
     }
 
     override fun finish() {
@@ -31,20 +30,20 @@ internal class ValidatedAcceptBridgeActivity : AppCompatActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        outState.putBoolean(KEY_ACCEPT_STARTED, acceptStarted)
+        outState.putBoolean(KEY_DECLINE_STARTED, declineStarted)
         super.onSaveInstanceState(outState)
     }
 
-    private fun startValidatedAcceptIfNeeded() {
-        if (acceptStarted) {
+    private fun startDeclineReportIfNeeded() {
+        if (declineStarted) {
             return
         }
-        acceptStarted = true
+        declineStarted = true
 
         CallwaveRuntime.ensureInitialized(applicationContext)
         val callId = intent.getStringExtra(CallwaveConstants.EXTRA_CALL_ID)
             ?: return finishQuietly()
-        Log.d(TAG, "ValidatedAcceptBridgeActivity handling callId=$callId.")
+        Log.d(TAG, "DeclineReportBridgeActivity handling callId=$callId.")
         val extra = CallPayload.fromIntentExtras(
             intent.getStringExtra(CallwaveConstants.EXTRA_EXTRA),
         )
@@ -54,27 +53,14 @@ internal class ValidatedAcceptBridgeActivity : AppCompatActivity() {
             fallbackExtra = extra,
         ) ?: return finishQuietly()
 
-        val acceptResult = CallwaveRuntime.callManager.onAccept(
+        CallwaveRuntime.callManager.onDecline(
             callId = callId,
             extra = extra,
             fallbackPayload = payload,
-            shouldOpenAfterConfirm = true,
-            requireBackgroundValidationForValidatedAccept = true,
-            onBackgroundValidationResolved = ::finishQuietly,
+            preferHeadlessReporting = true,
+            requireBackgroundDeclineReport = true,
+            onBackgroundDeclineResolved = ::finishQuietly,
         )
-        Log.d(TAG, "ValidatedAcceptBridgeActivity onAccept result=$acceptResult for $callId.")
-        when (acceptResult) {
-            AcceptResult.LAUNCH_NOW -> {
-                CallwaveRuntime.callManager.launchHostApp(
-                    CallwaveConstants.ACTION_ACCEPT_AND_OPEN,
-                    payload,
-                )
-                finishQuietly()
-            }
-            AcceptResult.HANDLED,
-            AcceptResult.IGNORED -> finishQuietly()
-            AcceptResult.VALIDATION_PENDING -> return
-        }
     }
 
     private fun finishQuietly() {
@@ -82,13 +68,13 @@ internal class ValidatedAcceptBridgeActivity : AppCompatActivity() {
             if (isFinishing || isDestroyed) {
                 return@runOnUiThread
             }
-            Log.d(TAG, "ValidatedAcceptBridgeActivity finishing.")
+            Log.d(TAG, "DeclineReportBridgeActivity finishing.")
             finish()
         }
     }
 
     companion object {
         private const val TAG = "CallwaveFlutter"
-        private const val KEY_ACCEPT_STARTED = "acceptStarted"
+        private const val KEY_DECLINE_STARTED = "declineStarted"
     }
 }
