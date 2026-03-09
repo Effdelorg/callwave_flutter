@@ -434,6 +434,50 @@ void main() {
         fakePlatform.lastMarkedMissedCallId,
         'c-validated-mark-missed-failure',
       );
+      expect(fakePlatform.clearCallStateCount, 1);
+    }, (error, _) {
+      capturedErrors.add(error);
+    });
+
+    expect(capturedErrors, hasLength(1));
+    expect(capturedErrors.single, isA<StateError>());
+  });
+
+  test(
+      'validated rejection preserves native missed state if missed event arrives before markMissed error',
+      () async {
+    final capturedErrors = <Object>[];
+    fakePlatform.markMissedEmitEventBeforeThrow = true;
+    fakePlatform.markMissedError = StateError('mark missed failed after emit');
+
+    await runZonedGuarded(() async {
+      final sessionFuture = CallwaveFlutter.instance.sessions.first;
+
+      CallwaveFlutter.instance.configure(
+        CallwaveConfiguration(
+          engine: _FakeEngine(),
+          incomingCallHandling: IncomingCallHandling.validated(
+            validator: (_) async => const CallAcceptDecision.reject(
+              reason: CallAcceptRejectReason.cancelled,
+            ),
+          ),
+        ),
+      );
+      fakePlatform.emit(
+        platform.CallEventDto(
+          callId: 'c-validated-mark-missed-after-emit',
+          type: platform.CallEventType.accepted,
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+
+      final session = await sessionFuture;
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(session.state, CallSessionState.ended);
+      expect(fakePlatform.clearCallStateCount, 0);
+      expect(fakePlatform.lastClearedCallId, isNull);
     }, (error, _) {
       capturedErrors.add(error);
     });
@@ -1109,6 +1153,7 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   int? lastBackgroundCallbackHandle;
   int? lastBackgroundDeclineCallbackHandle;
   Object? markMissedError;
+  bool markMissedEmitEventBeforeThrow = false;
   Object? confirmAcceptedCallError;
   int confirmAcceptedCallCount = 0;
   int takePendingStartupActionCount = 0;
@@ -1227,6 +1272,16 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
     _removeActiveCall(callId);
     lastMarkedMissedCallId = callId;
     lastMarkedMissedExtra = extra;
+    if (markMissedEmitEventBeforeThrow) {
+      emit(
+        platform.CallEventDto(
+          callId: callId,
+          type: platform.CallEventType.missed,
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+          extra: extra,
+        ),
+      );
+    }
     final error = markMissedError;
     if (error != null) {
       throw error;

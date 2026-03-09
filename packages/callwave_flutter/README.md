@@ -160,7 +160,9 @@ CallwaveFlutter.instance.configure(
       },
     ),
     backgroundIncomingCallDeclineValidator: (request) async {
-      final didReport = await api.reportDeclinedCall(request.callId);
+      // api: your HTTP client (e.g. Dio, http)
+      final response = await api.post('/voice-calls/decline/${request.callId}');
+      final didReport = response.isSuccessful;
       if (didReport) {
         return const CallDeclineDecision.reported();
       }
@@ -187,8 +189,34 @@ Flow:
   mainly demonstrated as terminated/cold-start scenarios because that is where
   their startup-handoff behavior is most visible.
 - When the user declines from native UI while Flutter is not alive, a registered
-  `backgroundIncomingCallDeclineValidator` runs in a headless isolate. If it
-  fails, throws, or times out, the plugin falls back to missed-call handling.
+  `backgroundIncomingCallDeclineValidator` runs in a headless isolate.
+- If the decline validator returns `CallDeclineDecision.reported()`, the plugin
+  closes the incoming call silently and does not show missed-call UI.
+- If the decline validator fails, throws, or times out, the plugin falls back
+  to missed-call handling.
+- On iOS, pure-Dart background callbacks work out of the box. If your
+  background callback uses Flutter plugins such as secure storage, register
+  plugins for the background engine in `AppDelegate`:
+
+```swift
+import callwave_flutter_method_channel
+
+@main
+@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  override func application(
+    _ application: UIApplication,
+    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+  ) -> Bool {
+    CallwaveFlutterPlugin.setBackgroundFlutterPluginRegistrant { registry in
+      GeneratedPluginRegistrant.register(with: registry)
+    }
+    return super.application(
+      application,
+      didFinishLaunchingWithOptions: launchOptions
+    )
+  }
+}
+```
 
 ## Cold Start
 

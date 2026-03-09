@@ -423,11 +423,13 @@ class CallwaveFlutter {
       case CallEventType.ended:
       case CallEventType.timeout:
       case CallEventType.missed:
-        _recordTerminalEventType(event);
         _invalidateAcceptFlow(event.callId);
         final session = _sessions[event.callId];
         if (session != null) {
+          _recordTerminalEventType(event);
           unawaited(session.applyNativeEvent(event));
+        } else {
+          _terminalEventTypesByCallId.remove(event.callId);
         }
         return;
       case CallEventType.callback:
@@ -582,6 +584,7 @@ class CallwaveFlutter {
       await markMissed(session.callId, extra: extra);
     } catch (error, stackTrace) {
       Zone.current.handleUncaughtError(error, stackTrace);
+      await Future<void>.delayed(Duration.zero);
       if (!session.isEnded) {
         session.reportEnded();
       }
@@ -863,6 +866,7 @@ class CallwaveFlutter {
     _terminalEventTypesByCallId[event.callId] = event.type;
   }
 
+  /// Returns false for missed/timeout so native missed-call UI is preserved.
   bool _shouldClearNativeCallStateOnSessionEnd(String callId) {
     final terminalEventType = _terminalEventTypesByCallId[callId];
     return terminalEventType != CallEventType.missed &&

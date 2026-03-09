@@ -193,6 +193,10 @@ class CallNotificationManager(
         }
     }
 
+    fun hideIncomingUi(callId: String) {
+        dismissIncoming(callId, stopForegroundService = false)
+    }
+
     fun dismissMissed(callId: String) {
         notificationManagerCompat.cancel(missedNotificationId(callId))
     }

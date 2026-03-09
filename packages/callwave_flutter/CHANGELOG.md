@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Missed and timeout terminal events no longer clear native call state, preserving
+  the platform missed-call UI (e.g. Android missed call notification)
+
 ## [0.3.1] - 2026-03-07
 
 ### Fixed

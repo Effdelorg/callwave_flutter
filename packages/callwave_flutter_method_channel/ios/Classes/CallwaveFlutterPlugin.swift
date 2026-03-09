@@ -3,6 +3,9 @@ import Flutter
 import UserNotifications
 
 public class CallwaveFlutterPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
+  private static var backgroundFlutterPluginRegistrant:
+    ((FlutterPluginRegistry) -> Void)?
+
   private let eventBridge = EventStreamBridge(bufferStore: EventBufferStore())
   private let notificationDelegateProxy = NotificationDelegateProxy()
   private lazy var callManager = IOSCallManager(
@@ -26,6 +29,21 @@ public class CallwaveFlutterPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
       binaryMessenger: registrar.messenger()
     )
     eventChannel.setStreamHandler(instance)
+  }
+
+  /// Registers plugins for the headless Flutter engine used during background
+  /// decline validation. Call from AppDelegate if your decline validator uses
+  /// Flutter plugins (e.g. secure storage). Pass `nil` to clear.
+  public static func setBackgroundFlutterPluginRegistrant(
+    _ callback: ((FlutterPluginRegistry) -> Void)?
+  ) {
+    backgroundFlutterPluginRegistrant = callback
+  }
+
+  static func registerPluginsForBackgroundEngine(
+    _ registry: FlutterPluginRegistry
+  ) {
+    backgroundFlutterPluginRegistrant?(registry)
   }
 
   private func installNotificationHandling() {

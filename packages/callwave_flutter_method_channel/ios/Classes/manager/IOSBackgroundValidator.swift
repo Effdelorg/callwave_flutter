@@ -107,6 +107,7 @@ final class IOSBackgroundValidator {
       project: nil,
       allowHeadlessExecution: true
     )
+    CallwaveFlutterPlugin.registerPluginsForBackgroundEngine(flutterEngine)
     channel = FlutterMethodChannel(
       name: "callwave_flutter/background",
       binaryMessenger: flutterEngine.binaryMessenger

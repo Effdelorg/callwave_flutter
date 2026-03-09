@@ -65,12 +65,24 @@ class CallActionReceiver : BroadcastReceiver() {
                     callId = callId,
                     fallbackExtra = extra,
                 )
-                CallwaveRuntime.callManager.onDecline(
-                    callId = callId,
-                    extra = extra,
-                    fallbackPayload = fallbackPayload,
-                    preferHeadlessReporting = true,
-                )
+                val pendingResult = goAsync()
+                var shouldFinishPendingResult = true
+                try {
+                    CallwaveRuntime.callManager.onDecline(
+                        callId = callId,
+                        extra = extra,
+                        fallbackPayload = fallbackPayload,
+                        preferHeadlessReporting = true,
+                        onBackgroundDeclineResolved = {
+                            pendingResult.finish()
+                        },
+                    )
+                    shouldFinishPendingResult = false
+                } finally {
+                    if (shouldFinishPendingResult) {
+                        pendingResult.finish()
+                    }
+                }
             }
             CallwaveConstants.ACTION_END -> CallwaveRuntime.callManager.endCall(callId)
             CallwaveConstants.ACTION_TIMEOUT -> CallwaveRuntime.callManager.onTimeout(callId)

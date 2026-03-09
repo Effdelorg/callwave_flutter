@@ -509,12 +509,15 @@ class AndroidCallManager(
         extra: Map<String, Any?>?,
         fallbackPayload: CallPayload? = null,
         preferHeadlessReporting: Boolean = false,
+        onBackgroundDeclineResolved: (() -> Unit)? = null,
     ) {
         if (pendingAcceptedCalls.contains(callId) || confirmedAcceptedCalls.contains(callId)) {
             // Ignore stale decline actions after a successful accept.
+            onBackgroundDeclineResolved?.invoke()
             return
         }
         if (pendingDeclinedCalls.contains(callId)) {
+            onBackgroundDeclineResolved?.invoke()
             return
         }
         finalizeDecline(
@@ -522,6 +525,7 @@ class AndroidCallManager(
             extra = extra,
             fallbackPayload = fallbackPayload,
             preferHeadlessReporting = preferHeadlessReporting,
+            onBackgroundDeclineResolved = onBackgroundDeclineResolved,
         )
     }
 
@@ -574,19 +578,28 @@ class AndroidCallManager(
         extra: Map<String, Any?>?,
         fallbackPayload: CallPayload?,
         preferHeadlessReporting: Boolean,
+        onBackgroundDeclineResolved: (() -> Unit)?,
     ) {
         val payload = payloadStore[callId] ?: fallbackPayload
         if (!preferHeadlessReporting || payload == null) {
             emitDeclined(callId, extra, payload)
+            onBackgroundDeclineResolved?.invoke()
             return
         }
 
-        when (maybeRunBackgroundDeclineReport(payload, extra)) {
+        when (
+            maybeRunBackgroundDeclineReport(
+                payload,
+                extra,
+                onBackgroundDeclineResolved = onBackgroundDeclineResolved,
+            )
+        ) {
             BackgroundValidationStartResult.STARTED -> return
             BackgroundValidationStartResult.DEFERRED_TO_LIVE_LISTENER,
             BackgroundValidationStartResult.UNAVAILABLE
             -> {
                 emitDeclined(callId, extra, payload)
+                onBackgroundDeclineResolved?.invoke()
             }
         }
     }
@@ -1352,6 +1365,7 @@ class AndroidCallManager(
     private fun maybeRunBackgroundDeclineReport(
         payload: CallPayload,
         fallbackExtra: Map<String, Any?>?,
+        onBackgroundDeclineResolved: (() -> Unit)? = null,
     ): BackgroundValidationStartResult {
         if (shouldDeferDeclineToLiveListener()) {
             Log.d(
@@ -1372,7 +1386,7 @@ class AndroidCallManager(
 
         pendingDeclinedCalls.add(payload.callId)
         timeoutScheduler.cancel(payload.callId)
-        notificationManager.dismissIncoming(payload.callId)
+        notificationManager.hideIncomingUi(payload.callId)
         openedIncomingCalls.remove(payload.callId)
         pendingAcceptedCalls.remove(payload.callId)
         confirmedAcceptedCalls.remove(payload.callId)
@@ -1385,26 +1399,32 @@ class AndroidCallManager(
             backgroundCallbackHandle = callbackHandle,
             payload = payload,
         ) { decision ->
-            if (!activeCallRegistry.contains(payload.callId) || !pendingDeclinedCalls.contains(payload.callId)) {
-                return@reportDecline
+            try {
+                if (!activeCallRegistry.contains(payload.callId) ||
+                    !pendingDeclinedCalls.contains(payload.callId)
+                ) {
+                    return@reportDecline
+                }
+                if (decision.isAllowed) {
+                    clearCallRuntimeState(payload.callId, dismissMissed = false)
+                    payloadStore.remove(payload.callId)
+                    return@reportDecline
+                }
+                markMissed(
+                    payload.callId,
+                    extra = eventExtra(
+                        payload = payload,
+                        fallbackExtra = decision.extra ?: fallbackExtra,
+                    ).toMutableMap().apply {
+                        put(
+                            CallwaveConstants.EXTRA_OUTCOME_REASON,
+                            decision.reason ?: "failed",
+                        )
+                    },
+                )
+            } finally {
+                onBackgroundDeclineResolved?.invoke()
             }
-            if (decision.isAllowed) {
-                clearCallRuntimeState(payload.callId, dismissMissed = false)
-                payloadStore.remove(payload.callId)
-                return@reportDecline
-            }
-            markMissed(
-                payload.callId,
-                extra = eventExtra(
-                    payload = payload,
-                    fallbackExtra = decision.extra ?: fallbackExtra,
-                ).toMutableMap().apply {
-                    put(
-                        CallwaveConstants.EXTRA_OUTCOME_REASON,
-                        decision.reason ?: "failed",
-                    )
-                },
-            )
         }
         return BackgroundValidationStartResult.STARTED
     }
