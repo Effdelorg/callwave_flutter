@@ -5,6 +5,7 @@ import 'package:callwave_flutter/callwave_flutter.dart';
 import 'package:flutter/material.dart';
 
 import 'example_camera_controller.dart';
+import 'example_failure_api.dart';
 import 'example_video_call_screen.dart';
 import 'mock_callwave_engine.dart';
 
@@ -115,10 +116,8 @@ Future<CallAcceptDecision> _decisionForMode({
   required IncomingDemoMode mode,
   required String callId,
 }) async {
-  await Future<void>.delayed(const Duration(milliseconds: 700));
   switch (mode) {
     case IncomingDemoMode.realtime:
-    case IncomingDemoMode.validatedAllow:
     case IncomingDemoMode.declineReported:
     case IncomingDemoMode.declineFailed:
       return CallAcceptDecision.allow(
@@ -127,11 +126,39 @@ Future<CallAcceptDecision> _decisionForMode({
           'validatedCallId': callId,
         },
       );
-    case IncomingDemoMode.validatedReject:
-      return const CallAcceptDecision.reject(
-        reason: CallAcceptRejectReason.cancelled,
+    case IncomingDemoMode.validatedAllow:
+      final apiResult = await ExampleFailureApi.call(
+        flow: ExampleFailureApiFlow.validatedAllow,
+        callId: callId,
+        reason: 'simulate delayed backend approval via 1000ms response',
+      );
+      if (apiResult.isSuccessful) {
+        return CallAcceptDecision.allow(
+          extra: <String, dynamic>{
+            'validatedByExample': true,
+            'validatedCallId': callId,
+            ...apiResult.toExtra(),
+          },
+        );
+      }
+      return CallAcceptDecision.reject(
+        reason: CallAcceptRejectReason.failed,
         extra: <String, dynamic>{
           'validatedByExample': true,
+          ...apiResult.toExtra(),
+        },
+      );
+    case IncomingDemoMode.validatedReject:
+      final apiResult = await ExampleFailureApi.call(
+        flow: ExampleFailureApiFlow.validatedReject,
+        callId: callId,
+        reason: 'simulate rejected accept via failing backend',
+      );
+      return CallAcceptDecision.reject(
+        reason: CallAcceptRejectReason.failed,
+        extra: <String, dynamic>{
+          'validatedByExample': true,
+          ...apiResult.toExtra(),
         },
       );
   }
@@ -141,13 +168,18 @@ Future<CallDeclineDecision> _declineDecisionForMode({
   required IncomingDemoMode mode,
   required String callId,
 }) async {
-  await Future<void>.delayed(const Duration(milliseconds: 700));
   switch (mode) {
     case IncomingDemoMode.declineFailed:
-      return const CallDeclineDecision.failed(
+      final apiResult = await ExampleFailureApi.call(
+        flow: ExampleFailureApiFlow.declineFailed,
+        callId: callId,
+        reason: 'simulate failed decline report via failing backend',
+      );
+      return CallDeclineDecision.failed(
         reason: CallDeclineFailureReason.failed,
         extra: <String, dynamic>{
           'declineReportedByExample': false,
+          ...apiResult.toExtra(),
         },
       );
     case IncomingDemoMode.realtime:
@@ -720,7 +752,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                       icon: Icons.swap_horiz_rounded,
                       title: 'INCOMING FLOW MODE',
                       subtitle:
-                          'Choose how the plugin handles accept/decline from the native call UI. In this example, Validated Allow and Validated Reject are mainly for terminated/cold-start testing.',
+                          'Choose how the plugin handles accept/decline from the native call UI. Validated Allow now uses a delayed backend approval response, while Validated Reject and Decline Failed call a failing backend endpoint, log the request/response, and fall back to missed-call handling.',
                       accentColor: const Color(0xFFC4441A),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1256,13 +1288,13 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
       case IncomingDemoMode.realtime:
         return 'Native accept opens the call flow immediately, like WhatsApp-style realtime signaling.';
       case IncomingDemoMode.validatedAllow:
-        return 'Terminated/cold-start demo: native accept waits for backend validation, then opens the call only after approval. If the app is already alive, validation still runs through the live Flutter flow.';
+        return 'Terminated/cold-start demo: native accept calls a delayed backend endpoint, waits about 1000ms for approval, logs the request/response, and then opens the call.';
       case IncomingDemoMode.validatedReject:
-        return 'Terminated/cold-start demo: native accept waits for validation and then resolves into missed-call handling without foreground fallback. If the app is already alive, validation still runs through the live Flutter/system flow.';
+        return 'Terminated/cold-start demo: native accept calls a failing backend validation endpoint, logs the request/response, and then resolves into missed-call handling without foreground fallback.';
       case IncomingDemoMode.declineReported:
         return 'Native decline reports to the backend in a headless Flutter isolate and dismisses the call without opening the app.';
       case IncomingDemoMode.declineFailed:
-        return 'Native decline simulates a failed backend report, so the plugin falls back to missed-call UX.';
+        return 'Native decline calls a failing backend endpoint, logs the request/response, and then falls back to missed-call UX.';
     }
   }
 

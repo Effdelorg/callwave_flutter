@@ -5,6 +5,7 @@ import 'package:callwave_flutter/callwave_flutter.dart';
 import 'package:callwave_flutter_platform_interface/callwave_flutter_platform_interface.dart'
     as platform;
 import 'package:callwave_flutter_example/example_camera_controller.dart';
+import 'package:callwave_flutter_example/example_failure_api.dart';
 import 'package:callwave_flutter_example/example_video_call_screen.dart';
 import 'package:callwave_flutter_example/main.dart';
 import 'package:flutter/material.dart';
@@ -19,11 +20,30 @@ void main() {
     fakeCamera = _FakeCameraHandle();
     platform.CallwaveFlutterPlatform.instance = fakePlatform;
     await clearPersistedIncomingDemoMode();
+    ExampleFailureApi.callOverride = ({
+      required ExampleFailureApiFlow flow,
+      required String callId,
+      required String reason,
+    }) async {
+      final isValidatedAllow = flow == ExampleFailureApiFlow.validatedAllow;
+      return ExampleFailureApiResult(
+        flow: flow,
+        reason: reason,
+        endpoint: Uri.parse(
+          isValidatedAllow
+              ? ExampleFailureApi.delayedValidatedAllowEndpoint
+              : ExampleFailureApi.failingEndpoint,
+        ),
+        statusCode: isValidatedAllow ? 200 : 400,
+        bodyPreview: isValidatedAllow ? '{"status":"ok"}' : 'Bad Request Test',
+      );
+    };
     CallwaveFlutter.instance.setEngine(_TestEngine());
   });
 
   tearDown(() async {
     await clearPersistedIncomingDemoMode();
+    ExampleFailureApi.resetForTesting();
     CallwaveFlutter.instance.setEngine(_TestEngine());
     await fakePlatform.dispose();
   });
@@ -592,7 +612,12 @@ void main() {
     expect(fakePlatform.lastClearedCallId, isNull);
     expect(
       fakePlatform.lastMarkedMissedExtra?[CallEventExtraKeys.outcomeReason],
-      CallAcceptRejectReason.cancelled.name,
+      CallAcceptRejectReason.failed.name,
+    );
+    expect(
+      fakePlatform
+          .lastMarkedMissedExtra?[ExampleFailureApiExtraKeys.statusCode],
+      400,
     );
 
     await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
