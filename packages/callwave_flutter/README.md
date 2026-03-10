@@ -29,6 +29,12 @@ If you're building video or voice calls with WebRTC, callwave_flutter gives you 
 
 > **Platform status:** Android has custom native incoming call UI (`FullScreenCallActivity`) plus native ongoing-call notifications for active incoming-accepted and outgoing calls. iOS uses CallKit system UI for incoming and outgoing calls (Apple's native UI; no custom UI from the plugin). In-app call screen (`CallScreen`) is shared Flutter UI on both platforms.
 
+Native incoming-call ringtone behavior:
+
+- `30s timeout ->` ringtone keeps playing from `0s` to `30s`, then stops and the call moves to timeout/missed.
+- `accept at 10s ->` ringtone stops immediately and the native UI transitions to the ongoing call state.
+- `decline at 10s ->` ringtone stops immediately and the incoming UI is dismissed.
+
 ## Core Flow
 
 1. Register your engine.

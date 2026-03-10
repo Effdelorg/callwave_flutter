@@ -25,6 +25,7 @@ If you're building video or voice calls with WebRTC, callwave_flutter gives you 
 ## What This Plugin Does
 
 - Shows system-level incoming call UI.
+- Keeps the device's native incoming ringtone playing until accept, decline, or timeout.
 - Handles accept, decline, timeout, missed, callback, and end events.
 - Exposes a session-first orchestration model via `CallwaveEngine` + `CallSession`.
 - Buffers native events in memory + disk for cold start delivery.
@@ -76,6 +77,12 @@ await CallwaveFlutter.instance.setPostCallBehavior(
 
 `backgroundOnEnded` is applied on Android (moves app task to background after `endCall`).
 On iOS, the setting is accepted but intentionally no-op.
+
+Incoming-call ringtone behavior:
+
+- `30s timeout ->` ringtone keeps playing from `0s` to `30s`, then stops and the call moves to timeout/missed.
+- `accept at 10s ->` ringtone stops immediately and the native UI transitions to the ongoing call state.
+- `decline at 10s ->` ringtone stops immediately and the incoming UI is dismissed.
 
 ## WebRTC Integration
 

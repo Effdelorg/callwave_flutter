@@ -34,6 +34,7 @@ class AndroidCallManager(
     private val pendingStartupActionStore = PendingStartupActionStore(context)
     private val incomingCallStore = IncomingCallStore(context)
     private val ongoingCallStore = OngoingCallStore(context)
+    private val incomingRingtoneController = IncomingRingtoneController(context)
     private val payloadStore = HashMap<String, CallPayload>()
     private val incomingExpiresAtByCallId = HashMap<String, Long>()
     private val openedIncomingCalls = HashSet<String>()
@@ -117,6 +118,7 @@ class AndroidCallManager(
             ),
         )
         scheduleIncomingTimeouts(payload.callId, expiresAtMs)
+        incomingRingtoneController.start(payload.callId)
     }
 
     fun showOutgoingCall(payload: CallPayload) {
@@ -192,6 +194,7 @@ class AndroidCallManager(
         pendingAcceptedCalls.remove(callId)
         confirmedAcceptedCalls.add(callId)
         launchActionOverrides.remove(callId)
+        incomingRingtoneController.stop(callId)
         notificationManager.showOngoingCall(
             payload = payload,
             openIntent = openOngoingIntent(payload),
@@ -389,6 +392,7 @@ class AndroidCallManager(
             outgoingCalls.remove(callId)
             if (fallbackPayload != null) {
                 cancelIncomingTimeouts(callId, clearPersistedState = true)
+                incomingRingtoneController.stop(callId)
                 notificationManager.dismissIncoming(callId)
                 openedIncomingCalls.remove(callId)
                 emitEvent(
@@ -404,6 +408,7 @@ class AndroidCallManager(
         }
 
         cancelIncomingTimeouts(callId, clearPersistedState = true)
+        incomingRingtoneController.stop(callId)
         notificationManager.dismissIncoming(
             callId = callId,
             stopForegroundService = false,
@@ -948,9 +953,11 @@ class AndroidCallManager(
         when (snapshot.eventType) {
             CallwaveConstants.EVENT_ACCEPTED -> {
                 confirmedAcceptedCalls.add(payload.callId)
+                incomingRingtoneController.stop(payload.callId)
             }
             CallwaveConstants.EVENT_STARTED -> {
                 outgoingCalls.add(payload.callId)
+                incomingRingtoneController.stop(payload.callId)
             }
             else -> {
                 ongoingCallStore.clear(payload.callId)
@@ -968,7 +975,9 @@ class AndroidCallManager(
         val callId = payload.callId
         if (payloadStore[callId] != null) {
             persistIncomingDeadline(payload, snapshot.expiresAtMs)
-            reconcileIncomingTimeout(callId, payload, snapshot.expiresAtMs)
+            if (reconcileIncomingTimeout(callId, payload, snapshot.expiresAtMs)) {
+                incomingRingtoneController.start(callId)
+            }
             return
         }
         if (!activeCallRegistry.tryStart(callId)) {
@@ -988,6 +997,7 @@ class AndroidCallManager(
         if (!reconcileIncomingTimeout(callId, payload, snapshot.expiresAtMs)) {
             return
         }
+        incomingRingtoneController.start(callId)
     }
 
     private fun persistOngoingCall(
@@ -1338,6 +1348,7 @@ class AndroidCallManager(
 
     private fun clearCallRuntimeState(callId: String, dismissMissed: Boolean) {
         cancelIncomingTimeouts(callId, clearPersistedState = true)
+        incomingRingtoneController.stop(callId)
         notificationManager.dismissIncoming(callId)
         if (dismissMissed) {
             notificationManager.dismissMissed(callId)
@@ -1631,6 +1642,7 @@ class AndroidCallManager(
 
         pendingDeclinedCalls.add(payload.callId)
         cancelIncomingTimeouts(payload.callId, clearPersistedState = true)
+        incomingRingtoneController.stop(payload.callId)
         notificationManager.hideIncomingUi(payload.callId)
         openedIncomingCalls.remove(payload.callId)
         pendingAcceptedCalls.remove(payload.callId)

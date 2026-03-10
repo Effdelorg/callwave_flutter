@@ -4,8 +4,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.RingtoneManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -27,12 +25,7 @@ class CallNotificationManager(
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         manager.deleteNotificationChannel(CallwaveConstants.NOTIFICATION_CHANNEL_ID_LEGACY)
-
-        val ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-        val ringtoneAttributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build()
+        manager.deleteNotificationChannel(CallwaveConstants.NOTIFICATION_CHANNEL_ID_LEGACY_V2)
 
         val channel = NotificationChannel(
             CallwaveConstants.NOTIFICATION_CHANNEL_ID,
@@ -42,7 +35,7 @@ class CallNotificationManager(
             description = "Incoming and missed call notifications"
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
             setBypassDnd(true)
-            setSound(ringtoneUri, ringtoneAttributes)
+            setSound(null, null)
             enableVibration(true)
             vibrationPattern = longArrayOf(0, 1000, 500, 1000)
         }
