@@ -15,6 +15,15 @@ If you're building video or voice calls with WebRTC, callwave_flutter gives you 
 
 > **Platform status:** Android has custom native incoming call UI (`FullScreenCallActivity`) and full call UX. iOS uses CallKit system UI for incoming calls (Apple's native UI; no custom UI from the plugin). In-app call screen is shared Flutter UI on both platforms.
 
+For terminated-state decline handling, the native layers now wait for the
+headless Flutter decline callback result before finalizing the call outcome:
+
+- `reported` closes the incoming call without missed-call UI.
+- `failed`, throw, or timeout falls back to missed-call handling.
+- On iOS, host apps that need Flutter plugins inside headless background
+  callbacks should register plugins for the background engine via
+  `CallwaveFlutterPlugin.setBackgroundFlutterPluginRegistrant(...)`.
+
 ## Contains
 - Dart MethodChannel/EventChannel bridge
 - Android native implementation (notifications, actions, buffering)

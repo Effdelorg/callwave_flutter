@@ -228,6 +228,21 @@ class MethodChannelCallwaveFlutter extends CallwaveFlutterPlatform {
   }
 
   @override
+  Future<bool> canScheduleExactAlarms() async {
+    await initialize();
+    final allowed = await _methodChannel.invokeMethod<bool>(
+      'canScheduleExactAlarms',
+    );
+    return allowed ?? true;
+  }
+
+  @override
+  Future<void> requestExactAlarmPermission() async {
+    await initialize();
+    await _methodChannel.invokeMethod<void>('requestExactAlarmPermission');
+  }
+
+  @override
   Future<void> setPostCallBehavior(PostCallBehavior behavior) async {
     await initialize();
     await _methodChannel.invokeMethod<void>(

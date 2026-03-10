@@ -12,9 +12,11 @@ final class IOSCallManager {
   private let missedCallNotificationManager: MissedCallNotificationManager
   private let pendingStartupActionStore: PendingStartupActionStore
   private let ongoingCallStore: OngoingCallStore
+  private let incomingCallStore: IncomingCallStore
   private let callController = CXCallController()
   private let delegate = CallKitProviderDelegate()
   private let backgroundValidator = IOSBackgroundValidator()
+  private let backgroundValidatorRegistrationStore: BackgroundValidatorRegistrationStore
 
   private var payloadStore: [String: CallPayload] = [:]
   private var uuidByCallId: [String: UUID] = [:]
@@ -26,6 +28,7 @@ final class IOSCallManager {
   private var explicitOngoingLaunchEmittedCallIds: Set<String> = []
   private var outgoingCallIds: Set<String> = []
   private var connectedAtMsByCallId: [String: Int64] = [:]
+  private var incomingExpiresAtMsByCallId: [String: Int64] = [:]
   private var timeoutItems: [String: DispatchWorkItem] = [:]
   private var postCallBehavior: PostCallBehavior = .stayOpen
   private var backgroundDispatcherHandle: Int64?
@@ -39,7 +42,10 @@ final class IOSCallManager {
     notificationCenter: NotificationCenter = .default,
     missedCallNotificationManager: MissedCallNotificationManager = MissedCallNotificationManager(),
     pendingStartupActionStore: PendingStartupActionStore = PendingStartupActionStore(),
-    ongoingCallStore: OngoingCallStore = OngoingCallStore()
+    ongoingCallStore: OngoingCallStore = OngoingCallStore(),
+    incomingCallStore: IncomingCallStore = IncomingCallStore(),
+    backgroundValidatorRegistrationStore: BackgroundValidatorRegistrationStore =
+      BackgroundValidatorRegistrationStore()
   ) {
     self.eventBridge = eventBridge
     self.activeCallRegistry = activeCallRegistry
@@ -47,6 +53,8 @@ final class IOSCallManager {
     self.missedCallNotificationManager = missedCallNotificationManager
     self.pendingStartupActionStore = pendingStartupActionStore
     self.ongoingCallStore = ongoingCallStore
+    self.incomingCallStore = incomingCallStore
+    self.backgroundValidatorRegistrationStore = backgroundValidatorRegistrationStore
 
     let config = CXProviderConfiguration(localizedName: "Callwave")
     config.supportsVideo = true
@@ -59,7 +67,9 @@ final class IOSCallManager {
     delegate.onDidReset = { [weak self] in self?.handleReset() }
     provider.setDelegate(delegate, queue: nil)
     self.missedCallNotificationManager.registerCategories()
+    restoreBackgroundIncomingCallValidatorRegistration()
     restorePersistedOngoingCall()
+    restorePersistedIncomingCall()
     registerApplicationObservers()
   }
 
@@ -83,6 +93,8 @@ final class IOSCallManager {
     explicitOngoingLaunchEmittedCallIds.remove(payload.callId)
     outgoingCallIds.remove(payload.callId)
     connectedAtMsByCallId.removeValue(forKey: payload.callId)
+    let expiresAtMs = computeExpiresAtMs(timeoutSeconds: payload.timeoutSeconds)
+    incomingExpiresAtMsByCallId[payload.callId] = expiresAtMs
     let uuid = uuidByCallId[payload.callId] ?? UUID()
     uuidByCallId[payload.callId] = uuid
     callIdByUuid[uuid] = payload.callId
@@ -95,8 +107,14 @@ final class IOSCallManager {
     provider.reportNewIncomingCall(with: uuid, update: update) { [weak self] error in
       if error != nil {
         self?.activeCallRegistry.remove(callId: payload.callId)
+        self?.payloadStore.removeValue(forKey: payload.callId)
+        self?.uuidByCallId.removeValue(forKey: payload.callId)
+        self?.callIdByUuid.removeValue(forKey: uuid)
+        self?.incomingExpiresAtMsByCallId.removeValue(forKey: payload.callId)
+        self?.incomingCallStore.clear(callId: payload.callId)
       } else {
-        self?.scheduleIncomingTimeout(payload: payload, uuid: uuid)
+        self?.incomingCallStore.save(payload: payload, uuid: uuid, expiresAtMs: expiresAtMs)
+        self?.scheduleIncomingTimeout(payload: payload, uuid: uuid, expiresAtMs: expiresAtMs)
       }
     }
   }
@@ -165,6 +183,8 @@ final class IOSCallManager {
     }
     pendingAcceptedCallIds.remove(callId)
     confirmedAcceptedCallIds.insert(callId)
+    incomingExpiresAtMsByCallId.removeValue(forKey: callId)
+    incomingCallStore.clear(callId: callId)
     launchActionOverrides.removeValue(forKey: callId)
     explicitIncomingLaunchEmittedCallIds.remove(callId)
     explicitOngoingLaunchEmittedCallIds.remove(callId)
@@ -186,12 +206,18 @@ final class IOSCallManager {
     self.backgroundDispatcherHandle = backgroundDispatcherHandle
     self.backgroundAcceptCallbackHandle = backgroundAcceptCallbackHandle
     self.backgroundDeclineCallbackHandle = backgroundDeclineCallbackHandle
+    backgroundValidatorRegistrationStore.save(
+      backgroundDispatcherHandle: backgroundDispatcherHandle,
+      backgroundAcceptCallbackHandle: backgroundAcceptCallbackHandle,
+      backgroundDeclineCallbackHandle: backgroundDeclineCallbackHandle
+    )
   }
 
   func clearBackgroundIncomingCallValidator() {
     backgroundDispatcherHandle = nil
     backgroundAcceptCallbackHandle = nil
     backgroundDeclineCallbackHandle = nil
+    backgroundValidatorRegistrationStore.clear()
   }
 
   func syncCallConnectedState(callId: String, connectedAtMs: Int64) {
@@ -209,6 +235,7 @@ final class IOSCallManager {
     }
     activeCallRegistry.remove(callId: callId)
     payloadStore.removeValue(forKey: callId)
+    incomingCallStore.clear(callId: callId)
     pendingAcceptedCallIds.remove(callId)
     confirmedAcceptedCallIds.remove(callId)
     launchActionOverrides.removeValue(forKey: callId)
@@ -216,6 +243,7 @@ final class IOSCallManager {
     explicitOngoingLaunchEmittedCallIds.remove(callId)
     outgoingCallIds.remove(callId)
     connectedAtMsByCallId.removeValue(forKey: callId)
+    incomingExpiresAtMsByCallId.removeValue(forKey: callId)
     ongoingCallStore.clear(callId: callId)
     missedCallNotificationManager.dismissMissedCall(callId: callId)
   }
@@ -225,7 +253,11 @@ final class IOSCallManager {
       return false
     }
     let payload = payloadStore[callId]
+    if let payload, !reconcileIncomingTimeout(callId: callId, payload: payload, rescheduleIfPending: false) {
+      return true
+    }
     cancelTimeout(callId: callId)
+    incomingExpiresAtMsByCallId.removeValue(forKey: callId)
     provider.reportCall(with: uuid, endedAt: Date(), reason: .declinedElsewhere)
     cleanup(callId: callId, uuid: uuid)
     emit(callId: callId, type: "declined", extra: payload?.extra)
@@ -236,12 +268,14 @@ final class IOSCallManager {
     let payload = payloadStore[callId]
     let missedExtra = eventExtra(payload: payload, fallbackExtra: extra)
     cancelTimeout(callId: callId)
+    incomingExpiresAtMsByCallId.removeValue(forKey: callId)
     if let uuid = uuidByCallId[callId] {
       provider.reportCall(with: uuid, endedAt: Date(), reason: .unanswered)
       cleanup(callId: callId, uuid: uuid)
     } else {
       activeCallRegistry.remove(callId: callId)
       payloadStore.removeValue(forKey: callId)
+      incomingCallStore.clear(callId: callId)
       pendingAcceptedCallIds.remove(callId)
       confirmedAcceptedCallIds.remove(callId)
       launchActionOverrides.removeValue(forKey: callId)
@@ -277,8 +311,12 @@ final class IOSCallManager {
   }
 
   func activeCallEventSnapshots() -> [[String: Any]] {
-    activeCallRegistry.activeCallIds().map { callId in
+    activeCallRegistry.activeCallIds().compactMap { callId in
       let payload = payloadStore[callId]
+      if let payload, isIncomingRingingCall(callId: callId),
+         !reconcileIncomingTimeout(callId: callId, payload: payload) {
+        return nil
+      }
       let type: String
       if pendingAcceptedCallIds.contains(callId) || confirmedAcceptedCallIds.contains(callId) {
         type = "accepted"
@@ -310,6 +348,10 @@ final class IOSCallManager {
   func syncActiveCallsToEvents() {
     for callId in activeCallRegistry.activeCallIds() {
       let payload = payloadStore[callId]
+      if let payload, isIncomingRingingCall(callId: callId),
+         !reconcileIncomingTimeout(callId: callId, payload: payload) {
+        continue
+      }
       if pendingAcceptedCallIds.contains(callId) || confirmedAcceptedCallIds.contains(callId) {
         emit(callId: callId, type: "accepted", extra: acceptedEventExtra(callId: callId, payload: payload))
       } else if outgoingCallIds.contains(callId) {
@@ -335,9 +377,14 @@ final class IOSCallManager {
   func handleAccept(uuid: UUID) {
     guard let callId = callIdByUuid[uuid] else { return }
     let payload = payloadStore[callId]
+    if let payload, !reconcileIncomingTimeout(callId: callId, payload: payload, rescheduleIfPending: false) {
+      return
+    }
     cancelTimeout(callId: callId)
+    incomingExpiresAtMsByCallId.removeValue(forKey: callId)
     pendingAcceptedCallIds.insert(callId)
     confirmedAcceptedCallIds.remove(callId)
+    incomingCallStore.clear(callId: callId)
     launchActionOverrides.removeValue(forKey: callId)
     explicitIncomingLaunchEmittedCallIds.remove(callId)
     explicitOngoingLaunchEmittedCallIds.remove(callId)
@@ -432,6 +479,7 @@ final class IOSCallManager {
     payloadStore.removeAll()
     uuidByCallId.removeAll()
     callIdByUuid.removeAll()
+    incomingCallStore.clear()
     pendingAcceptedCallIds.removeAll()
     confirmedAcceptedCallIds.removeAll()
     launchActionOverrides.removeAll()
@@ -439,6 +487,7 @@ final class IOSCallManager {
     explicitOngoingLaunchEmittedCallIds.removeAll()
     outgoingCallIds.removeAll()
     connectedAtMsByCallId.removeAll()
+    incomingExpiresAtMsByCallId.removeAll()
     ongoingCallStore.clear()
   }
 
@@ -476,6 +525,52 @@ final class IOSCallManager {
     if let connectedAtMs = snapshot.connectedAtMs {
       connectedAtMsByCallId[payload.callId] = connectedAtMs
     }
+    incomingExpiresAtMsByCallId.removeValue(forKey: payload.callId)
+    incomingCallStore.clear(callId: payload.callId)
+  }
+
+  /// Restores incoming call state from disk after app relaunch. Only restores if
+  /// within the call's timeout window; expired entries are cleared.
+  private func restorePersistedIncomingCall() {
+    guard let snapshot = incomingCallStore.restore() else {
+      return
+    }
+    let payload = snapshot.payload
+    let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+    let expiresAtMs = snapshot.expiresAtMs
+    if payloadStore[payload.callId] != nil {
+      incomingExpiresAtMsByCallId[payload.callId] = expiresAtMs
+      _ = reconcileIncomingTimeout(callId: payload.callId, payload: payload, fallbackExpiresAtMs: expiresAtMs)
+      return
+    }
+    guard activeCallRegistry.tryStart(callId: payload.callId) else {
+      incomingCallStore.clear(callId: payload.callId)
+      return
+    }
+    payloadStore[payload.callId] = payload
+    uuidByCallId[payload.callId] = snapshot.uuid
+    callIdByUuid[snapshot.uuid] = payload.callId
+    pendingAcceptedCallIds.remove(payload.callId)
+    confirmedAcceptedCallIds.remove(payload.callId)
+    launchActionOverrides.removeValue(forKey: payload.callId)
+    explicitIncomingLaunchEmittedCallIds.remove(payload.callId)
+    explicitOngoingLaunchEmittedCallIds.remove(payload.callId)
+    outgoingCallIds.remove(payload.callId)
+    connectedAtMsByCallId.removeValue(forKey: payload.callId)
+    incomingExpiresAtMsByCallId[payload.callId] = expiresAtMs
+    if nowMs >= expiresAtMs {
+      finalizeIncomingTimeout(
+        callId: payload.callId,
+        payload: payload,
+        uuid: snapshot.uuid
+      )
+      return
+    }
+    scheduleIncomingTimeout(
+      payload: payload,
+      uuid: snapshot.uuid,
+      expiresAtMs: expiresAtMs
+    )
   }
 
   private func persistOngoingCall(
@@ -498,6 +593,7 @@ final class IOSCallManager {
     payloadStore.removeValue(forKey: callId)
     uuidByCallId.removeValue(forKey: callId)
     callIdByUuid.removeValue(forKey: uuid)
+    incomingCallStore.clear(callId: callId)
     pendingAcceptedCallIds.remove(callId)
     confirmedAcceptedCallIds.remove(callId)
     launchActionOverrides.removeValue(forKey: callId)
@@ -505,6 +601,7 @@ final class IOSCallManager {
     explicitOngoingLaunchEmittedCallIds.remove(callId)
     outgoingCallIds.remove(callId)
     connectedAtMsByCallId.removeValue(forKey: callId)
+    incomingExpiresAtMsByCallId.removeValue(forKey: callId)
     ongoingCallStore.clear(callId: callId)
   }
 
@@ -512,29 +609,113 @@ final class IOSCallManager {
     eventBridge.emit(CallEventPayload.now(callId: callId, type: type, extra: extra))
   }
 
-  private func scheduleIncomingTimeout(payload: CallPayload, uuid: UUID) {
+  private func scheduleIncomingTimeout(
+    payload: CallPayload,
+    uuid: UUID,
+    expiresAtMs: Int64
+  ) {
     cancelTimeout(callId: payload.callId)
+    incomingExpiresAtMsByCallId[payload.callId] = expiresAtMs
 
     let workItem = DispatchWorkItem { [weak self] in
       guard let self else { return }
-      guard self.payloadStore[payload.callId] != nil else { return }
-
-      self.provider.reportCall(with: uuid, endedAt: Date(), reason: .unanswered)
-      self.emit(callId: payload.callId, type: "timeout", extra: payload.extra)
-      let missedExtra = self.eventExtra(payload: payload)
-      self.missedCallNotificationManager.showMissedCall(payload: payload.copy(extra: missedExtra))
-      self.emit(callId: payload.callId, type: "missed", extra: missedExtra)
-      self.cleanup(callId: payload.callId, uuid: uuid)
+      _ = self.reconcileIncomingTimeout(
+        callId: payload.callId,
+        payload: payload,
+        fallbackExpiresAtMs: expiresAtMs
+      )
     }
 
     timeoutItems[payload.callId] = workItem
-    let delaySeconds = max(payload.timeoutSeconds, 1)
-    DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(delaySeconds), execute: workItem)
+    let delayMs = max(expiresAtMs - Int64(Date().timeIntervalSince1970 * 1000), 1)
+    DispatchQueue.main.asyncAfter(
+      deadline: .now() + .milliseconds(Int(delayMs)),
+      execute: workItem
+    )
   }
 
   private func cancelTimeout(callId: String) {
     timeoutItems[callId]?.cancel()
     timeoutItems.removeValue(forKey: callId)
+  }
+
+  private func computeExpiresAtMs(timeoutSeconds: Int) -> Int64 {
+    Int64(Date().timeIntervalSince1970 * 1000) + (Int64(max(timeoutSeconds, 1)) * 1000)
+  }
+
+  private func currentIncomingExpiresAtMs(callId: String) -> Int64? {
+    if let cached = incomingExpiresAtMsByCallId[callId] {
+      return cached
+    }
+    guard let snapshot = incomingCallStore.restore(), snapshot.payload.callId == callId else {
+      return nil
+    }
+    incomingExpiresAtMsByCallId[callId] = snapshot.expiresAtMs
+    return snapshot.expiresAtMs
+  }
+
+  @discardableResult
+  private func reconcileIncomingTimeout(
+    callId: String,
+    payload: CallPayload,
+    fallbackExpiresAtMs: Int64? = nil,
+    rescheduleIfPending: Bool = true
+  ) -> Bool {
+    if pendingAcceptedCallIds.contains(callId) || confirmedAcceptedCallIds.contains(callId) {
+      return false
+    }
+    let expiresAtMs = currentIncomingExpiresAtMs(callId: callId) ??
+      fallbackExpiresAtMs ??
+      computeExpiresAtMs(timeoutSeconds: payload.timeoutSeconds)
+    if currentIncomingExpiresAtMs(callId: callId) == nil || fallbackExpiresAtMs != nil {
+      incomingExpiresAtMsByCallId[callId] = expiresAtMs
+      if let uuid = uuidByCallId[callId] {
+        incomingCallStore.save(payload: payload, uuid: uuid, expiresAtMs: expiresAtMs)
+      }
+    }
+    let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+    guard nowMs < expiresAtMs else {
+      finalizeIncomingTimeout(callId: callId, payload: payload, uuid: uuidByCallId[callId])
+      return false
+    }
+    if rescheduleIfPending && isIncomingRingingCall(callId: callId), let uuid = uuidByCallId[callId] {
+      scheduleIncomingTimeout(payload: payload, uuid: uuid, expiresAtMs: expiresAtMs)
+    }
+    return true
+  }
+
+  private func finalizeIncomingTimeout(
+    callId: String,
+    payload: CallPayload?,
+    uuid: UUID?
+  ) {
+    if pendingAcceptedCallIds.contains(callId) || confirmedAcceptedCallIds.contains(callId) {
+      return
+    }
+    let resolvedPayload = payloadStore[callId] ?? payload ?? fallbackPayload(callId: callId)
+    payloadStore[callId] = resolvedPayload
+    cancelTimeout(callId: callId)
+    incomingExpiresAtMsByCallId.removeValue(forKey: callId)
+    if let uuid {
+      provider.reportCall(with: uuid, endedAt: Date(), reason: .unanswered)
+      cleanup(callId: callId, uuid: uuid)
+    } else {
+      activeCallRegistry.remove(callId: callId)
+      payloadStore.removeValue(forKey: callId)
+      incomingCallStore.clear(callId: callId)
+      pendingAcceptedCallIds.remove(callId)
+      confirmedAcceptedCallIds.remove(callId)
+      launchActionOverrides.removeValue(forKey: callId)
+      explicitIncomingLaunchEmittedCallIds.remove(callId)
+      explicitOngoingLaunchEmittedCallIds.remove(callId)
+      outgoingCallIds.remove(callId)
+      connectedAtMsByCallId.removeValue(forKey: callId)
+      ongoingCallStore.clear(callId: callId)
+    }
+    emit(callId: callId, type: "timeout", extra: resolvedPayload.extra)
+    let missedExtra = eventExtra(payload: resolvedPayload)
+    missedCallNotificationManager.showMissedCall(payload: resolvedPayload.copy(extra: missedExtra))
+    emit(callId: callId, type: "missed", extra: missedExtra)
   }
 
   private func applyPostCallBehaviorIfNeeded() {
@@ -688,8 +869,13 @@ final class IOSCallManager {
 
   private func activeIncomingCallIdForOpenLaunch() -> String? {
     activeCallRegistry.activeCallIds().first { callId in
-      payloadStore[callId] != nil &&
-        !pendingAcceptedCallIds.contains(callId) &&
+      guard let payload = payloadStore[callId] else {
+        return false
+      }
+      guard reconcileIncomingTimeout(callId: callId, payload: payload) else {
+        return false
+      }
+      return !pendingAcceptedCallIds.contains(callId) &&
         !confirmedAcceptedCallIds.contains(callId) &&
         !outgoingCallIds.contains(callId)
     }
@@ -771,6 +957,15 @@ final class IOSCallManager {
       self.markMissed(callId: payload.callId, extra: extra)
     }
     return true
+  }
+
+  private func restoreBackgroundIncomingCallValidatorRegistration() {
+    guard let registration = backgroundValidatorRegistrationStore.load() else {
+      return
+    }
+    backgroundDispatcherHandle = registration.backgroundDispatcherHandle
+    backgroundAcceptCallbackHandle = registration.backgroundAcceptCallbackHandle
+    backgroundDeclineCallbackHandle = registration.backgroundDeclineCallbackHandle
   }
 
   private func shouldDeferDeclineToLiveListener() -> Bool {

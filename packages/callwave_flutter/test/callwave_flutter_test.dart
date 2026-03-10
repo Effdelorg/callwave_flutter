@@ -150,6 +150,16 @@ void main() {
     );
   });
 
+  test('exact alarm helpers delegate to platform interface', () async {
+    fakePlatform.canScheduleExactAlarmsResult = false;
+
+    final canSchedule = await CallwaveFlutter.instance.canScheduleExactAlarms();
+    await CallwaveFlutter.instance.requestExactAlarmPermission();
+
+    expect(canSchedule, isFalse);
+    expect(fakePlatform.requestExactAlarmPermissionCount, 1);
+  });
+
   test('CallData.copyWith can clear nullable fields', () {
     const original = CallData(
       callId: 'c-clear',
@@ -279,10 +289,123 @@ void main() {
     expect(session.state, CallSessionState.ended);
     expect(engine.answerCount, 0);
     expect(fakePlatform.lastMarkedMissedCallId, 'c-validated-reject');
+    expect(fakePlatform.clearCallStateCount, 0);
     expect(
       fakePlatform.lastMarkedMissedExtra?[CallEventExtraKeys.outcomeReason],
       CallAcceptRejectReason.cancelled.name,
     );
+  });
+
+  test('missed terminal event keeps native missed state intact', () async {
+    final session = CallwaveFlutter.instance.createSession(
+      callData: const CallData(
+        callId: 'c-explicit-missed',
+        callerName: 'Ava',
+        handle: '+1 555 0101',
+      ),
+      isOutgoing: false,
+      initialState: CallSessionState.ringing,
+    );
+
+    fakePlatform.emit(
+      platform.CallEventDto(
+        callId: 'c-explicit-missed',
+        type: platform.CallEventType.missed,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(session.state, CallSessionState.ended);
+    expect(fakePlatform.clearCallStateCount, 0);
+    expect(fakePlatform.lastClearedCallId, isNull);
+  });
+
+  test('timeout terminal flow keeps native missed state intact', () async {
+    final session = CallwaveFlutter.instance.createSession(
+      callData: const CallData(
+        callId: 'c-timeout-missed',
+        callerName: 'Ava',
+        handle: '+1 555 0101',
+      ),
+      isOutgoing: false,
+      initialState: CallSessionState.ringing,
+    );
+
+    fakePlatform.emit(
+      platform.CallEventDto(
+        callId: 'c-timeout-missed',
+        type: platform.CallEventType.timeout,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    fakePlatform.emit(
+      platform.CallEventDto(
+        callId: 'c-timeout-missed',
+        type: platform.CallEventType.missed,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(session.state, CallSessionState.ended);
+    expect(fakePlatform.clearCallStateCount, 0);
+    expect(fakePlatform.lastClearedCallId, isNull);
+  });
+
+  test('ended terminal event still clears native call state', () async {
+    final sessionFuture = CallwaveFlutter.instance.sessions.first;
+
+    fakePlatform.emit(
+      platform.CallEventDto(
+        callId: 'c-clear-on-ended',
+        type: platform.CallEventType.accepted,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    final session = await sessionFuture;
+    await Future<void>.delayed(Duration.zero);
+
+    fakePlatform.emit(
+      platform.CallEventDto(
+        callId: 'c-clear-on-ended',
+        type: platform.CallEventType.ended,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(session.state, CallSessionState.ended);
+    expect(fakePlatform.clearCallStateCount, 1);
+    expect(fakePlatform.lastClearedCallId, 'c-clear-on-ended');
+  });
+
+  test('declined terminal event still clears native call state', () async {
+    final sessionFuture = CallwaveFlutter.instance.sessions.first;
+
+    fakePlatform.emit(
+      platform.CallEventDto(
+        callId: 'c-clear-on-declined',
+        type: platform.CallEventType.incoming,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    final session = await sessionFuture;
+    await Future<void>.delayed(Duration.zero);
+
+    fakePlatform.emit(
+      platform.CallEventDto(
+        callId: 'c-clear-on-declined',
+        type: platform.CallEventType.declined,
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(session.state, CallSessionState.ended);
+    expect(fakePlatform.clearCallStateCount, 1);
+    expect(fakePlatform.lastClearedCallId, 'c-clear-on-declined');
   });
 
   test('validated rejection still ends locally when markMissed throws',
@@ -321,6 +444,50 @@ void main() {
         fakePlatform.lastMarkedMissedCallId,
         'c-validated-mark-missed-failure',
       );
+      expect(fakePlatform.clearCallStateCount, 1);
+    }, (error, _) {
+      capturedErrors.add(error);
+    });
+
+    expect(capturedErrors, hasLength(1));
+    expect(capturedErrors.single, isA<StateError>());
+  });
+
+  test(
+      'validated rejection preserves native missed state if missed event arrives before markMissed error',
+      () async {
+    final capturedErrors = <Object>[];
+    fakePlatform.markMissedEmitEventBeforeThrow = true;
+    fakePlatform.markMissedError = StateError('mark missed failed after emit');
+
+    await runZonedGuarded(() async {
+      final sessionFuture = CallwaveFlutter.instance.sessions.first;
+
+      CallwaveFlutter.instance.configure(
+        CallwaveConfiguration(
+          engine: _FakeEngine(),
+          incomingCallHandling: IncomingCallHandling.validated(
+            validator: (_) async => const CallAcceptDecision.reject(
+              reason: CallAcceptRejectReason.cancelled,
+            ),
+          ),
+        ),
+      );
+      fakePlatform.emit(
+        platform.CallEventDto(
+          callId: 'c-validated-mark-missed-after-emit',
+          type: platform.CallEventType.accepted,
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+
+      final session = await sessionFuture;
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(session.state, CallSessionState.ended);
+      expect(fakePlatform.clearCallStateCount, 0);
+      expect(fakePlatform.lastClearedCallId, isNull);
     }, (error, _) {
       capturedErrors.add(error);
     });
@@ -991,16 +1158,20 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   String? lastSyncedConnectedCallId;
   int? lastSyncedConnectedAtMs;
   String? lastClearedCallId;
+  int clearCallStateCount = 0;
   int? lastBackgroundDispatcherHandle;
   int? lastBackgroundCallbackHandle;
   int? lastBackgroundDeclineCallbackHandle;
   Object? markMissedError;
+  bool markMissedEmitEventBeforeThrow = false;
   Object? confirmAcceptedCallError;
   int confirmAcceptedCallCount = 0;
   int takePendingStartupActionCount = 0;
   platform.PostCallBehavior postCallBehavior =
       platform.PostCallBehavior.stayOpen;
   platform.CallStartupActionDto? pendingStartupAction;
+  bool canScheduleExactAlarmsResult = true;
+  int requestExactAlarmPermissionCount = 0;
 
   @override
   Stream<platform.CallEventDto> get events => _controller.stream;
@@ -1072,6 +1243,7 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
 
   @override
   Future<void> clearCallState(String callId) async {
+    clearCallStateCount += 1;
     lastClearedCallId = callId;
     _removeActiveCall(callId);
   }
@@ -1112,6 +1284,16 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
     _removeActiveCall(callId);
     lastMarkedMissedCallId = callId;
     lastMarkedMissedExtra = extra;
+    if (markMissedEmitEventBeforeThrow) {
+      emit(
+        platform.CallEventDto(
+          callId: callId,
+          type: platform.CallEventType.missed,
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+          extra: extra,
+        ),
+      );
+    }
     final error = markMissedError;
     if (error != null) {
       throw error;
@@ -1128,6 +1310,14 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
 
   @override
   Future<void> requestFullScreenIntentPermission() async {}
+
+  @override
+  Future<bool> canScheduleExactAlarms() async => canScheduleExactAlarmsResult;
+
+  @override
+  Future<void> requestExactAlarmPermission() async {
+    requestExactAlarmPermissionCount += 1;
+  }
 
   @override
   Future<bool> requestNotificationPermission() async => true;

@@ -193,6 +193,12 @@ final class CallwaveMethodHandler {
     case "requestFullScreenIntentPermission":
       result(nil)
 
+    case "canScheduleExactAlarms":
+      result(true)
+
+    case "requestExactAlarmPermission":
+      result(nil)
+
     case "setPostCallBehavior":
       let args = call.arguments as? [String: Any]
       let behavior = args?["postCallBehavior"] as? String

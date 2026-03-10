@@ -197,6 +197,15 @@ class CallwaveMethodHandler(
                 result.success(null)
             }
 
+            "canScheduleExactAlarms" -> {
+                result.success(callManager.canScheduleExactAlarms())
+            }
+
+            "requestExactAlarmPermission" -> {
+                callManager.requestExactAlarmPermission(activity)
+                result.success(null)
+            }
+
             "setPostCallBehavior" -> {
                 val behavior = call.argument<String>(CallwaveConstants.EXTRA_POST_CALL_BEHAVIOR)
                 callManager.setPostCallBehavior(behavior)

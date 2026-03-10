@@ -11,15 +11,19 @@ import com.callwave.flutter.methodchannel.receiver.CallActionReceiver
 class CallTimeoutScheduler(
     private val context: Context,
 ) {
-    fun schedule(callId: String, timeoutSeconds: Int) {
+    fun scheduleAt(callId: String, triggerAtMs: Long) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val pendingIntent = timeoutPendingIntentForUpdate(callId)
-        val triggerAt = System.currentTimeMillis() + timeoutSeconds.coerceAtLeast(1) * 1000L
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
-            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent)
         } else {
-            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent)
         }
+    }
+
+    fun canScheduleExactAlarms(): Boolean {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
     }
 
     fun cancel(callId: String) {

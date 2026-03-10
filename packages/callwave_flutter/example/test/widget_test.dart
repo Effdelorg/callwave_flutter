@@ -5,6 +5,7 @@ import 'package:callwave_flutter/callwave_flutter.dart';
 import 'package:callwave_flutter_platform_interface/callwave_flutter_platform_interface.dart'
     as platform;
 import 'package:callwave_flutter_example/example_camera_controller.dart';
+import 'package:callwave_flutter_example/example_failure_api.dart';
 import 'package:callwave_flutter_example/example_video_call_screen.dart';
 import 'package:callwave_flutter_example/main.dart';
 import 'package:flutter/material.dart';
@@ -19,11 +20,30 @@ void main() {
     fakeCamera = _FakeCameraHandle();
     platform.CallwaveFlutterPlatform.instance = fakePlatform;
     await clearPersistedIncomingDemoMode();
+    ExampleFailureApi.callOverride = ({
+      required ExampleFailureApiFlow flow,
+      required String callId,
+      required String reason,
+    }) async {
+      final isValidatedAllow = flow == ExampleFailureApiFlow.validatedAllow;
+      return ExampleFailureApiResult(
+        flow: flow,
+        reason: reason,
+        endpoint: Uri.parse(
+          isValidatedAllow
+              ? ExampleFailureApi.delayedValidatedAllowEndpoint
+              : ExampleFailureApi.failingEndpoint,
+        ),
+        statusCode: isValidatedAllow ? 200 : 400,
+        bodyPreview: isValidatedAllow ? '{"status":"ok"}' : 'Bad Request Test',
+      );
+    };
     CallwaveFlutter.instance.setEngine(_TestEngine());
   });
 
   tearDown(() async {
     await clearPersistedIncomingDemoMode();
+    ExampleFailureApi.resetForTesting();
     CallwaveFlutter.instance.setEngine(_TestEngine());
     await fakePlatform.dispose();
   });
@@ -42,13 +62,20 @@ void main() {
     await tester.pumpWidget(const CallwaveExampleApp());
     await tester.pump();
 
-    expect(find.byKey(const ValueKey(CallDemoButtonKeys.incomingAudio)), findsOneWidget);
-    expect(find.byKey(const ValueKey(CallDemoButtonKeys.incomingVideo)), findsOneWidget);
-    expect(find.byKey(const ValueKey(CallDemoButtonKeys.outgoingAudio)), findsOneWidget);
-    expect(find.byKey(const ValueKey(CallDemoButtonKeys.outgoingVideo)), findsOneWidget);
-    expect(find.byKey(const ValueKey(CallDemoButtonKeys.conferenceAudio)), findsOneWidget);
-    expect(find.byKey(const ValueKey(CallDemoButtonKeys.conferenceVideo)), findsOneWidget);
-    expect(find.byKey(const ValueKey(CallDemoButtonKeys.cycleSpeaker)), findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.incomingAudio)),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.incomingVideo)),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.outgoingAudio)),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.outgoingVideo)),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.conferenceAudio)),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.conferenceVideo)),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.cycleSpeaker)),
+        findsOneWidget);
 
     await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
   });
@@ -579,11 +606,18 @@ void main() {
 
     expect(find.byType(CallScreen), findsNothing);
     expect(find.byType(ExampleVideoCallScreen), findsNothing);
-    expect(find.byKey(const ValueKey(CallDemoButtonKeys.incomingVideo)), findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.incomingVideo)),
+        findsOneWidget);
     expect(fakePlatform.lastMarkedMissedCallId, _FakePlatform.callId);
+    expect(fakePlatform.lastClearedCallId, isNull);
     expect(
       fakePlatform.lastMarkedMissedExtra?[CallEventExtraKeys.outcomeReason],
-      CallAcceptRejectReason.cancelled.name,
+      CallAcceptRejectReason.failed.name,
+    );
+    expect(
+      fakePlatform
+          .lastMarkedMissedExtra?[ExampleFailureApiExtraKeys.statusCode],
+      400,
     );
 
     await _disposeRenderedApp(tester, wait: const Duration(seconds: 4));
@@ -835,7 +869,8 @@ void main() {
     expect(startupDecision.shouldOpenCall, isFalse);
     expect(find.byType(CallScreen), findsNothing);
     expect(find.byType(ExampleVideoCallScreen), findsNothing);
-    expect(find.byKey(const ValueKey(CallDemoButtonKeys.incomingVideo)), findsOneWidget);
+    expect(find.byKey(const ValueKey(CallDemoButtonKeys.incomingVideo)),
+        findsOneWidget);
     await _disposeRenderedApp(tester, wait: const Duration(milliseconds: 50));
   });
 
@@ -943,7 +978,8 @@ void main() {
     await tester.pump();
 
     expect(find.text('CALLBACK REQUEST'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey<String>('start-callback-button')));
+    await tester
+        .tap(find.byKey(const ValueKey<String>('start-callback-button')));
     await tester.pump();
     await _pumpUntilCallScreen(tester);
 
@@ -981,7 +1017,8 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.byKey(const ValueKey<String>('start-callback-button')));
+    await tester
+        .tap(find.byKey(const ValueKey<String>('start-callback-button')));
     await tester.pump();
     await _pumpUntilCallScreen(tester);
 
@@ -1017,7 +1054,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text('CALLBACK REQUEST'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey<String>('start-callback-button')));
+    await tester
+        .tap(find.byKey(const ValueKey<String>('start-callback-button')));
     await tester.pump();
     await _pumpUntilCallScreen(tester);
 
@@ -1077,6 +1115,7 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   String? lastConfirmedCallId;
   String? lastMarkedMissedCallId;
   Map<String, dynamic>? lastMarkedMissedExtra;
+  String? lastClearedCallId;
   int? lastBackgroundDispatcherHandle;
   int? lastBackgroundCallbackHandle;
   int? lastBackgroundDeclineCallbackHandle;
@@ -1208,6 +1247,11 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
     lastMarkedMissedCallId = callId;
     lastMarkedMissedExtra = extra;
     emit(type: platform.CallEventType.missed, extra: extra);
+  }
+
+  @override
+  Future<void> clearCallState(String callId) async {
+    lastClearedCallId = callId;
   }
 
   @override
