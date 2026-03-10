@@ -65,7 +65,14 @@ class _IncomingDemoModeStore {
   }
 }
 
-Future<IncomingDemoMode> loadPersistedIncomingDemoMode() {
+/// When set (in tests), used instead of reading from disk. Avoids file races
+/// when tests run in parallel.
+@visibleForTesting
+Future<IncomingDemoMode> Function()? loadPersistedIncomingDemoModeOverride;
+
+Future<IncomingDemoMode> loadPersistedIncomingDemoMode() async {
+  final override = loadPersistedIncomingDemoModeOverride;
+  if (override != null) return override();
   return _IncomingDemoModeStore.load();
 }
 

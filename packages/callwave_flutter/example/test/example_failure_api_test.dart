@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   tearDown(() async {
+    loadPersistedIncomingDemoModeOverride = null;
     ExampleFailureApi.resetForTesting();
     await clearPersistedIncomingDemoMode();
   });
@@ -75,7 +76,8 @@ void main() {
         bodyPreview: '{"status":"ok"}',
       );
     };
-    await persistIncomingDemoMode(IncomingDemoMode.validatedAllow);
+    loadPersistedIncomingDemoModeOverride =
+        () async => IncomingDemoMode.validatedAllow;
 
     final decision = await exampleBackgroundIncomingCallValidator(
       const BackgroundIncomingCallValidationRequest(
@@ -108,7 +110,8 @@ void main() {
         bodyPreview: 'Bad Request Test',
       );
     };
-    await persistIncomingDemoMode(IncomingDemoMode.validatedReject);
+    loadPersistedIncomingDemoModeOverride =
+        () async => IncomingDemoMode.validatedReject;
 
     final decision = await exampleBackgroundIncomingCallValidator(
       const BackgroundIncomingCallValidationRequest(
@@ -142,7 +145,8 @@ void main() {
         bodyPreview: 'Bad Request Test',
       );
     };
-    await persistIncomingDemoMode(IncomingDemoMode.declineFailed);
+    loadPersistedIncomingDemoModeOverride =
+        () async => IncomingDemoMode.declineFailed;
 
     final decision = await exampleBackgroundIncomingCallDeclineValidator(
       const BackgroundIncomingCallValidationRequest(
