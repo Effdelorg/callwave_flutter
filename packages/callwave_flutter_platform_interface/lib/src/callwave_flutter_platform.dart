@@ -104,6 +104,16 @@ abstract class CallwaveFlutterPlatform extends PlatformInterface {
 
   Future<void> requestFullScreenIntentPermission();
 
+  /// Returns whether the app can schedule exact alarms (Android 12+).
+  /// Default implementation returns true (e.g. iOS).
+  Future<bool> canScheduleExactAlarms() async {
+    return true;
+  }
+
+  /// Opens system settings for exact alarm permission (Android 12+).
+  /// Default implementation is a no-op.
+  Future<void> requestExactAlarmPermission() async {}
+
   /// Configures post-call behavior when the user ends a call via [endCall].
   ///
   /// On Android, [PostCallBehavior.backgroundOnEnded] moves the app to
@@ -178,6 +188,12 @@ class _StubCallwaveFlutterPlatform extends CallwaveFlutterPlatform {
       'requestFullScreenIntentPermission() has not been implemented.',
     );
   }
+
+  @override
+  Future<bool> canScheduleExactAlarms() async => true;
+
+  @override
+  Future<void> requestExactAlarmPermission() async {}
 
   @override
   Future<bool> requestNotificationPermission() {

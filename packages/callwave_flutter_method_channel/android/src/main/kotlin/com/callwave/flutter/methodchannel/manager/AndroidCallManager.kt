@@ -9,6 +9,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -30,8 +32,10 @@ class AndroidCallManager(
     private val eventSinkBridge: EventSinkBridge,
 ) {
     private val pendingStartupActionStore = PendingStartupActionStore(context)
+    private val incomingCallStore = IncomingCallStore(context)
     private val ongoingCallStore = OngoingCallStore(context)
     private val payloadStore = HashMap<String, CallPayload>()
+    private val incomingExpiresAtByCallId = HashMap<String, Long>()
     private val openedIncomingCalls = HashSet<String>()
     private val pendingAcceptedCalls = HashSet<String>()
     private val confirmedAcceptedCalls = HashSet<String>()
@@ -43,6 +47,8 @@ class AndroidCallManager(
     private val backgroundValidator = AndroidBackgroundValidator(context)
     private val backgroundValidatorRegistrationStore =
         BackgroundValidatorRegistrationStore(context)
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val timeoutRunnables = HashMap<String, Runnable>()
     var activity: Activity? = null
     private var postCallBehavior = PostCallBehavior.STAY_OPEN
     private var backgroundDispatcherHandle: Long? = null
@@ -58,6 +64,7 @@ class AndroidCallManager(
     init {
         restoreBackgroundIncomingCallValidatorRegistration()
         restorePersistedOngoingCall()
+        restorePersistedIncomingCall()
     }
 
     fun initialize() {
@@ -85,7 +92,9 @@ class AndroidCallManager(
             }
         }
 
+        val expiresAtMs = computeExpiresAtMs(payload.timeoutSeconds)
         payloadStore[payload.callId] = payload
+        incomingExpiresAtByCallId[payload.callId] = expiresAtMs
         openedIncomingCalls.remove(payload.callId)
         pendingAcceptedCalls.remove(payload.callId)
         confirmedAcceptedCalls.remove(payload.callId)
@@ -94,6 +103,7 @@ class AndroidCallManager(
         launchActionOverrides.remove(payload.callId)
         outgoingCalls.remove(payload.callId)
         connectedAtByCallId.remove(payload.callId)
+        incomingCallStore.save(payload, expiresAtMs)
 
         notificationManager.showIncomingCall(
             payload = payload,
@@ -106,7 +116,7 @@ class AndroidCallManager(
                 payload = payload,
             ),
         )
-        timeoutScheduler.schedule(payload.callId, payload.timeoutSeconds)
+        scheduleIncomingTimeouts(payload.callId, expiresAtMs)
     }
 
     fun showOutgoingCall(payload: CallPayload) {
@@ -301,22 +311,33 @@ class AndroidCallManager(
             intent.getStringExtra(CallwaveConstants.EXTRA_EXTRA),
         )
         var payload = payloadStore[callId]
+        var expiresAtMs = currentIncomingExpiresAtMs(callId) ?: intentExpiresAtMs(intent)
         if (payload == null) {
-            val restoredPayload = payloadFromIntent(callId, intent, extraFromIntent)
+            val storedIncomingCall = incomingCallStore.restore()?.takeIf { it.payload.callId == callId }
+            val restoredPayload = storedIncomingCall?.payload ?: payloadFromIntent(
+                callId,
+                intent,
+                extraFromIntent,
+            )
+            expiresAtMs = storedIncomingCall?.expiresAtMs
+                ?: expiresAtMs
+                ?: computeExpiresAtMs(restoredPayload.timeoutSeconds)
             if (!activeCallRegistry.tryStart(callId)) {
                 openedIncomingCalls.remove(callId)
                 emitEvent(callId, CallwaveConstants.EVENT_DECLINED, restoredPayload.extra)
                 return true
             }
-            if (!timeoutScheduler.isScheduled(callId)) {
-                timeoutScheduler.schedule(callId, restoredPayload.timeoutSeconds)
-            }
             payloadStore[callId] = restoredPayload
+            persistIncomingDeadline(restoredPayload, expiresAtMs)
             payload = restoredPayload
         }
 
         val resolvedPayload = payload
             ?: return true
+        if (!reconcileIncomingTimeout(callId, resolvedPayload, expiresAtMs)) {
+            openedIncomingCalls.remove(callId)
+            return true
+        }
         launchActionOverrides[callId] = CallwaveConstants.ACTION_OPEN_INCOMING
         val mergedExtra = incomingEventExtra(
             callId = callId,
@@ -344,6 +365,11 @@ class AndroidCallManager(
             "onAccept(callId=$callId, hasFallbackPayload=${fallbackPayload != null}, " +
                 "requireBackgroundValidation=$requireBackgroundValidationForValidatedAccept)",
         )
+        val resolvedPayload = payloadStore[callId] ?: fallbackPayload
+        if (resolvedPayload != null && !reconcileIncomingTimeout(callId, resolvedPayload, rescheduleIfPending = false)) {
+            Log.d(TAG, "onAccept ignored for $callId because the incoming call already expired.")
+            return AcceptResult.IGNORED
+        }
         if (pendingAcceptedCalls.contains(callId) || confirmedAcceptedCalls.contains(callId)) {
             Log.d(TAG, "onAccept ignored for $callId because it is already accepted.")
             return AcceptResult.IGNORED
@@ -362,7 +388,7 @@ class AndroidCallManager(
             pendingLaunchAfterConfirm.remove(callId)
             outgoingCalls.remove(callId)
             if (fallbackPayload != null) {
-                timeoutScheduler.cancel(callId)
+                cancelIncomingTimeouts(callId, clearPersistedState = true)
                 notificationManager.dismissIncoming(callId)
                 openedIncomingCalls.remove(callId)
                 emitEvent(
@@ -377,7 +403,7 @@ class AndroidCallManager(
             return AcceptResult.IGNORED
         }
 
-        timeoutScheduler.cancel(callId)
+        cancelIncomingTimeouts(callId, clearPersistedState = true)
         notificationManager.dismissIncoming(
             callId = callId,
             stopForegroundService = false,
@@ -474,7 +500,7 @@ class AndroidCallManager(
         val acceptanceState = acceptedStateFor(callId)
         val isAcceptedIncomingCall = acceptanceState != null
         val eventType = if (isAcceptedIncomingCall) {
-            timeoutScheduler.cancel(callId)
+            cancelIncomingTimeouts(callId, clearPersistedState = true)
             CallwaveConstants.EVENT_ACCEPTED
         } else {
             outgoingCalls.add(callId)
@@ -513,6 +539,11 @@ class AndroidCallManager(
         requireBackgroundDeclineReport: Boolean = false,
         onBackgroundDeclineResolved: (() -> Unit)? = null,
     ) {
+        val resolvedPayload = payloadStore[callId] ?: fallbackPayload
+        if (resolvedPayload != null && !reconcileIncomingTimeout(callId, resolvedPayload, rescheduleIfPending = false)) {
+            onBackgroundDeclineResolved?.invoke()
+            return
+        }
         if (pendingAcceptedCalls.contains(callId) || confirmedAcceptedCalls.contains(callId)) {
             // Ignore stale decline actions after a successful accept.
             onBackgroundDeclineResolved?.invoke()
@@ -533,21 +564,11 @@ class AndroidCallManager(
     }
 
     fun onTimeout(callId: String) {
-        if (!activeCallRegistry.contains(callId)) {
-            // Ignore stale timeout broadcasts after call cleanup.
-            return
-        }
-        if (pendingAcceptedCalls.contains(callId) || confirmedAcceptedCalls.contains(callId)) {
-            // Ignore stale timeout broadcasts that race with an accepted call.
-            return
-        }
-        if (pendingDeclinedCalls.contains(callId)) {
-            // Ignore stale timeout broadcasts while headless decline reporting is in flight.
-            return
-        }
-        val extra = payloadStore[callId]?.extra
-        emitEvent(callId, CallwaveConstants.EVENT_TIMEOUT, extra)
-        markMissed(callId)
+        val payload = payloadStore[callId] ?: incomingCallStore.restore()
+            ?.takeIf { it.payload.callId == callId }
+            ?.payload
+            ?: return
+        reconcileIncomingTimeout(callId, payload)
     }
 
     fun onCallback(callId: String, extra: Map<String, Any?>?) {
@@ -677,6 +698,12 @@ class AndroidCallManager(
                 continue
             }
             val payload = payloadStore[callId]
+            if (payload != null &&
+                isIncomingRingingCall(callId) &&
+                !reconcileIncomingTimeout(callId, payload)
+            ) {
+                continue
+            }
             val type = when {
                 pendingAcceptedCalls.contains(callId) ||
                     confirmedAcceptedCalls.contains(callId) -> CallwaveConstants.EVENT_ACCEPTED
@@ -721,6 +748,12 @@ class AndroidCallManager(
                 continue
             }
             val payload = payloadStore[callId]
+            if (payload != null &&
+                isIncomingRingingCall(callId) &&
+                !reconcileIncomingTimeout(callId, payload)
+            ) {
+                continue
+            }
             val type = when {
                 pendingAcceptedCalls.contains(callId) ||
                     confirmedAcceptedCalls.contains(callId) -> CallwaveConstants.EVENT_ACCEPTED
@@ -787,6 +820,29 @@ class AndroidCallManager(
             activity.startActivity(target)
         } else {
             context.startActivity(target)
+        }
+    }
+
+    fun canScheduleExactAlarms(): Boolean = timeoutScheduler.canScheduleExactAlarms()
+
+    fun requestExactAlarmPermission(activity: Activity?) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || canScheduleExactAlarms()) {
+            return
+        }
+        val target = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+            data = Uri.parse("package:${context.packageName}")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val launcher = activity ?: context
+        val canHandleIntent = target.resolveActivity(context.packageManager) != null
+        if (!canHandleIntent) {
+            Log.w(TAG, "Unable to resolve exact alarm permission settings activity.")
+            return
+        }
+        try {
+            launcher.startActivity(target)
+        } catch (error: Throwable) {
+            Log.w(TAG, "Unable to launch exact alarm permission settings.", error)
         }
     }
 
@@ -906,6 +962,34 @@ class AndroidCallManager(
         snapshot.connectedAtMs?.let { connectedAtByCallId[payload.callId] = it }
     }
 
+    private fun restorePersistedIncomingCall() {
+        val snapshot = incomingCallStore.restore() ?: return
+        val payload = snapshot.payload
+        val callId = payload.callId
+        if (payloadStore[callId] != null) {
+            persistIncomingDeadline(payload, snapshot.expiresAtMs)
+            reconcileIncomingTimeout(callId, payload, snapshot.expiresAtMs)
+            return
+        }
+        if (!activeCallRegistry.tryStart(callId)) {
+            incomingCallStore.clear(callId)
+            return
+        }
+        payloadStore[callId] = payload
+        openedIncomingCalls.remove(callId)
+        pendingAcceptedCalls.remove(callId)
+        confirmedAcceptedCalls.remove(callId)
+        pendingDeclinedCalls.remove(callId)
+        pendingLaunchAfterConfirm.remove(callId)
+        launchActionOverrides.remove(callId)
+        outgoingCalls.remove(callId)
+        connectedAtByCallId.remove(callId)
+        persistIncomingDeadline(payload, snapshot.expiresAtMs)
+        if (!reconcileIncomingTimeout(callId, payload, snapshot.expiresAtMs)) {
+            return
+        }
+    }
+
     private fun persistOngoingCall(
         payload: CallPayload,
         eventType: String,
@@ -915,6 +999,108 @@ class AndroidCallManager(
             eventType = eventType,
             connectedAtMs = connectedAtByCallId[payload.callId],
         )
+    }
+
+    private fun computeExpiresAtMs(timeoutSeconds: Int): Long {
+        return System.currentTimeMillis() + timeoutSeconds.coerceAtLeast(1) * 1000L
+    }
+
+    private fun persistIncomingDeadline(payload: CallPayload, expiresAtMs: Long) {
+        incomingExpiresAtByCallId[payload.callId] = expiresAtMs
+        incomingCallStore.save(payload, expiresAtMs)
+    }
+
+    private fun currentIncomingExpiresAtMs(callId: String): Long? {
+        val cached = incomingExpiresAtByCallId[callId]
+        if (cached != null) {
+            return cached
+        }
+        val restored = incomingCallStore.restore()?.takeIf { it.payload.callId == callId } ?: return null
+        incomingExpiresAtByCallId[callId] = restored.expiresAtMs
+        return restored.expiresAtMs
+    }
+
+    private fun scheduleIncomingTimeouts(callId: String, expiresAtMs: Long) {
+        cancelLocalTimeout(callId)
+        val delayMs = (expiresAtMs - System.currentTimeMillis()).coerceAtLeast(1L)
+        val timeoutRunnable = Runnable {
+            onTimeout(callId)
+        }
+        timeoutRunnables[callId] = timeoutRunnable
+        mainHandler.postDelayed(timeoutRunnable, delayMs)
+        timeoutScheduler.scheduleAt(callId, expiresAtMs)
+    }
+
+    private fun cancelIncomingTimeouts(callId: String, clearPersistedState: Boolean) {
+        cancelLocalTimeout(callId)
+        timeoutScheduler.cancel(callId)
+        incomingExpiresAtByCallId.remove(callId)
+        if (clearPersistedState) {
+            incomingCallStore.clear(callId)
+        }
+    }
+
+    private fun cancelLocalTimeout(callId: String) {
+        timeoutRunnables.remove(callId)?.let(mainHandler::removeCallbacks)
+    }
+
+    private fun reconcileIncomingTimeout(
+        callId: String,
+        payload: CallPayload,
+        fallbackExpiresAtMs: Long? = null,
+        rescheduleIfPending: Boolean = true,
+    ): Boolean {
+        if (pendingAcceptedCalls.contains(callId) || confirmedAcceptedCalls.contains(callId)) {
+            return false
+        }
+        if (pendingDeclinedCalls.contains(callId)) {
+            return false
+        }
+        val expiresAtMs = currentIncomingExpiresAtMs(callId)
+            ?: fallbackExpiresAtMs
+            ?: computeExpiresAtMs(payload.timeoutSeconds)
+        if (currentIncomingExpiresAtMs(callId) == null || fallbackExpiresAtMs != null) {
+            persistIncomingDeadline(payload, expiresAtMs)
+        }
+        val remainingMs = expiresAtMs - System.currentTimeMillis()
+        if (remainingMs <= 0L) {
+            expireIncomingCall(callId, payload)
+            return false
+        }
+        if (rescheduleIfPending && isIncomingRingingCall(callId)) {
+            scheduleIncomingTimeouts(callId, expiresAtMs)
+        }
+        return true
+    }
+
+    private fun expireIncomingCall(callId: String, fallbackPayload: CallPayload?) {
+        if (pendingAcceptedCalls.contains(callId) || confirmedAcceptedCalls.contains(callId)) {
+            return
+        }
+        if (pendingDeclinedCalls.contains(callId)) {
+            return
+        }
+        val payload = payloadStore[callId] ?: fallbackPayload
+        if (payloadStore[callId] == null && payload != null) {
+            payloadStore[callId] = payload
+        }
+        emitEvent(callId, CallwaveConstants.EVENT_TIMEOUT, payload?.extra)
+        markMissed(callId)
+    }
+
+    private fun isIncomingRingingCall(callId: String): Boolean {
+        return payloadStore[callId] != null &&
+            !pendingAcceptedCalls.contains(callId) &&
+            !confirmedAcceptedCalls.contains(callId) &&
+            !pendingDeclinedCalls.contains(callId) &&
+            !outgoingCalls.contains(callId)
+    }
+
+    private fun intentExpiresAtMs(intent: Intent?): Long? {
+        val safeIntent = intent ?: return null
+        return safeIntent.takeIf { it.hasExtra(CallwaveConstants.EXTRA_EXPIRES_AT_MS) }
+            ?.getLongExtra(CallwaveConstants.EXTRA_EXPIRES_AT_MS, 0L)
+            ?.takeIf { it > 0L }
     }
 
     private fun handleMissedCallStartupIntent(
@@ -1151,7 +1337,7 @@ class AndroidCallManager(
     }
 
     private fun clearCallRuntimeState(callId: String, dismissMissed: Boolean) {
-        timeoutScheduler.cancel(callId)
+        cancelIncomingTimeouts(callId, clearPersistedState = true)
         notificationManager.dismissIncoming(callId)
         if (dismissMissed) {
             notificationManager.dismissMissed(callId)
@@ -1444,7 +1630,7 @@ class AndroidCallManager(
         }
 
         pendingDeclinedCalls.add(payload.callId)
-        timeoutScheduler.cancel(payload.callId)
+        cancelIncomingTimeouts(payload.callId, clearPersistedState = true)
         notificationManager.hideIncomingUi(payload.callId)
         openedIncomingCalls.remove(payload.callId)
         pendingAcceptedCalls.remove(payload.callId)
@@ -1610,6 +1796,9 @@ class AndroidCallManager(
             CallwaveConstants.EXTRA_BACKGROUND_DECLINE_CALLBACK_HANDLE,
             payload.backgroundDeclineCallbackHandle,
         )
+        currentIncomingExpiresAtMs(payload.callId)?.let {
+            putExtra(CallwaveConstants.EXTRA_EXPIRES_AT_MS, it)
+        }
     }
 
     companion object {

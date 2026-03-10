@@ -344,6 +344,18 @@ class CallwaveFlutter {
     return _platform.requestFullScreenIntentPermission();
   }
 
+  /// Returns whether the app can schedule exact alarms (Android 12+).
+  /// On iOS, always returns true.
+  Future<bool> canScheduleExactAlarms() {
+    return _platform.canScheduleExactAlarms();
+  }
+
+  /// Opens system settings for exact alarm permission (Android 12+).
+  /// No-op on iOS.
+  Future<void> requestExactAlarmPermission() {
+    return _platform.requestExactAlarmPermission();
+  }
+
   /// Configures post-call behavior when the user ends a call via [endCall].
   ///
   /// Does not apply to timeout, decline, or [markMissed]. On Android,

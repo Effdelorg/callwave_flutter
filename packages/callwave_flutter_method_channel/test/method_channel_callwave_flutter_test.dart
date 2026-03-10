@@ -156,6 +156,54 @@ void main() {
     expect(args[PayloadCodec.keyConnectedAtMs], 1700000000000);
   });
 
+  test('canScheduleExactAlarms reads method channel result', () async {
+    const channel = MethodChannel('callwave_flutter/methods');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      if (call.method == 'canScheduleExactAlarms') {
+        return false;
+      }
+      return null;
+    });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+
+    final plugin = MethodChannelCallwaveFlutter();
+    final allowed = await plugin.canScheduleExactAlarms();
+
+    expect(allowed, isFalse);
+    expect(calls.map((call) => call.method), <String>[
+      'initialize',
+      'canScheduleExactAlarms',
+    ]);
+  });
+
+  test('requestExactAlarmPermission sends method channel call', () async {
+    const channel = MethodChannel('callwave_flutter/methods');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+
+    final plugin = MethodChannelCallwaveFlutter();
+    await plugin.requestExactAlarmPermission();
+
+    expect(calls.map((call) => call.method), <String>[
+      'initialize',
+      'requestExactAlarmPermission',
+    ]);
+  });
+
   test('clearCallState sends call id payload', () async {
     const channel = MethodChannel('callwave_flutter/methods');
     final calls = <MethodCall>[];

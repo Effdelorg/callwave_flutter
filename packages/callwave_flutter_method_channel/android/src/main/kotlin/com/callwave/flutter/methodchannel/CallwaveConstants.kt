@@ -30,6 +30,7 @@ object CallwaveConstants {
     const val EXTRA_LAUNCH_ACTION = "launchAction"
     const val EXTRA_ACCEPTANCE_STATE = "acceptanceState"
     const val EXTRA_CONNECTED_AT_MS = "connectedAtMs"
+    const val EXTRA_EXPIRES_AT_MS = "expiresAtMs"
     const val EXTRA_OUTCOME_REASON = "outcomeReason"
     const val EXTRA_INCOMING_ACCEPT_STRATEGY = "incomingAcceptStrategy"
     const val EXTRA_BACKGROUND_DISPATCHER_HANDLE = "backgroundDispatcherHandle"

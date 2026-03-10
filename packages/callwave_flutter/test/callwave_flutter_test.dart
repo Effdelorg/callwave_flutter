@@ -150,6 +150,16 @@ void main() {
     );
   });
 
+  test('exact alarm helpers delegate to platform interface', () async {
+    fakePlatform.canScheduleExactAlarmsResult = false;
+
+    final canSchedule = await CallwaveFlutter.instance.canScheduleExactAlarms();
+    await CallwaveFlutter.instance.requestExactAlarmPermission();
+
+    expect(canSchedule, isFalse);
+    expect(fakePlatform.requestExactAlarmPermissionCount, 1);
+  });
+
   test('CallData.copyWith can clear nullable fields', () {
     const original = CallData(
       callId: 'c-clear',
@@ -1160,6 +1170,8 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   platform.PostCallBehavior postCallBehavior =
       platform.PostCallBehavior.stayOpen;
   platform.CallStartupActionDto? pendingStartupAction;
+  bool canScheduleExactAlarmsResult = true;
+  int requestExactAlarmPermissionCount = 0;
 
   @override
   Stream<platform.CallEventDto> get events => _controller.stream;
@@ -1298,6 +1310,14 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
 
   @override
   Future<void> requestFullScreenIntentPermission() async {}
+
+  @override
+  Future<bool> canScheduleExactAlarms() async => canScheduleExactAlarmsResult;
+
+  @override
+  Future<void> requestExactAlarmPermission() async {
+    requestExactAlarmPermissionCount += 1;
+  }
 
   @override
   Future<bool> requestNotificationPermission() async => true;

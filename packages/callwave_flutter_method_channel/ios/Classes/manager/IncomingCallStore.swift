@@ -4,7 +4,7 @@ final class IncomingCallStore {
   struct StoredIncomingCall {
     let payload: CallPayload
     let uuid: UUID
-    let savedAtMs: Int64
+    let expiresAtMs: Int64
   }
 
   private let defaults: UserDefaults
@@ -13,10 +13,10 @@ final class IncomingCallStore {
     self.defaults = defaults
   }
 
-  func save(payload: CallPayload, uuid: UUID) {
+  func save(payload: CallPayload, uuid: UUID, expiresAtMs: Int64) {
     var dictionary = payload.dictionary
     dictionary["uuid"] = uuid.uuidString
-    dictionary["savedAtMs"] = Int64(Date().timeIntervalSince1970 * 1000)
+    dictionary["expiresAtMs"] = expiresAtMs
     let sanitized = JSONValueSanitizer.sanitizeJSONObject(dictionary)
     guard JSONSerialization.isValidJSONObject(sanitized) else {
       defaults.removeObject(forKey: Self.key)
@@ -35,12 +35,15 @@ final class IncomingCallStore {
       let dictionary = object as? [String: Any],
       let payload = CallPayload(dictionary: dictionary),
       let uuidRaw = dictionary["uuid"] as? String,
-      let uuid = UUID(uuidString: uuidRaw),
-      let savedAtMs = (dictionary["savedAtMs"] as? NSNumber)?.int64Value
+      let uuid = UUID(uuidString: uuidRaw)
     else {
       return nil
     }
-    return StoredIncomingCall(payload: payload, uuid: uuid, savedAtMs: savedAtMs)
+    let expiresAtMs =
+      (dictionary["expiresAtMs"] as? NSNumber)?.int64Value ??
+      (((dictionary["savedAtMs"] as? NSNumber)?.int64Value ?? Int64(Date().timeIntervalSince1970 * 1000))
+        + (Int64(max(payload.timeoutSeconds, 1)) * 1000))
+    return StoredIncomingCall(payload: payload, uuid: uuid, expiresAtMs: expiresAtMs)
   }
 
   func clear(callId: String? = nil) {

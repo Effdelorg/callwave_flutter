@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:callwave_flutter/callwave_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'example_camera_controller.dart';
 import 'example_failure_api.dart';
@@ -483,6 +484,8 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
   final List<String> _eventLog = <String>[];
   final TextEditingController _callIdController =
       TextEditingController(text: 'demo-call-001');
+  final TextEditingController _incomingTimeoutSecondsController =
+      TextEditingController(text: '30');
   final TextEditingController _missedNotificationTextController =
       TextEditingController();
   late final CallwaveEngine _engine = widget.engine;
@@ -507,6 +510,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
   void dispose() {
     _subscription?.cancel();
     _callIdController.dispose();
+    _incomingTimeoutSecondsController.dispose();
     _missedNotificationTextController.dispose();
     super.dispose();
   }
@@ -703,6 +707,31 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
                               ),
                               helperText:
                                   'Shown when a call times out. Use {name} to insert the caller\'s name.',
+                            ),
+                            onChanged: (_) => setState(() {}),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _incomingTimeoutSecondsController,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: <TextInputFormatter>[
+                              FilteringTextInputFormatter.digitsOnly,
+                            ],
+                            style: const TextStyle(
+                              color: Color(0xFF191919),
+                              fontSize: 15,
+                            ),
+                            decoration: InputDecoration(
+                              labelText: 'Incoming Timeout (seconds)',
+                              hintText: '30',
+                              prefixIcon: const Icon(
+                                Icons.timer_outlined,
+                                size: 18,
+                                color: Color(0xFFB5AFA7),
+                              ),
+                              suffixText: 'sec',
+                              helperText:
+                                  'Used by Incoming Audio/Video. Empty or invalid values fall back to ${_incomingTimeout.inSeconds} seconds.',
                             ),
                             onChanged: (_) => setState(() {}),
                           ),
@@ -1197,6 +1226,7 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
             callerName: _incomingCallerName,
             handle: _incomingHandle,
             callType: callType,
+            timeout: _incomingTimeout,
           )
         : _buildCallData(
             callId: callId,
@@ -1218,6 +1248,14 @@ class _CallDemoScreenState extends State<CallDemoScreen> {
         });
       }
     }
+  }
+
+  Duration get _incomingTimeout {
+    final rawSeconds =
+        int.tryParse(_incomingTimeoutSecondsController.text.trim());
+    final timeoutSeconds =
+        rawSeconds != null && rawSeconds > 0 ? rawSeconds : 30;
+    return Duration(seconds: timeoutSeconds);
   }
 
   CallData _buildCallData({

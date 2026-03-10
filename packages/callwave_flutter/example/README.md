@@ -17,6 +17,7 @@ flutter run
 4. Tap the incoming call details to open custom Flutter call UI.
 5. Tap `Accept` or `Decline` from that custom UI.
 6. Check the in-app event log.
+7. Change `Incoming Timeout (seconds)` to test values like `15`, `30`, or `45` without editing code.
 
 Incoming flow selector:
 - `Realtime` keeps the old behavior: native accept goes straight into
