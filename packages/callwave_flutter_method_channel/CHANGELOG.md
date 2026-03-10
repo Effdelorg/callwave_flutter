@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-03-10
+
+### Added
+
+- `canScheduleExactAlarms()` and `requestExactAlarmPermission()` for Android 12+
+  exact alarm scheduling (call timeout reliability)
+- Android: `DeclineReportBridgeActivity` for headless decline reporting when app
+  is terminated
+- Android: `IncomingRingtoneController` and `IncomingCallStore` for ringtone
+  behavior and incoming call state
+- Android: Exact alarm scheduling for call timeout (replaces inexact alarms)
+- iOS: `BackgroundValidatorRegistrationStore` and `IncomingCallStore` for
+  background decline handling
+
+### Changed
+
+- Android: Notification channel ID bumped to v3 for incoming calls
+- Android: Decline from full-screen UI routes through bridge when background
+  validator is registered
+
 ## [0.1.4] - 2026-03-07
 
 ### Fixed

@@ -7,10 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-03-10
+
+### Added
+
+- `canScheduleExactAlarms()` — returns whether the app can schedule exact alarms
+  (Android 12+). On iOS, always returns true.
+- `requestExactAlarmPermission()` — opens system settings for exact alarm
+  permission (Android 12+). No-op on iOS. Use before showing incoming calls to
+  ensure reliable timeout scheduling.
+
 ### Fixed
 
-- Missed and timeout terminal events no longer clear native call state, preserving
-  the platform missed-call UI (e.g. Android missed call notification)
+- Missed and timeout terminal events no longer clear native call state,
+  preserving the platform missed-call UI (e.g. Android missed call notification)
 
 ## [0.3.1] - 2026-03-07
 
