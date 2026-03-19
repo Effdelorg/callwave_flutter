@@ -5,6 +5,11 @@ import UIKit
 import UserNotifications
 
 final class IOSCallManager {
+  /// Wire values mirrored in Dart [CallEventExtraKeys.outcomeReason] documentation.
+  private static let outcomeCallkitStartFailed = "callkit_start_failed"
+  private static let outcomeCallkitEndFailed = "callkit_end_failed"
+  private static let outcomeIncomingPresentationFailed = "incoming_presentation_failed"
+
   private let eventBridge: EventStreamBridge
   private let activeCallRegistry: ActiveCallRegistry
   private let provider: CXProvider
@@ -105,13 +110,23 @@ final class IOSCallManager {
     update.hasVideo = payload.callType == "video"
 
     provider.reportNewIncomingCall(with: uuid, update: update) { [weak self] error in
-      if error != nil {
+      if let error {
         self?.activeCallRegistry.remove(callId: payload.callId)
         self?.payloadStore.removeValue(forKey: payload.callId)
         self?.uuidByCallId.removeValue(forKey: payload.callId)
         self?.callIdByUuid.removeValue(forKey: uuid)
         self?.incomingExpiresAtMsByCallId.removeValue(forKey: payload.callId)
         self?.incomingCallStore.clear(callId: payload.callId)
+        guard let self else { return }
+        self.emit(
+          callId: payload.callId,
+          type: "declined",
+          extra: self.failureExtra(
+            base: payload.extra,
+            outcomeReason: Self.outcomeIncomingPresentationFailed,
+            error: error
+          )
+        )
       } else {
         self?.incomingCallStore.save(payload: payload, uuid: uuid, expiresAtMs: expiresAtMs)
         self?.scheduleIncomingTimeout(payload: payload, uuid: uuid, expiresAtMs: expiresAtMs)
@@ -142,13 +157,27 @@ final class IOSCallManager {
     startAction.isVideo = payload.callType == "video"
 
     let transaction = CXTransaction(action: startAction)
-    callController.request(transaction) { [weak self] _ in
-      self?.persistOngoingCall(
+    callController.request(transaction) { [weak self] error in
+      guard let self else { return }
+      if let error {
+        self.cleanup(callId: payload.callId, uuid: uuid)
+        self.emit(
+          callId: payload.callId,
+          type: "ended",
+          extra: self.failureExtra(
+            base: payload.extra,
+            outcomeReason: Self.outcomeCallkitStartFailed,
+            error: error
+          )
+        )
+        return
+      }
+      self.persistOngoingCall(
         payload: payload,
         eventType: "started",
         uuid: uuid
       )
-      self?.emit(callId: payload.callId, type: "started", extra: payload.extra)
+      self.emit(callId: payload.callId, type: "started", extra: payload.extra)
     }
   }
 
@@ -162,10 +191,23 @@ final class IOSCallManager {
 
     let endAction = CXEndCallAction(call: uuid)
     let transaction = CXTransaction(action: endAction)
-    callController.request(transaction) { [weak self] _ in
-      self?.cleanup(callId: callId, uuid: uuid)
-      self?.emit(callId: callId, type: "ended", extra: nil)
-      self?.applyPostCallBehaviorIfNeeded()
+    callController.request(transaction) { [weak self] error in
+      guard let self else { return }
+      if let error {
+        self.emit(
+          callId: callId,
+          type: "ended",
+          extra: self.failureExtra(
+            base: self.payloadStore[callId]?.extra,
+            outcomeReason: Self.outcomeCallkitEndFailed,
+            error: error
+          )
+        )
+        return
+      }
+      self.cleanup(callId: callId, uuid: uuid)
+      self.emit(callId: callId, type: "ended", extra: nil)
+      self.applyPostCallBehaviorIfNeeded()
     }
   }
 
@@ -607,6 +649,17 @@ final class IOSCallManager {
 
   private func emit(callId: String, type: String, extra: [String: Any]?) {
     eventBridge.emit(CallEventPayload.now(callId: callId, type: type, extra: extra))
+  }
+
+  private func failureExtra(
+    base: [String: Any]?,
+    outcomeReason: String,
+    error: Error
+  ) -> [String: Any] {
+    var merged = base ?? [:]
+    merged["outcomeReason"] = outcomeReason
+    merged["nativeErrorDescription"] = error.localizedDescription
+    return merged
   }
 
   private func scheduleIncomingTimeout(

@@ -1,6 +1,6 @@
 name: callwave_flutter
 description: Flutter plugin for WhatsApp, Google Meet, and Teams-style VoIP call UX. Incoming/outgoing notifications, accept/decline/timeout, CallKit and Android full-screen intents.
-version: 0.4.0
+version: 0.4.1
 homepage: https://github.com/Effdelorg/callwave_flutter
 repository: https://github.com/Effdelorg/callwave_flutter
 issue_tracker: https://github.com/Effdelorg/callwave_flutter/issues
@@ -15,7 +15,7 @@ dependencies:
   flutter:
     sdk: flutter
   callwave_flutter_platform_interface: ^0.1.3
-  callwave_flutter_method_channel: ^0.1.5
+  callwave_flutter_method_channel: ^0.1.6
 
 dev_dependencies:
   flutter_test:

@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-03-19
+
+### Added
+
+- `CallEventExtraKeys` values for iOS CallKit failure handling:
+  `nativeErrorDescription`, `outcomeReasonCallkitStartFailed`,
+  `outcomeReasonCallkitEndFailed`, `outcomeReasonIncomingPresentationFailed`
+
+### Fixed
+
+- iOS: CallKit transaction and incoming-presentation failures are surfaced on
+  `events` with structured `extra` instead of false `started` / silent incoming
+  failure; headless background validation timeouts align with Android (8s)
+- `CallEventType.ended` with `CallEventExtraKeys.outcomeReasonCallkitEndFailed`
+  no longer ends the `CallSession` or calls native `clearCallState`, so the app
+  stays aligned with CallKit until `endCall` succeeds
+
+### Notes for integrators
+
+- On iOS, not every `CallEventType.ended` means the call is finished: when
+  `extra[CallEventExtraKeys.outcomeReason]` is
+  `CallEventExtraKeys.outcomeReasonCallkitEndFailed`, treat it as a failed hang-up
+  attempt and retry `endCall` rather than tearing down session/UI as terminal.
+
 ## [0.4.0] - 2026-03-10
 
 ### Added

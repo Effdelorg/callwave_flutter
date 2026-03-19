@@ -432,7 +432,6 @@ class CallwaveFlutter {
         }
         return;
       case CallEventType.declined:
-      case CallEventType.ended:
       case CallEventType.timeout:
       case CallEventType.missed:
         _invalidateAcceptFlow(event.callId);
@@ -440,6 +439,20 @@ class CallwaveFlutter {
         if (session != null) {
           _recordTerminalEventType(event);
           unawaited(session.applyNativeEvent(event));
+        } else {
+          _terminalEventTypesByCallId.remove(event.callId);
+        }
+        return;
+      case CallEventType.ended:
+        _invalidateAcceptFlow(event.callId);
+        final endedSession = _sessions[event.callId];
+        if (endedSession != null) {
+          if (_isCallKitEndTransactionFailure(event)) {
+            unawaited(endedSession.applyNativeEvent(event));
+            return;
+          }
+          _recordTerminalEventType(event);
+          unawaited(endedSession.applyNativeEvent(event));
         } else {
           _terminalEventTypesByCallId.remove(event.callId);
         }
@@ -876,6 +889,14 @@ class CallwaveFlutter {
 
   void _recordTerminalEventType(CallEvent event) {
     _terminalEventTypesByCallId[event.callId] = event.type;
+  }
+
+  /// iOS: [CallEventExtraKeys.outcomeReasonCallkitEndFailed] means native UUID
+  /// mapping must stay so [endCall] can be retried; session must not go terminal.
+  bool _isCallKitEndTransactionFailure(CallEvent event) {
+    return event.type == CallEventType.ended &&
+        event.extra?[CallEventExtraKeys.outcomeReason] ==
+            CallEventExtraKeys.outcomeReasonCallkitEndFailed;
   }
 
   /// Returns false for missed/timeout so native missed-call UI is preserved.

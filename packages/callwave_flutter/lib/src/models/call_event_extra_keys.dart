@@ -34,6 +34,26 @@ abstract final class CallEventExtraKeys {
   /// Machine-readable rejection/end reason surfaced on missed/failure flows.
   static const String outcomeReason = 'outcomeReason';
 
+  /// Localized description when iOS CallKit reports an error (paired with
+  /// [outcomeReason] values such as [outcomeReasonCallkitStartFailed]).
+  static const String nativeErrorDescription = 'nativeErrorDescription';
+
+  /// Value for [outcomeReason] when an outgoing start transaction fails on iOS.
+  /// Emitted as `ended` with no successful prior `started` for that attempt.
+  static const String outcomeReasonCallkitStartFailed = 'callkit_start_failed';
+
+  /// Value for [outcomeReason] when an end-call transaction fails on iOS.
+  ///
+  /// Native call state is left in place so the app can retry [CallwaveFlutter.endCall].
+  /// The package treats this as non-terminal: [CallSession] stays active and
+  /// `clearCallState` is not invoked until a normal [CallEventType.ended].
+  static const String outcomeReasonCallkitEndFailed = 'callkit_end_failed';
+
+  /// Value for [outcomeReason] when presenting an incoming CallKit call fails on iOS.
+  /// Emitted as `declined` after native rollback.
+  static const String outcomeReasonIncomingPresentationFailed =
+      'incoming_presentation_failed';
+
   /// Value for [launchAction] when the user opened from the ongoing call
   /// notification (Android).
   static const String launchActionOpenOngoing =

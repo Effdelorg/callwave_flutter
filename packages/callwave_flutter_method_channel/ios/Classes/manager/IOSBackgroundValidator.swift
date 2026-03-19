@@ -25,6 +25,9 @@ final class IOSBackgroundValidator {
     }
   }
 
+  /// Matches [AndroidBackgroundValidator.VALIDATION_TIMEOUT_MS].
+  private static let validationTimeout: TimeInterval = 8.0
+
   private var engine: FlutterEngine?
   private var channel: FlutterMethodChannel?
   private var activeDispatcherHandle: Int64?
@@ -80,15 +83,22 @@ final class IOSBackgroundValidator {
       return
     }
 
+    removeQueuedValidations(forCallId: payload.callId)
+
+    let completion = ValidationCompletion(onComplete: onComplete)
     pendingValidations.append(
       PendingValidation(
         action: action,
         backgroundCallbackHandle: backgroundCallbackHandle,
         payload: payload,
-        onComplete: onComplete
+        completion: completion
       )
     )
     flushPendingValidations()
+  }
+
+  private func removeQueuedValidations(forCallId callId: String) {
+    pendingValidations.removeAll { $0.payload.callId == callId }
   }
 
   private func ensureEngine(backgroundDispatcherHandle: Int64) -> Bool {
@@ -149,6 +159,24 @@ final class IOSBackgroundValidator {
 
     isValidationInFlight = true
     let pending = pendingValidations.removeFirst()
+    let completion = pending.completion
+
+    let timeoutWork = DispatchWorkItem { [weak self] in
+      completion.complete(
+        BackgroundValidationResult(
+          isAllowed: false,
+          reason: "failed",
+          extra: nil
+        )
+      )
+      self?.isValidationInFlight = false
+      self?.flushPendingValidations()
+    }
+    DispatchQueue.main.asyncAfter(
+      deadline: .now() + Self.validationTimeout,
+      execute: timeoutWork
+    )
+
     channel.invokeMethod(
       pending.action.methodName,
       arguments: [
@@ -156,14 +184,28 @@ final class IOSBackgroundValidator {
         "callData": pending.payload.dictionary,
       ]
     ) { [weak self] result in
-      let map = result as? [String: Any]
-      pending.onComplete(
-        BackgroundValidationResult(
-          isAllowed: map?[pending.action.successKey] as? Bool ?? false,
-          reason: map?["reason"] as? String,
-          extra: map?["extra"] as? [String: Any]
+      timeoutWork.cancel()
+      let parsed: BackgroundValidationResult
+      if result is FlutterError {
+        parsed = BackgroundValidationResult(
+          isAllowed: false,
+          reason: "failed",
+          extra: nil
         )
-      )
+      } else if let map = result as? [String: Any] {
+        parsed = BackgroundValidationResult(
+          isAllowed: map[pending.action.successKey] as? Bool ?? false,
+          reason: map["reason"] as? String,
+          extra: map["extra"] as? [String: Any]
+        )
+      } else {
+        parsed = BackgroundValidationResult(
+          isAllowed: false,
+          reason: "failed",
+          extra: nil
+        )
+      }
+      completion.complete(parsed)
       self?.isValidationInFlight = false
       self?.flushPendingValidations()
     }
@@ -179,6 +221,24 @@ final class IOSBackgroundValidator {
     let action: BackgroundAction
     let backgroundCallbackHandle: Int64
     let payload: CallPayload
-    let onComplete: (BackgroundValidationResult) -> Void
+    let completion: ValidationCompletion
+  }
+
+  private final class ValidationCompletion {
+    private let lock = NSLock()
+    private var completed = false
+    private let onComplete: (BackgroundValidationResult) -> Void
+
+    init(onComplete: @escaping (BackgroundValidationResult) -> Void) {
+      self.onComplete = onComplete
+    }
+
+    func complete(_ result: BackgroundValidationResult) {
+      lock.lock()
+      defer { lock.unlock() }
+      guard !completed else { return }
+      completed = true
+      onComplete(result)
+    }
   }
 }

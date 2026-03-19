@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-03-19
+
+### Fixed
+
+- iOS: `CXCallController` completion errors for outgoing start and end no longer
+  emit false success; outgoing failure rolls back state and emits `ended` with
+  `outcomeReason`; end failure emits `ended` with `outcomeReason` without clearing
+  native UUID mapping so `endCall` can be retried
+- iOS: `reportNewIncomingCall` failure now emits `declined` with `outcomeReason`
+  after rollback (previously silent to Flutter)
+- iOS: background accept validation and decline reporting use an 8s timeout
+  matching Android (`IOSBackgroundValidator`), with idempotent completion if the
+  channel returns after timeout
+
 ## [0.1.5] - 2026-03-10
 
 ### Added
