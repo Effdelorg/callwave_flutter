@@ -381,6 +381,42 @@ void main() {
     expect(fakePlatform.lastClearedCallId, 'c-clear-on-ended');
   });
 
+  test(
+    'ended with CallKit end failure keeps session and skips clearCallState',
+    () async {
+      final sessionFuture = CallwaveFlutter.instance.sessions.first;
+
+      fakePlatform.emit(
+        platform.CallEventDto(
+          callId: 'c-callkit-end-fail',
+          type: platform.CallEventType.accepted,
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      final session = await sessionFuture;
+      await Future<void>.delayed(Duration.zero);
+
+      fakePlatform.emit(
+        platform.CallEventDto(
+          callId: 'c-callkit-end-fail',
+          type: platform.CallEventType.ended,
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+          extra: <String, dynamic>{
+            CallEventExtraKeys.outcomeReason:
+                CallEventExtraKeys.outcomeReasonCallkitEndFailed,
+            CallEventExtraKeys.nativeErrorDescription: 'rejected',
+          },
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(session.state, isNot(CallSessionState.ended));
+      expect(session.error, 'rejected');
+      expect(fakePlatform.clearCallStateCount, 0);
+      expect(fakePlatform.lastClearedCallId, isNull);
+    },
+  );
+
   test('declined terminal event still clears native call state', () async {
     final sessionFuture = CallwaveFlutter.instance.sessions.first;
 

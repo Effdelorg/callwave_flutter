@@ -8,6 +8,7 @@ import '../enums/call_event_type.dart';
 import '../enums/call_session_state.dart';
 import '../models/call_data.dart';
 import '../models/call_event.dart';
+import '../models/call_event_extra_keys.dart';
 import '../models/call_participant.dart';
 import '../models/conference_state.dart';
 import 'callwave_engine.dart';
@@ -291,6 +292,15 @@ class CallSession extends ChangeNotifier {
         await beginOutgoingStart();
         return;
       case CallEventType.ended:
+        if (event.extra?[CallEventExtraKeys.outcomeReason] ==
+            CallEventExtraKeys.outcomeReasonCallkitEndFailed) {
+          final desc = event.extra?[CallEventExtraKeys.nativeErrorDescription];
+          _error = desc is String && desc.isNotEmpty
+              ? desc
+              : 'Call could not be ended on the device';
+          notifyListeners();
+          return;
+        }
         reportEnded();
         return;
       case CallEventType.declined:
@@ -320,7 +330,10 @@ class CallSession extends ChangeNotifier {
 
   void reportReconnecting() => _transitionTo(CallSessionState.reconnecting);
 
-  void reportEnded() => _transitionTo(CallSessionState.ended);
+  void reportEnded() {
+    _error = null;
+    _transitionTo(CallSessionState.ended);
+  }
 
   void reportFailed([Object? error]) {
     _error = error ?? StateError('Call session failed.');
