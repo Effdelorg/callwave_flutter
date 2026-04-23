@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-23
+
+### Added
+
+- iOS: Swift Package Manager support via the Flutter `FlutterFramework`
+  package dependency.
+- iOS: bundled Apple privacy manifest declaring `UserDefaults` access for
+  plugin-owned call state.
+
+### Changed
+
+- Breaking: minimum SDK constraints are now Dart `^3.11.0` and Flutter
+  `>=3.41.0`.
+- Moved iOS Swift sources into the shared SPM source layout while preserving
+  CocoaPods support through the podspec.
+- Updated `callwave_flutter_platform_interface` dependency to `^0.2.0`.
+
 ## [0.1.6] - 2026-03-19
 
 ### Fixed

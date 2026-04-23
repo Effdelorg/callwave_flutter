@@ -52,8 +52,9 @@ Public `CallData` uses `Duration timeout`; DTO uses `int timeoutSeconds`. Public
 - `CallActionReceiver` (BroadcastReceiver) handles accept/decline/timeout/callback actions
 - `CallNotificationManager` builds `CATEGORY_CALL` and `CATEGORY_MISSED_CALL` notifications
 
-**iOS (Swift)** — CallKit integration:
-- `IOSCallManager` wraps `CXProvider` + `CXCallController` for system call UI
+**iOS (Swift)** — under `packages/callwave_flutter_method_channel/ios/`:
+- **Layout (SPM + CocoaPods):** `callwave_flutter_method_channel/Package.swift` defines the Swift package; native sources live in `callwave_flutter_method_channel/Sources/callwave_flutter_method_channel/` (e.g. `CallwaveFlutterPlugin.swift`, `manager/IOSCallManager.swift`, `callkit/`, `events/`, `model/`). `callwave_flutter_method_channel.podspec` points CocoaPods at the same `Sources/...` Swift files and bundles `PrivacyInfo.xcprivacy` as a resource.
+- **CallKit:** `IOSCallManager` wraps `CXProvider` + `CXCallController` for system call UI
 - `CallKitProviderDelegate` forwards accept/end/reset callbacks via closures
 - Timeout via `DispatchWorkItem` calling `provider.reportCall(endedAt:reason:.unanswered)`
 - `requestNotificationPermission` always returns `true`; `requestFullScreenIntentPermission` is a no-op
@@ -71,7 +72,7 @@ Both platforms persist events to disk when the Flutter engine is not attached:
 
 ## SDK Requirements
 
-- Dart SDK: `>=3.5.0 <4.0.0`
-- Flutter: `>=3.22.0`
+- Dart SDK: `^3.11.0` (workspace `pubspec.yaml` / packages)
+- Flutter: `>=3.41.0` (required for iOS Swift Package Manager support alongside CocoaPods)
 - iOS: 13.0+
 - Android: uses `AlarmManager`, `POST_NOTIFICATIONS` (API 33+), `USE_FULL_SCREEN_INTENT` (API 34+)

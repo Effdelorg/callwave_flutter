@@ -1,4 +1,6 @@
 .dart_tool/
+.build/
+.swiftpm/
 .flutter-plugins
 .flutter-plugins-dependencies
 .packages
