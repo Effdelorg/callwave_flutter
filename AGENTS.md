@@ -13,6 +13,8 @@ Always check for race conditions in the code and fix them.
 | `packages/callwave_flutter_method_channel` | MethodChannel + Android (Kotlin) / iOS (Swift) |
 | `packages/callwave_flutter/example` | Demo app for manual testing |
 
+**iOS native sources** (for edits to CallKit / channels): `packages/callwave_flutter_method_channel/ios/callwave_flutter_method_channel/Sources/callwave_flutter_method_channel/`; SPM entrypoint `ios/callwave_flutter_method_channel/Package.swift`; CocoaPods `ios/callwave_flutter_method_channel.podspec`.
+
 ## Conventions
 
 - **Clean architecture**: Platform interface defines contracts; method channel implements them.

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-23
+
+### Changed
+
+- Breaking: minimum SDK constraints are now Dart `^3.11.0` and Flutter
+  `>=3.41.0` to align with the iOS Swift Package Manager migration.
+
 ## [0.1.3] - 2026-03-10
 
 ### Added

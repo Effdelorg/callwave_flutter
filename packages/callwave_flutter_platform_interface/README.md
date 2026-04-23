@@ -15,6 +15,9 @@ If you're building video or voice calls with WebRTC, callwave_flutter gives you 
 
 > **Platform status:** Android has custom native incoming call UI (`FullScreenCallActivity`) and full call UX. iOS uses CallKit system UI for incoming calls (Apple's native UI; no custom UI from the plugin). In-app call screen is shared Flutter UI on both platforms.
 
+This package requires Flutter `>=3.41.0` so the federated iOS implementation
+can support Swift Package Manager alongside CocoaPods.
+
 ## Includes
 - Abstract platform API
 - DTO models

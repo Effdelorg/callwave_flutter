@@ -76,6 +76,15 @@ callwave_flutter ships a complete, production-ready call UI for every scenario. 
 | Missed call notification | Yes | Yes |
 | Ringtone | Yes | Yes (CallKit) |
 
+### iOS dependency managers
+
+iOS supports both CocoaPods and Swift Package Manager. Swift Package Manager
+support requires Flutter `>=3.41.0`; CocoaPods remains supported for Flutter
+projects that still use pods. The iOS package also bundles an Apple privacy
+manifest for its `UserDefaults` use, which stores plugin-owned call state such
+as buffered events and pending startup actions.
+Apps using SPM on iOS may need `flutter config --enable-swift-package-manager` first; see [Flutter’s Swift Package Manager docs](https://docs.flutter.dev/packages-and-plugins/swift-package-manager).
+
 ---
 
 ## Getting started in 3 steps
