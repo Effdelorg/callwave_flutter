@@ -7,10 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-11
+
 ### Fixed
 
 - iOS 13: missed-call notifications still appear when the app is in the
   foreground. iOS 14+ keeps banner and Notification Center presentation.
+
+### Changed
+
+- Updated `callwave_flutter_method_channel` constraint to `^0.2.1`.
 
 ## [0.5.0] - 2026-04-23
 

@@ -77,7 +77,7 @@ callwave_flutter ships a complete, production-ready call UI for every scenario. 
 | Ringtone | Yes | Yes (CallKit) |
 
 iOS 13.0 or later. Missed-call notifications also show while the app is in
-the foreground (alert on iOS 13, banner and Notification Center on iOS 14+).
+the foreground: alert on iOS 13, banner and Notification Center on iOS 14+.
 
 ### iOS dependency managers
 
@@ -290,6 +290,9 @@ await CallwaveFlutter.instance.endCall('call-123');
 ```dart
 await CallwaveFlutter.instance.markMissed('call-123');
 ```
+
+On iOS this still shows a missed-call notification if the app is already open
+(alert on iOS 13, banner and Notification Center on iOS 14+).
 
 ### Ringtone behavior
 
