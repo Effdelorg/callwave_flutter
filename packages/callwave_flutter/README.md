@@ -33,7 +33,8 @@ iOS supports both CocoaPods and Swift Package Manager. Swift Package Manager
 support requires Flutter `>=3.41.0`, while CocoaPods remains supported. The iOS
 implementation bundles an Apple privacy manifest for its `UserDefaults` use,
 which stores plugin-owned call state such as buffered events and pending startup
-actions.
+actions. Missed-call notifications also show while the app is in the foreground
+on iOS 13 (alert) and iOS 14+ (banner and Notification Center).
 
 Native incoming-call ringtone behavior:
 

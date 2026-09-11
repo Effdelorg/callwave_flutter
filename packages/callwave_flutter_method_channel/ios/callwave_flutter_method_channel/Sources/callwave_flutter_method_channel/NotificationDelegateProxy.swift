@@ -31,7 +31,12 @@ final class NotificationDelegateProxy: NSObject, UNUserNotificationCenterDelegat
       )
       return
     }
-    completionHandler([.banner, .list, .sound])
+    // .banner/.list are iOS 14+. iOS 13 uses .alert for the same foreground UI.
+    if #available(iOS 14.0, *) {
+      completionHandler([.banner, .list, .sound])
+    } else {
+      completionHandler([.alert, .sound])
+    }
   }
 
   func userNotificationCenter(

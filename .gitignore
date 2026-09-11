@@ -17,6 +17,7 @@ ios/Pods/
 **/.packages
 **/.pub/
 **/build/
+**/.gradle/
 **/.metadata
 packages/*/pubspec.lock
 .env
