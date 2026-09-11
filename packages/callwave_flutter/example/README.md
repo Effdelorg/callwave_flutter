@@ -54,6 +54,12 @@ Missed notification custom text example (Android):
 - Tap `Missed` for the same call ID.
 - Confirm the missed-call notification body uses your custom text, for example `You missed a notification from Ava.`
 
+iOS missed-call foreground:
+- With the example open, tap `Incoming`, then `Missed` (or let timeout fire).
+- On iOS 13 the missed-call alert should appear immediately.
+- On iOS 14+ the missed-call banner should appear, and the item should also
+  be in Notification Center.
+
 Note: the custom missed text is read from the call payload created by `Incoming` or `Outgoing`. If you tap `Missed` before starting a call, or edit the text after starting the call, Android will use the older/default payload instead.
 
 Note: the custom incoming screen trigger on notification/details tap is Android behavior. iOS uses CallKit system incoming UI.

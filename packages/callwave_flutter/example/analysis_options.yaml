@@ -13,6 +13,12 @@ analyzer:
   exclude:
     # Generated Dart from flutter build; lib/ and test/ stay analyzed.
     - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
 
 linter:
   # The lint rules applied to this project can be customized in the

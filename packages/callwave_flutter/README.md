@@ -33,8 +33,10 @@ iOS supports both CocoaPods and Swift Package Manager. Swift Package Manager
 support requires Flutter `>=3.41.0`, while CocoaPods remains supported. The iOS
 implementation bundles an Apple privacy manifest for its `UserDefaults` use,
 which stores plugin-owned call state such as buffered events and pending startup
-actions. Missed-call notifications also show while the app is in the foreground
-on iOS 13 (alert) and iOS 14+ (banner and Notification Center).
+actions.
+
+Missed-call notifications also show while the app is in the foreground:
+alert on iOS 13, banner and Notification Center on iOS 14+.
 
 Native incoming-call ringtone behavior:
 
@@ -341,7 +343,11 @@ CallwaveScope(
 You can also replace the entire conference surface with
 `conferenceScreenBuilder`.
 
-## Android Missed Call Text
+## Missed Call Notifications
+
+Missed-call notifications appear after timeout, decline fallback, or
+`markMissed()`. On iOS they also show while the app is in the foreground:
+alert on iOS 13, banner and Notification Center on iOS 14+.
 
 Set [CallData.extra] with [CallDataExtraKeys.androidMissedCallNotificationText]
 to customize the Android missed-call notification body.
@@ -361,7 +367,7 @@ final call = CallData(
 If you do not provide it, Android falls back to the default
 `callerName (handle)` text. iOS ignores this key.
 
-### One-to-One Split-to-PiP Builders
+## One-to-One Split-to-PiP Builders
 
 For one-to-one connected video, you can inject remote/local RTC widgets:
 

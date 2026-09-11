@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'callwave_flutter_method_channel'
-  s.version          = '0.2.0'
+  s.version          = '0.2.1'
   s.summary          = 'MethodChannel implementation for callwave_flutter.'
   s.description      = <<-DESC
 MethodChannel implementation for callwave_flutter.
