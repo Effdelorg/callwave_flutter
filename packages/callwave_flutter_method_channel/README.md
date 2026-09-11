@@ -19,6 +19,8 @@ iOS supports both CocoaPods and Swift Package Manager. Swift Package Manager
 support requires Flutter `>=3.41.0`, while CocoaPods remains supported. The iOS
 target bundles an Apple privacy manifest declaring `UserDefaults` access for
 plugin-owned call state such as buffered events and pending startup actions.
+Missed-call notifications also show while the app is in the foreground on
+iOS 13 (alert) and iOS 14+ (banner and Notification Center).
 
 For terminated-state decline handling, the native layers now wait for the
 headless Flutter decline callback result before finalizing the call outcome:
@@ -32,6 +34,6 @@ headless Flutter decline callback result before finalizing the call outcome:
 ## Contains
 - Dart MethodChannel/EventChannel bridge
 - Android native implementation (notifications, actions, buffering)
-- iOS native implementation (CallKit, buffering)
+- iOS native implementation (CallKit, missed-call notifications, buffering)
 
 App developers should use `callwave_flutter`, not this package directly.

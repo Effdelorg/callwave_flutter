@@ -76,6 +76,9 @@ callwave_flutter ships a complete, production-ready call UI for every scenario. 
 | Missed call notification | Yes | Yes |
 | Ringtone | Yes | Yes (CallKit) |
 
+iOS 13.0 or later. Missed-call notifications also show while the app is in
+the foreground (alert on iOS 13, banner and Notification Center on iOS 14+).
+
 ### iOS dependency managers
 
 iOS supports both CocoaPods and Swift Package Manager. Swift Package Manager

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- iOS 13: foreground missed-call notifications use `.alert` presentation
+  options. `.banner` and `.list` remain iOS 14+ only.
+
 ## [0.2.0] - 2026-04-23
 
 ### Added
