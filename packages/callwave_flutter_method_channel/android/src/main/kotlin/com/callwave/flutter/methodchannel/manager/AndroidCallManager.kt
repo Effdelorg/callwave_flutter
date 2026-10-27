@@ -35,6 +35,7 @@ class AndroidCallManager(
     private val incomingCallStore = IncomingCallStore(context)
     private val ongoingCallStore = OngoingCallStore(context)
     private val incomingRingtoneController = IncomingRingtoneController(context)
+    private val outgoingRingbackController = OutgoingRingbackController()
     private val payloadStore = HashMap<String, CallPayload>()
     private val incomingExpiresAtByCallId = HashMap<String, Long>()
     private val openedIncomingCalls = HashSet<String>()
@@ -103,6 +104,7 @@ class AndroidCallManager(
         pendingLaunchAfterConfirm.remove(payload.callId)
         launchActionOverrides.remove(payload.callId)
         outgoingCalls.remove(payload.callId)
+        outgoingRingbackController.stop(payload.callId)
         connectedAtByCallId.remove(payload.callId)
         incomingCallStore.save(payload, expiresAtMs)
 
@@ -149,6 +151,12 @@ class AndroidCallManager(
             payload = payload,
             eventType = CallwaveConstants.EVENT_STARTED,
         )
+        if (payload.playRingback) {
+            outgoingRingbackController.start(
+                callId = payload.callId,
+                maxDurationMs = payload.maxRingbackSeconds * 1000L,
+            )
+        }
         emitEvent(payload.callId, CallwaveConstants.EVENT_STARTED, payload.extra)
     }
 
@@ -856,11 +864,17 @@ class AndroidCallManager(
     }
 
     fun syncCallConnectedState(callId: String, connectedAtMs: Long) {
+        outgoingRingbackController.stop(callId)
         if (!activeCallRegistry.contains(callId)) {
             return
         }
         connectedAtByCallId[callId] = connectedAtMs
         ongoingCallStore.updateConnectedAt(callId, connectedAtMs)
+    }
+
+    /** Without an engine nothing can report the call as connected, so stop ringback. */
+    fun stopOutgoingRingback() {
+        outgoingRingbackController.stopAll()
     }
 
     fun clearCallState(callId: String) {
@@ -1349,6 +1363,7 @@ class AndroidCallManager(
     private fun clearCallRuntimeState(callId: String, dismissMissed: Boolean) {
         cancelIncomingTimeouts(callId, clearPersistedState = true)
         incomingRingtoneController.stop(callId)
+        outgoingRingbackController.stop(callId)
         notificationManager.dismissIncoming(callId)
         if (dismissMissed) {
             notificationManager.dismissMissed(callId)

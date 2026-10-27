@@ -279,6 +279,32 @@ await CallwaveFlutter.instance.showOutgoingCall(
 );
 ```
 
+The caller hears a ringback tone ("tuut... tuut...") until you report the call
+connected (`session.reportConnected()`) or it ends. A safety cap stops the
+tone after `maxRingbackDuration` (default 120 seconds) in case neither
+happens; the call itself stays active. If your audio/video SDK
+already plays its own ringback (for example SIP early media), turn the
+plugin's tone off for that call:
+
+```dart
+await CallwaveFlutter.instance.showOutgoingCall(
+  data.copyWith(playRingback: false),
+);
+
+// Or keep the plugin's tone but change the cap (whole seconds, minimum 1).
+await CallwaveFlutter.instance.showOutgoingCall(
+  data.copyWith(maxRingbackDuration: const Duration(seconds: 60)),
+);
+```
+
+- **Android:** plays the device's regional ringback tone on the voice-call
+  stream. The plugin does not change the audio mode or route; set
+  `MODE_IN_COMMUNICATION` in your media stack if you want it on the earpiece.
+- **iOS:** plays once CallKit activates the call's audio session. If the
+  session category is not already `.playAndRecord`, the plugin sets
+  `.playAndRecord` / `.voiceChat` so the silent switch does not mute the tone.
+  With `playRingback: false` the plugin leaves the category alone.
+
 ### End a call
 
 ```dart

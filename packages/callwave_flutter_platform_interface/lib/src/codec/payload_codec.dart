@@ -25,6 +25,8 @@ class PayloadCodec {
       'backgroundDeclineCallbackHandle';
   static const String keyStartupActionType = 'startupActionType';
   static const String keyConnectedAtMs = 'connectedAtMs';
+  static const String keyPlayRingback = 'playRingback';
+  static const String keyMaxRingbackSeconds = 'maxRingbackSeconds';
 
   static Map<String, dynamic> callDataToMap(CallDataDto data) {
     return <String, dynamic>{
@@ -39,6 +41,8 @@ class PayloadCodec {
       keyBackgroundDispatcherHandle: data.backgroundDispatcherHandle,
       keyBackgroundCallbackHandle: data.backgroundCallbackHandle,
       keyBackgroundDeclineCallbackHandle: data.backgroundDeclineCallbackHandle,
+      keyPlayRingback: data.playRingback,
+      keyMaxRingbackSeconds: data.maxRingbackSeconds,
     };
   }
 
@@ -63,6 +67,8 @@ class PayloadCodec {
           (map[keyBackgroundCallbackHandle] as num?)?.toInt(),
       backgroundDeclineCallbackHandle:
           (map[keyBackgroundDeclineCallbackHandle] as num?)?.toInt(),
+      playRingback: (map[keyPlayRingback] as bool?) ?? true,
+      maxRingbackSeconds: (map[keyMaxRingbackSeconds] as num?)?.toInt() ?? 120,
     );
   }
 

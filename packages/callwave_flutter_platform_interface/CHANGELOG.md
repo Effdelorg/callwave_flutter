@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `CallDataDto.playRingback` (wire key `playRingback`, defaults to `true` when missing).
+- `CallDataDto.maxRingbackSeconds` (wire key `maxRingbackSeconds`, defaults to `120` when missing).
+
 ## [0.2.0] - 2026-04-23
 
 ### Changed

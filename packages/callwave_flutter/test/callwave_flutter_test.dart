@@ -28,6 +28,36 @@ void main() {
     expect(fakePlatform.lastIncomingCallId, 'c1');
   });
 
+  test('showOutgoingCall forwards ringback options to platform', () async {
+    await CallwaveFlutter.instance.showOutgoingCall(
+      const CallData(callId: 'o1', callerName: 'Bob', handle: '+2'),
+    );
+    expect(fakePlatform.lastOutgoingCallData?.playRingback, isTrue);
+    expect(fakePlatform.lastOutgoingCallData?.maxRingbackSeconds, 120);
+
+    await CallwaveFlutter.instance.showOutgoingCall(
+      const CallData(
+        callId: 'o2',
+        callerName: 'Bob',
+        handle: '+2',
+        playRingback: false,
+        maxRingbackDuration: Duration(seconds: 45),
+      ),
+    );
+    expect(fakePlatform.lastOutgoingCallData?.playRingback, isFalse);
+    expect(fakePlatform.lastOutgoingCallData?.maxRingbackSeconds, 45);
+
+    await CallwaveFlutter.instance.showOutgoingCall(
+      const CallData(
+        callId: 'o3',
+        callerName: 'Bob',
+        handle: '+2',
+        maxRingbackDuration: Duration(milliseconds: 300),
+      ),
+    );
+    expect(fakePlatform.lastOutgoingCallData?.maxRingbackSeconds, 1);
+  });
+
   test(
       'validated incoming call uses defer-open strategy and registers background callbacks',
       () async {
@@ -1188,6 +1218,7 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   bool syncActiveCallsToEventsCalled = false;
   String? lastIncomingCallId;
   platform.CallDataDto? lastIncomingCallData;
+  platform.CallDataDto? lastOutgoingCallData;
   String? lastConfirmedCallId;
   String? lastMarkedMissedCallId;
   Map<String, dynamic>? lastMarkedMissedExtra;
@@ -1370,7 +1401,9 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   }
 
   @override
-  Future<void> showOutgoingCall(platform.CallDataDto data) async {}
+  Future<void> showOutgoingCall(platform.CallDataDto data) async {
+    lastOutgoingCallData = data;
+  }
 }
 
 class _FakeEngine extends CallwaveEngine {

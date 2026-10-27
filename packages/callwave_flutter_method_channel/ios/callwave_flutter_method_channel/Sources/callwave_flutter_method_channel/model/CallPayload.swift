@@ -12,6 +12,8 @@ struct CallPayload {
   let backgroundDispatcherHandle: Int64?
   let backgroundCallbackHandle: Int64?
   let backgroundDeclineCallbackHandle: Int64?
+  let playRingback: Bool
+  let maxRingbackSeconds: Int
 
   init?(dictionary: [String: Any]) {
     guard let callId = dictionary["callId"] as? String else { return nil }
@@ -30,6 +32,9 @@ struct CallPayload {
       (dictionary["backgroundCallbackHandle"] as? NSNumber)?.int64Value
     self.backgroundDeclineCallbackHandle =
       (dictionary["backgroundDeclineCallbackHandle"] as? NSNumber)?.int64Value
+    self.playRingback = dictionary["playRingback"] as? Bool ?? true
+    let maxRingbackSeconds = (dictionary["maxRingbackSeconds"] as? NSNumber)?.intValue ?? 0
+    self.maxRingbackSeconds = maxRingbackSeconds > 0 ? maxRingbackSeconds : 120
   }
 
   var dictionary: [String: Any] {
@@ -45,6 +50,8 @@ struct CallPayload {
       "backgroundDispatcherHandle": backgroundDispatcherHandle as Any,
       "backgroundCallbackHandle": backgroundCallbackHandle as Any,
       "backgroundDeclineCallbackHandle": backgroundDeclineCallbackHandle as Any,
+      "playRingback": playRingback,
+      "maxRingbackSeconds": maxRingbackSeconds,
     ]
   }
 
@@ -62,6 +69,8 @@ struct CallPayload {
         "backgroundDispatcherHandle": backgroundDispatcherHandle as Any,
         "backgroundCallbackHandle": backgroundCallbackHandle as Any,
         "backgroundDeclineCallbackHandle": backgroundDeclineCallbackHandle as Any,
+        "playRingback": playRingback,
+        "maxRingbackSeconds": maxRingbackSeconds,
       ]
     )!
   }
