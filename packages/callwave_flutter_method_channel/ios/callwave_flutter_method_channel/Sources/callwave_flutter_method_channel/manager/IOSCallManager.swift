@@ -1,3 +1,4 @@
+import AVFAudio
 import Foundation
 import CallKit
 import Flutter
@@ -18,10 +19,12 @@ final class IOSCallManager {
   private let pendingStartupActionStore: PendingStartupActionStore
   private let ongoingCallStore: OngoingCallStore
   private let incomingCallStore: IncomingCallStore
-  private let callController = CXCallController()
+  // All manager state is main-queue only; CallKit completions default to a private queue.
+  private let callController = CXCallController(queue: .main)
   private let delegate = CallKitProviderDelegate()
   private let backgroundValidator = IOSBackgroundValidator()
   private let backgroundValidatorRegistrationStore: BackgroundValidatorRegistrationStore
+  private let outgoingRingbackPlayer = OutgoingRingbackPlayer()
 
   private var payloadStore: [String: CallPayload] = [:]
   private var uuidByCallId: [String: UUID] = [:]
@@ -31,7 +34,15 @@ final class IOSCallManager {
   private var launchActionOverrides: [String: String] = [:]
   private var explicitIncomingLaunchEmittedCallIds: Set<String> = []
   private var explicitOngoingLaunchEmittedCallIds: Set<String> = []
-  private var outgoingCallIds: Set<String> = []
+  private var outgoingCallIds: Set<String> = [] {
+    didSet {
+      // Ringback lives only as long as its call is tracked as outgoing. Callers must
+      // insert into outgoingCallIds before setting ringbackCallId, or this stops it.
+      if let callId = ringbackCallId, !outgoingCallIds.contains(callId) {
+        stopRingback(callId: callId)
+      }
+    }
+  }
   private var connectedAtMsByCallId: [String: Int64] = [:]
   private var incomingExpiresAtMsByCallId: [String: Int64] = [:]
   private var timeoutItems: [String: DispatchWorkItem] = [:]
@@ -40,6 +51,13 @@ final class IOSCallManager {
   private var backgroundAcceptCallbackHandle: Int64?
   private var backgroundDeclineCallbackHandle: Int64?
   private var notificationObservers: [NSObjectProtocol] = []
+  /// Outgoing call that should hear ringback until it connects or ends.
+  private var ringbackCallId: String?
+  /// Safety cap (CallPayload.maxRingbackSeconds) in case the host never reports the
+  /// call connected or ended. Per call, not per player: route-change restarts must
+  /// not extend it.
+  private var ringbackCapItem: DispatchWorkItem?
+  private var isCallAudioSessionActive = false
 
   init(
     eventBridge: EventStreamBridge,
@@ -70,7 +88,10 @@ final class IOSCallManager {
     delegate.onAccept = { [weak self] uuid in self?.handleAccept(uuid: uuid) }
     delegate.onEnd = { [weak self] uuid, reason in self?.handleEnd(uuid: uuid, reason: reason) }
     delegate.onDidReset = { [weak self] in self?.handleReset() }
-    provider.setDelegate(delegate, queue: nil)
+    delegate.onStart = { [weak self] uuid in self?.handleStartCall(uuid: uuid) }
+    delegate.onAudioSessionActivated = { [weak self] in self?.handleAudioSessionActivated() }
+    delegate.onAudioSessionDeactivated = { [weak self] in self?.handleAudioSessionDeactivated() }
+    provider.setDelegate(delegate, queue: .main)
     self.missedCallNotificationManager.registerCategories()
     restoreBackgroundIncomingCallValidatorRegistration()
     restorePersistedOngoingCall()
@@ -148,6 +169,12 @@ final class IOSCallManager {
     explicitOngoingLaunchEmittedCallIds.remove(payload.callId)
     outgoingCallIds.insert(payload.callId)
     connectedAtMsByCallId.removeValue(forKey: payload.callId)
+    if payload.playRingback {
+      ringbackCallId = payload.callId
+      scheduleRingbackCap(callId: payload.callId, seconds: payload.maxRingbackSeconds)
+    } else {
+      stopRingback(callId: payload.callId)
+    }
     let uuid = UUID()
     uuidByCallId[payload.callId] = uuid
     callIdByUuid[uuid] = payload.callId
@@ -177,6 +204,7 @@ final class IOSCallManager {
         eventType: "started",
         uuid: uuid
       )
+      self.startRingbackIfNeeded()
       self.emit(callId: payload.callId, type: "started", extra: payload.extra)
     }
   }
@@ -263,6 +291,7 @@ final class IOSCallManager {
   }
 
   func syncCallConnectedState(callId: String, connectedAtMs: Int64) {
+    stopRingback(callId: callId)
     guard activeCallRegistry.activeCallIds().contains(callId) else {
       return
     }
@@ -513,6 +542,11 @@ final class IOSCallManager {
   }
 
   private func handleReset() {
+    ringbackCallId = nil
+    ringbackCapItem?.cancel()
+    ringbackCapItem = nil
+    isCallAudioSessionActive = false
+    outgoingRingbackPlayer.stop()
     timeoutItems.values.forEach { $0.cancel() }
     timeoutItems.removeAll()
     for callId in payloadStore.keys {
@@ -645,6 +679,60 @@ final class IOSCallManager {
     connectedAtMsByCallId.removeValue(forKey: callId)
     incomingExpiresAtMsByCallId.removeValue(forKey: callId)
     ongoingCallStore.clear(callId: callId)
+  }
+
+  private func handleStartCall(uuid: UUID) {
+    guard let callId = callIdByUuid[uuid], ringbackCallId == callId else { return }
+    // Only for calls that play ringback. CallKit activates the session with the
+    // current category; a voice-call category keeps ringback audible when the
+    // ring/silent switch is on. A host that already chose .playAndRecord is untouched.
+    let session = AVAudioSession.sharedInstance()
+    guard session.category != .playAndRecord else { return }
+    try? session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth])
+  }
+
+  private func handleAudioSessionActivated() {
+    isCallAudioSessionActive = true
+    startRingbackIfNeeded()
+  }
+
+  private func handleAudioSessionDeactivated() {
+    isCallAudioSessionActive = false
+    outgoingRingbackPlayer.stop()
+  }
+
+  /// Plays only once CallKit has activated the session and the call is still an
+  /// unconnected outgoing call; connect/end may race ahead of activation.
+  private func startRingbackIfNeeded() {
+    guard
+      isCallAudioSessionActive,
+      let callId = ringbackCallId,
+      outgoingCallIds.contains(callId),
+      uuidByCallId[callId] != nil,
+      connectedAtMsByCallId[callId] == nil
+    else {
+      return
+    }
+    outgoingRingbackPlayer.start(callId: callId)
+  }
+
+  private func stopRingback(callId: String) {
+    if ringbackCallId == callId {
+      ringbackCallId = nil
+      ringbackCapItem?.cancel()
+      ringbackCapItem = nil
+    }
+    outgoingRingbackPlayer.stop(callId: callId)
+  }
+
+  private func scheduleRingbackCap(callId: String, seconds: Int) {
+    ringbackCapItem?.cancel()
+    let item = DispatchWorkItem { [weak self] in
+      guard let self, self.ringbackCallId == callId else { return }
+      self.stopRingback(callId: callId)
+    }
+    ringbackCapItem = item
+    DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(seconds), execute: item)
   }
 
   private func emit(callId: String, type: String, extra: [String: Any]?) {

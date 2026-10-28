@@ -42,6 +42,29 @@ void main() {
       );
       expect(decoded.backgroundDispatcherHandle, 101);
       expect(decoded.backgroundCallbackHandle, 202);
+      expect(decoded.playRingback, isTrue);
+      expect(decoded.maxRingbackSeconds, 120);
+    });
+
+    test('round-trips ringback options and defaults missing values', () {
+      const data = CallDataDto(
+        callId: 'abc',
+        callerName: 'Ava',
+        handle: '+1',
+        playRingback: false,
+        maxRingbackSeconds: 45,
+      );
+
+      final map = PayloadCodec.callDataToMap(data);
+      expect(map[PayloadCodec.keyPlayRingback], isFalse);
+      expect(PayloadCodec.callDataFromMap(map).playRingback, isFalse);
+      expect(PayloadCodec.callDataFromMap(map).maxRingbackSeconds, 45);
+
+      map
+        ..remove(PayloadCodec.keyPlayRingback)
+        ..remove(PayloadCodec.keyMaxRingbackSeconds);
+      expect(PayloadCodec.callDataFromMap(map).playRingback, isTrue);
+      expect(PayloadCodec.callDataFromMap(map).maxRingbackSeconds, 120);
     });
 
     test('safeCallEventFromMap returns null for invalid payload', () {

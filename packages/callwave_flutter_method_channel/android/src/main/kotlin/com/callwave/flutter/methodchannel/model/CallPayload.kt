@@ -15,6 +15,8 @@ data class CallPayload(
     val backgroundDispatcherHandle: Long?,
     val backgroundCallbackHandle: Long?,
     val backgroundDeclineCallbackHandle: Long?,
+    val playRingback: Boolean = true,
+    val maxRingbackSeconds: Int = CallwaveConstants.DEFAULT_MAX_RINGBACK_SECONDS,
 ) {
     fun toMethodArgs(): Map<String, Any?> {
         return mapOf(
@@ -30,6 +32,8 @@ data class CallPayload(
             CallwaveConstants.EXTRA_BACKGROUND_CALLBACK_HANDLE to backgroundCallbackHandle,
             CallwaveConstants.EXTRA_BACKGROUND_DECLINE_CALLBACK_HANDLE to
                 backgroundDeclineCallbackHandle,
+            CallwaveConstants.EXTRA_PLAY_RINGBACK to playRingback,
+            CallwaveConstants.EXTRA_MAX_RINGBACK_SECONDS to maxRingbackSeconds,
         )
     }
 
@@ -59,6 +63,12 @@ data class CallPayload(
                 backgroundDeclineCallbackHandle =
                     (args[CallwaveConstants.EXTRA_BACKGROUND_DECLINE_CALLBACK_HANDLE]
                         as? Number)?.toLong()?.takeIf { it > 0L },
+                playRingback = args[CallwaveConstants.EXTRA_PLAY_RINGBACK] as? Boolean ?: true,
+                maxRingbackSeconds =
+                    (args[CallwaveConstants.EXTRA_MAX_RINGBACK_SECONDS] as? Number)
+                        ?.toInt()
+                        ?.takeIf { it > 0 }
+                        ?: CallwaveConstants.DEFAULT_MAX_RINGBACK_SECONDS,
             )
         }
 

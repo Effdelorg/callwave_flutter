@@ -30,6 +30,7 @@ class CallwaveFlutterPlugin :
         eventChannel?.setStreamHandler(null)
         CallwaveRuntime.eventSinkBridge.detach()
         CallwaveRuntime.callManager.activity = null
+        CallwaveRuntime.callManager.stopOutgoingRingback()
         methodChannel = null
         eventChannel = null
         methodHandler = null

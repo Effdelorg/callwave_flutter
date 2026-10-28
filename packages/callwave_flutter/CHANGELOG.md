@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `CallData.playRingback` (default `true`). Outgoing calls play a ringback tone until the session is reported connected or ends; set it to `false` when your media stack plays its own.
+- `CallData.maxRingbackDuration` (default 120 seconds). Safety cap that stops the ringback tone if the call is never reported connected or ended. Sent in whole seconds, minimum 1.
+
 ## [0.5.1] - 2026-09-11
 
 ### Fixed

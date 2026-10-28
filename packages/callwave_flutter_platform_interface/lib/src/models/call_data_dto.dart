@@ -14,6 +14,8 @@ class CallDataDto {
     this.backgroundDispatcherHandle,
     this.backgroundCallbackHandle,
     this.backgroundDeclineCallbackHandle,
+    this.playRingback = true,
+    this.maxRingbackSeconds = 120,
   });
 
   final String callId;
@@ -27,6 +29,8 @@ class CallDataDto {
   final int? backgroundDispatcherHandle;
   final int? backgroundCallbackHandle;
   final int? backgroundDeclineCallbackHandle;
+  final bool playRingback;
+  final int maxRingbackSeconds;
 
   CallDataDto copyWith({
     String? callId,
@@ -40,6 +44,8 @@ class CallDataDto {
     int? backgroundDispatcherHandle,
     int? backgroundCallbackHandle,
     int? backgroundDeclineCallbackHandle,
+    bool? playRingback,
+    int? maxRingbackSeconds,
   }) {
     return CallDataDto(
       callId: callId ?? this.callId,
@@ -57,6 +63,8 @@ class CallDataDto {
           backgroundCallbackHandle ?? this.backgroundCallbackHandle,
       backgroundDeclineCallbackHandle: backgroundDeclineCallbackHandle ??
           this.backgroundDeclineCallbackHandle,
+      playRingback: playRingback ?? this.playRingback,
+      maxRingbackSeconds: maxRingbackSeconds ?? this.maxRingbackSeconds,
     );
   }
 }

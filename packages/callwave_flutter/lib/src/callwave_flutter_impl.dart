@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:callwave_flutter_platform_interface/callwave_flutter_platform_interface.dart'
@@ -1085,6 +1086,8 @@ class CallwaveFlutter {
           backgroundValidatorHandles?.backgroundAcceptCallbackHandle,
       backgroundDeclineCallbackHandle:
           backgroundValidatorHandles?.backgroundDeclineCallbackHandle,
+      playRingback: data.playRingback,
+      maxRingbackSeconds: math.max(1, data.maxRingbackDuration.inSeconds),
     );
   }
 

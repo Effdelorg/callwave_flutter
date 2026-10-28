@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Outgoing calls now play a ringback tone until the call connects (`syncCallConnectedState`) or ends. Opt out per call with `playRingback: false`. A per-call safety cap (`maxRingbackSeconds`, default 120; missing or non-positive values fall back to 120) stops the tone if the host never reports the call connected or ended. Android uses `ToneGenerator.TONE_SUP_RINGTONE` on the voice-call stream and leaves audio mode/routing to the host; it also stops when the Flutter engine detaches and is not restarted when an engine re-attaches. iOS plays a synthesized 440/480 Hz tone once CallKit activates the audio session, sets `.playAndRecord`/`.voiceChat` only if the category is not already `.playAndRecord`, and restarts the tone after audio route changes.
+
+### Fixed
+
+- iOS: `CXStartCallAction` is now fulfilled by the provider delegate, so CallKit activates the audio session for outgoing calls.
+- iOS: `CXCallController` and `reportNewIncomingCall` completions now run on the main queue. They previously ran on a private CallKit queue and mutated call state concurrently with method-channel calls.
+
 ## [0.2.1] - 2026-09-11
 
 ### Fixed
