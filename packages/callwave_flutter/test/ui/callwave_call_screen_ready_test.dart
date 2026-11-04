@@ -25,6 +25,177 @@ Widget _screen(CallSession session) => CallwaveCallScreenReady(
 );
 
 void main() {
+  for (final hiding in ['offstage', 'transparent']) {
+    for (final permission in ['before-hide', 'while-hidden', 'after-reopen']) {
+      testWidgets(
+        'cached $hiding screen recovers with permission $permission',
+        (tester) async {
+          final signals = <String>[];
+          final session = CallSession(
+            callData: const CallData(
+              callId: 'cached',
+              callerName: 'Ava',
+              handle: '+1',
+              ringbackStartMode: RingbackStartMode.appControlled,
+            ),
+            isOutgoing: true,
+            reportOutgoingScreenVisible: (_) async => signals.add('visible'),
+            reportOutgoingScreenHidden: (_) async => signals.add('hidden'),
+          );
+          addTearDown(session.dispose);
+          final hidden = ValueNotifier(false);
+          addTearDown(hidden.dispose);
+          final painter = _PaintCounter();
+          await _prepare(session);
+          if (permission == 'before-hide')
+            await session.allowOutgoingRingback();
+          await tester.pumpWidget(
+            MaterialApp(
+              home: ValueListenableBuilder<bool>(
+                valueListenable: hidden,
+                builder: (_, value, child) => hiding == 'offstage'
+                    ? Offstage(offstage: value, child: child)
+                    : Opacity(opacity: value ? 0 : 1, child: child),
+                child: RepaintBoundary(
+                  child: CallwaveCallScreenReady(
+                    session: session,
+                    child: CustomPaint(
+                      painter: painter,
+                      size: const Size(50, 50),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          final paints = painter.count;
+          expect(paints, greaterThan(0));
+          expect(signals, permission == 'before-hide' ? ['visible'] : isEmpty);
+
+          hidden.value = true;
+          await tester.pumpAndSettle();
+          if (permission == 'while-hidden') {
+            await session.allowOutgoingRingback();
+            await tester.pump();
+          }
+          expect(
+            signals,
+            permission == 'before-hide' ? ['visible', 'hidden'] : isEmpty,
+          );
+
+          hidden.value = false;
+          await tester.pumpAndSettle();
+          if (permission == 'after-reopen') {
+            expect(signals, isEmpty);
+            await session.allowOutgoingRingback();
+            await tester.pump();
+          }
+          expect(
+            signals,
+            permission == 'before-hide'
+                ? ['visible', 'hidden', 'visible']
+                : ['visible'],
+          );
+          expect(painter.count, paints);
+          await tester.pump();
+          expect(painter.count, paints);
+          expect(tester.binding.hasScheduledFrame, isFalse);
+        },
+      );
+    }
+  }
+
+  for (final hiding in ['offstage', 'transparent']) {
+    testWidgets('$hiding revokes pending visibility after readiness', (
+      tester,
+    ) async {
+      final signals = <String>[];
+      final session = CallSession(
+        callData: const CallData(
+          callId: 'call',
+          callerName: 'Ava',
+          handle: '+1',
+          ringbackStartMode: RingbackStartMode.appControlled,
+        ),
+        isOutgoing: true,
+        reportOutgoingScreenVisible: (_) async => signals.add('visible'),
+        reportOutgoingScreenHidden: (_) async => signals.add('hidden'),
+      );
+      addTearDown(session.dispose);
+      final hidden = ValueNotifier(false);
+      addTearDown(hidden.dispose);
+      final painter = _PaintCounter();
+      await _prepare(session);
+      await session.allowOutgoingRingback();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ValueListenableBuilder<bool>(
+            valueListenable: hidden,
+            builder: (_, value, child) => hiding == 'offstage'
+                ? Offstage(offstage: value, child: child)
+                : Opacity(opacity: value ? 0 : 1, child: child),
+            child: CallwaveCallScreenReady(
+              session: session,
+              child: CustomPaint(painter: painter, size: const Size(50, 50)),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(signals, ['visible']);
+      final paints = painter.count;
+      await tester.pump();
+      expect(painter.count, paints);
+      expect(tester.binding.hasScheduledFrame, isFalse);
+
+      hidden.value = true;
+      await tester.pumpAndSettle();
+      expect(signals, ['visible', 'hidden']);
+      await tester.pump();
+      expect(signals, ['visible', 'hidden']);
+
+      hidden.value = false;
+      await tester.pumpAndSettle();
+      expect(signals, ['visible', 'hidden', 'visible']);
+      // Reopening retains the existing host permission.
+      session.reportConnected();
+      hidden.value = true;
+      await tester.pumpAndSettle();
+      expect(signals, ['visible', 'hidden', 'visible']);
+      session.dispose();
+    });
+  }
+
+  testWidgets('permission waits for a visible custom screen after hiding', (tester) async {
+    final sent = <String>[];
+    final session = CallSession(
+      callData: const CallData(callId: 'call', callerName: 'Ava', handle: '+1',
+        ringbackStartMode: RingbackStartMode.appControlled),
+      isOutgoing: true,
+      reportOutgoingScreenVisible: (id) async { sent.add(id); },
+    );
+    addTearDown(session.dispose);
+    await _prepare(session);
+    final hidden = ValueNotifier(false);
+    addTearDown(hidden.dispose);
+    await tester.pumpWidget(MaterialApp(home: ValueListenableBuilder<bool>(
+      valueListenable: hidden,
+      builder: (_, value, child) => Offstage(offstage: value, child: child),
+      child: _screen(session),
+    )));
+    await tester.pumpAndSettle();
+    expect(sent, isEmpty);
+    hidden.value = true;
+    await tester.pump();
+    await session.allowOutgoingRingback();
+    await tester.pump();
+    expect(sent, isEmpty);
+    hidden.value = false;
+    await tester.pumpAndSettle();
+    expect(sent, ['attempt-1']);
+  });
+
   testWidgets('waits for route entrance completion and its rendered frame', (
     tester,
   ) async {

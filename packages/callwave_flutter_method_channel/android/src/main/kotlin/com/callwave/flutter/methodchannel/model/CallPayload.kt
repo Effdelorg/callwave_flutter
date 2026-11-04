@@ -16,6 +16,7 @@ data class CallPayload(
     val backgroundCallbackHandle: Long?,
     val backgroundDeclineCallbackHandle: Long?,
     val playRingback: Boolean = true,
+    val ringbackStartMode: String = "automatic",
     val maxRingbackSeconds: Int = CallwaveConstants.DEFAULT_MAX_RINGBACK_SECONDS,
 ) {
     fun toMethodArgs(): Map<String, Any?> {
@@ -33,6 +34,7 @@ data class CallPayload(
             CallwaveConstants.EXTRA_BACKGROUND_DECLINE_CALLBACK_HANDLE to
                 backgroundDeclineCallbackHandle,
             CallwaveConstants.EXTRA_PLAY_RINGBACK to playRingback,
+            CallwaveConstants.EXTRA_RINGBACK_START_MODE to ringbackStartMode,
             CallwaveConstants.EXTRA_MAX_RINGBACK_SECONDS to maxRingbackSeconds,
         )
     }
@@ -64,6 +66,8 @@ data class CallPayload(
                     (args[CallwaveConstants.EXTRA_BACKGROUND_DECLINE_CALLBACK_HANDLE]
                         as? Number)?.toLong()?.takeIf { it > 0L },
                 playRingback = args[CallwaveConstants.EXTRA_PLAY_RINGBACK] as? Boolean ?: true,
+                ringbackStartMode = if (args[CallwaveConstants.EXTRA_RINGBACK_START_MODE] == "appControlled")
+                    "appControlled" else "automatic",
                 maxRingbackSeconds =
                     (args[CallwaveConstants.EXTRA_MAX_RINGBACK_SECONDS] as? Number)
                         ?.toInt()

@@ -15,6 +15,7 @@ import 'enums/call_session_state.dart';
 import 'enums/call_startup_action_type.dart';
 import 'enums/call_type.dart';
 import 'enums/post_call_behavior.dart';
+import 'enums/ringback_start_mode.dart';
 import 'models/call_accept_decision.dart';
 import 'models/background_incoming_call_validation_request.dart';
 import 'models/call_data.dart';
@@ -152,6 +153,17 @@ class CallwaveFlutter {
       declineNative: declineCall,
       endNative: endCall,
       startOutgoingNative: showOutgoingCall,
+      allowOutgoingRingbackNative: (requestId) async {
+        if (!identical(_sessions[callData.callId], session)) return;
+        await allowOutgoingRingback(session.callId, requestId: requestId);
+      },
+      reportOutgoingScreenHidden: (requestId) async {
+        if (!identical(_sessions[callData.callId], session)) return;
+        await reportOutgoingCallScreenHidden(
+          session.callId,
+          requestId: requestId,
+        );
+      },
       reportOutgoingScreenVisible: (requestId) async {
         if (!identical(_sessions[callData.callId], session)) return;
         await reportOutgoingCallScreenVisible(
@@ -306,6 +318,18 @@ class CallwaveFlutter {
   Future<void> showOutgoingCall(CallData data) {
     return _platform.showOutgoingCall(_toDto(data));
   }
+
+  /// Grants permission for a captured outgoing attempt. Prefer CallSession.allowOutgoingRingback.
+  Future<void> allowOutgoingRingback(
+    String callId, {
+    required String requestId,
+  }) => _platform.allowOutgoingRingback(callId, requestId: requestId);
+
+  /// Reports a hidden screen for raw-event integrations. Does not pause playback.
+  Future<void> reportOutgoingCallScreenHidden(
+    String callId, {
+    required String requestId,
+  }) => _platform.reportOutgoingCallScreenHidden(callId, requestId: requestId);
 
   /// Reports completed outgoing screen navigation for raw-event integrations.
   /// Capture [requestId] from the started event's
@@ -743,7 +767,10 @@ class CallwaveFlutter {
     required CallSessionState initialState,
   }) {
     final existing = _sessions[event.callId];
-    final callData = _callDataFromEvent(event, fallback: existing?.callData);
+    final callData = _callDataFromEvent(
+      event,
+      fallback: existing?.isEnded == false ? existing?.callData : null,
+    );
     if (existing != null) {
       if (existing.isEnded) {
         _disposeSession(event.callId);
@@ -766,7 +793,10 @@ class CallwaveFlutter {
   }) {
     final connectedAt = _restoredConnectedAtFromExtra(event.extra);
     final existing = _sessions[event.callId];
-    final callData = _callDataFromEvent(event, fallback: existing?.callData);
+    final callData = _callDataFromEvent(
+      event,
+      fallback: existing?.isEnded == false ? existing?.callData : null,
+    );
     return createSession(
       callData: callData,
       isOutgoing: isOutgoing,
@@ -966,12 +996,18 @@ class CallwaveFlutter {
     return merged;
   }
 
-  CallData _callDataFromEvent(
-    CallEvent event, {
-    required CallData? fallback,
-  }) {
+  CallData _callDataFromEvent(CallEvent event, {required CallData? fallback}) {
     final fallbackData = fallback ?? _fallbackCallData(event.callId);
-    final callerName = _readNonEmptyString(event.extra, 'callerName') ??
+    // A raw outgoing start can create its session only after the native event.
+    // Hydrate its options then; existing sessions keep their attempt settings.
+    final outgoingOptions =
+        fallback == null && event.type == CallEventType.started
+        ? event.extra
+        : null;
+    final playRingback = outgoingOptions?['playRingback'];
+    final maxRingbackSeconds = outgoingOptions?['maxRingbackSeconds'];
+    final callerName =
+        _readNonEmptyString(event.extra, 'callerName') ??
         fallbackData.callerName;
     final handle =
         _readNonEmptyString(event.extra, 'handle') ?? fallbackData.handle;
@@ -986,6 +1022,16 @@ class CallwaveFlutter {
       handle: handle,
       avatarUrl: avatarUrl,
       timeout: fallbackData.timeout,
+      playRingback: playRingback is bool
+          ? playRingback
+          : fallbackData.playRingback,
+      ringbackStartMode: RingbackStartMode.fromWireValue(
+        _readString(outgoingOptions, 'ringbackStartMode') ??
+            fallbackData.ringbackStartMode.wireValue,
+      ),
+      maxRingbackDuration: maxRingbackSeconds is int && maxRingbackSeconds > 0
+          ? Duration(seconds: maxRingbackSeconds)
+          : fallbackData.maxRingbackDuration,
       callType: callType,
       extra: event.extra ?? fallbackData.extra,
     );
@@ -1109,6 +1155,9 @@ class CallwaveFlutter {
       backgroundDeclineCallbackHandle:
           backgroundValidatorHandles?.backgroundDeclineCallbackHandle,
       playRingback: data.playRingback,
+      ringbackStartMode: platform.RingbackStartMode.fromWireValue(
+        data.ringbackStartMode.name,
+      ),
       maxRingbackSeconds: math.max(1, data.maxRingbackDuration.inSeconds),
     );
   }

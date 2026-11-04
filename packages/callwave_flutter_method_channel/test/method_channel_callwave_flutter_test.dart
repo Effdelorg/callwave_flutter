@@ -18,7 +18,8 @@ void main() {
       () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, null),
     );
-    await MethodChannelCallwaveFlutter().reportOutgoingCallScreenVisible(
+    final plugin = MethodChannelCallwaveFlutter();
+    await plugin.reportOutgoingCallScreenVisible(
       'call',
       requestId: 'attempt-1',
     );
@@ -26,6 +27,12 @@ void main() {
       'initialize',
       'reportOutgoingCallScreenVisible',
     ]);
+    expect(calls.last.arguments, {'callId': 'call', 'requestId': 'attempt-1'});
+    await plugin.allowOutgoingRingback('call', requestId: 'attempt-1');
+    expect(calls.last.method, 'allowOutgoingRingback');
+    expect(calls.last.arguments, {'callId': 'call', 'requestId': 'attempt-1'});
+    await plugin.reportOutgoingCallScreenHidden('call', requestId: 'attempt-1');
+    expect(calls.last.method, 'reportOutgoingCallScreenHidden');
     expect(calls.last.arguments, {'callId': 'call', 'requestId': 'attempt-1'});
   });
 

@@ -161,11 +161,26 @@ class AndroidCallManager(
             payload = payload,
             eventType = CallwaveConstants.EVENT_STARTED,
         )
-        outgoingRingbackReadiness.prepare(payload.callId, payload.playRingback)
+        outgoingRingbackReadiness.prepare(payload.callId, payload.playRingback, payload.ringbackStartMode == "appControlled")
         emitEvent(payload.callId, CallwaveConstants.EVENT_STARTED, eventExtra(payload, payload.extra))
     }
 
+    fun allowOutgoingRingback(callId: String, requestId: String) {
+        check(Looper.myLooper() == Looper.getMainLooper())
+        outgoingRingbackReadiness.allow(callId, requestId)
+        tryStartOutgoingRingback(callId, requestId, visible = false)
+    }
+
+    fun reportOutgoingCallScreenHidden(callId: String, requestId: String) {
+        check(Looper.myLooper() == Looper.getMainLooper())
+        outgoingRingbackReadiness.hide(callId, requestId)
+    }
+
     fun reportOutgoingCallScreenVisible(callId: String, requestId: String) {
+        tryStartOutgoingRingback(callId, requestId, visible = true)
+    }
+
+    private fun tryStartOutgoingRingback(callId: String, requestId: String, visible: Boolean) {
         check(Looper.myLooper() == Looper.getMainLooper())
         val payload = payloadStore[callId]
         if (!outgoingRingbackReadiness.consume(
@@ -175,6 +190,7 @@ class AndroidCallManager(
                 outgoing = outgoingCalls.contains(callId),
                 connected = connectedAtByCallId.containsKey(callId),
                 enabled = payload?.playRingback == true,
+                visible = visible,
             ) || payload == null
         ) return
         Log.d(TAG, "Starting outgoing ringback after screen readiness for $callId.")
@@ -1489,6 +1505,11 @@ class AndroidCallManager(
             ?: merged[CallwaveConstants.EXTRA_CALL_TYPE]
             ?: "audio"
         merged.remove(CallwaveConstants.EXTRA_OUTGOING_RINGBACK_REQUEST_ID)
+        if (payload != null) {
+            merged[CallwaveConstants.EXTRA_PLAY_RINGBACK] = payload.playRingback
+            merged[CallwaveConstants.EXTRA_RINGBACK_START_MODE] = payload.ringbackStartMode
+            merged[CallwaveConstants.EXTRA_MAX_RINGBACK_SECONDS] = payload.maxRingbackSeconds
+        }
         callId?.let(outgoingRingbackReadiness::requestId)?.let {
             merged[CallwaveConstants.EXTRA_OUTGOING_RINGBACK_REQUEST_ID] = it
         }

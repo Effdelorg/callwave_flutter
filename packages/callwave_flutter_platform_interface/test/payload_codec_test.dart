@@ -2,6 +2,42 @@ import 'package:callwave_flutter_platform_interface/callwave_flutter_platform_in
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+    'ringback start mode round-trips and copyWith preserves or replaces it',
+    () {
+      const data = CallDataDto(
+        callId: 'call',
+        callerName: 'Ava',
+        handle: '+1',
+        ringbackStartMode: RingbackStartMode.appControlled,
+      );
+      final map = PayloadCodec.callDataToMap(data.copyWith(callerName: 'Bob'));
+      expect(map['ringbackStartMode'], 'appControlled');
+      expect(
+        PayloadCodec.callDataFromMap(map).ringbackStartMode,
+        RingbackStartMode.appControlled,
+      );
+      expect(
+        data
+            .copyWith(ringbackStartMode: RingbackStartMode.automatic)
+            .ringbackStartMode,
+        RingbackStartMode.automatic,
+      );
+      for (final value in [null, 'unknown', 'automatic']) {
+        map['ringbackStartMode'] = value;
+        expect(
+          PayloadCodec.callDataFromMap(map).ringbackStartMode,
+          RingbackStartMode.automatic,
+        );
+      }
+      map.remove('ringbackStartMode');
+      expect(
+        PayloadCodec.callDataFromMap(map).ringbackStartMode,
+        RingbackStartMode.automatic,
+      );
+    },
+  );
+
   group('PostCallBehavior', () {
     test('fromWireValue returns stayOpen for null or unknown values', () {
       expect(PostCallBehavior.fromWireValue(null), PostCallBehavior.stayOpen);

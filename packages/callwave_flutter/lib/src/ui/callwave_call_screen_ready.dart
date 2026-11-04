@@ -2,6 +2,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
 import '../engine/call_session.dart';
+import '../enums/ringback_start_mode.dart';
 
 /// Reports readiness after the call screen paints and its entrance completes.
 ///
@@ -177,16 +178,29 @@ class _CallwaveCallScreenReadyState extends State<CallwaveCallScreenReady>
     _syncObservation();
     if (!_needsObservation) return;
     _painted = true;
+    _scheduleVisibilityCheck();
+  }
+
+  void _scheduleVisibilityCheck() {
     if (_scheduled) return;
     _scheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scheduled = false;
       if (!mounted || !_needsObservation) return;
+      // A hidden subtree may return through a retained repaint-boundary layer
+      // without painting again. Keep its paint history; _canShow gates visibility.
       widget.session.setCallScreenVisible(
         _painted && _canShow,
         isStillVisible: () => mounted && _painted && _canShow,
       );
       _syncObservation();
+      // Offstage/transparent ancestors can stop painting this subtree. Recheck
+      // on the next rendered frame without requesting frames or repainting it.
+      if (_needsObservation &&
+          widget.session.callData.ringbackStartMode ==
+              RingbackStartMode.appControlled) {
+        _scheduleVisibilityCheck();
+      }
     });
   }
 

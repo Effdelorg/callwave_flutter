@@ -20,6 +20,138 @@ void main() {
     await fakePlatform.dispose();
   });
 
+  for (final playRingback in [true, false]) {
+    test(
+      'raw outgoing start hydrates ringback options (enabled=$playRingback)',
+      () async {
+        fakePlatform.emitOutgoingStarted = true;
+        final data = CallData(
+          callId: 'raw-controlled',
+          callerName: 'Ava',
+          handle: '+1',
+          playRingback: playRingback,
+          ringbackStartMode: RingbackStartMode.appControlled,
+          maxRingbackDuration: const Duration(seconds: 23),
+        );
+        await CallwaveFlutter.instance.showOutgoingCall(data);
+        await Future<void>.delayed(Duration.zero);
+        final session = CallwaveFlutter.instance.getSession(data.callId)!;
+        expect(
+          session.callData.ringbackStartMode,
+          RingbackStartMode.appControlled,
+        );
+        expect(session.callData.playRingback, playRingback);
+        expect(session.callData.maxRingbackDuration, data.maxRingbackDuration);
+        session.setCallScreenVisible(true);
+        expect(fakePlatform.readiness, isEmpty);
+        await session.allowOutgoingRingback();
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          fakePlatform.permissions,
+          playRingback ? ['raw-controlled|attempt-1'] : isEmpty,
+        );
+        expect(
+          fakePlatform.readiness,
+          playRingback ? ['raw-controlled|attempt-1'] : isEmpty,
+        );
+      },
+    );
+  }
+
+  test(
+    'raw replacement uses its own options while ended session awaits cleanup',
+    () async {
+      fakePlatform.emitOutgoingStarted = true;
+      const data = CallData(
+        callId: 'raw-replacement',
+        callerName: 'Ava',
+        handle: '+1',
+        ringbackStartMode: RingbackStartMode.appControlled,
+        maxRingbackDuration: Duration(seconds: 23),
+      );
+      await CallwaveFlutter.instance.showOutgoingCall(data);
+      await Future<void>.delayed(Duration.zero);
+      final old = CallwaveFlutter.instance.getSession(data.callId)!;
+      old.reportEnded();
+      await CallwaveFlutter.instance.showOutgoingCall(
+        data.copyWith(
+          ringbackStartMode: RingbackStartMode.automatic,
+          maxRingbackDuration: const Duration(seconds: 17),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      final current = CallwaveFlutter.instance.getSession(data.callId)!;
+      expect(identical(current, old), isFalse);
+      expect(current.callData.ringbackStartMode, RingbackStartMode.automatic);
+      expect(current.callData.maxRingbackDuration, const Duration(seconds: 17));
+      current.setCallScreenVisible(true);
+      await old.allowOutgoingRingback();
+      expect(fakePlatform.permissions, isEmpty);
+      expect(fakePlatform.readiness, ['raw-replacement|attempt-1']);
+    },
+  );
+
+  test(
+    'app-controlled model survives native updates and permission is attempt-bound',
+    () async {
+      const data = CallData(
+        callId: 'permission-reuse',
+        callerName: 'Ava',
+        handle: '+1',
+        ringbackStartMode: RingbackStartMode.appControlled,
+        maxRingbackDuration: Duration(seconds: 23),
+      );
+      expect(
+        data.copyWith(callerName: 'Bob').ringbackStartMode,
+        RingbackStartMode.appControlled,
+      );
+      final old = CallwaveFlutter.instance.createSession(
+        callData: data,
+        isOutgoing: true,
+      );
+      fakePlatform.emit(
+        platform.CallEventDto(
+          callId: data.callId,
+          type: platform.CallEventType.started,
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+          extra: {
+            CallEventExtraKeys.outgoingRingbackRequestId: 'old',
+            'ringbackStartMode': 'automatic',
+            'playRingback': false,
+            'maxRingbackSeconds': 1,
+          },
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(old.callData.ringbackStartMode, RingbackStartMode.appControlled);
+      expect(old.callData.maxRingbackDuration, const Duration(seconds: 23));
+      expect(old.callData.playRingback, isTrue);
+      old.setCallScreenVisible(true);
+      expect(fakePlatform.readiness, isEmpty);
+      old.reportEnded();
+      final current = CallwaveFlutter.instance.createSession(
+        callData: data,
+        isOutgoing: true,
+      );
+      await current.applyNativeEvent(
+        CallEvent(
+          callId: data.callId,
+          type: CallEventType.started,
+          timestamp: DateTime.now(),
+          extra: {CallEventExtraKeys.outgoingRingbackRequestId: 'current'},
+        ),
+      );
+      await old.allowOutgoingRingback();
+      old.setCallScreenVisible(true);
+      expect(fakePlatform.permissions, isEmpty);
+      current.setCallScreenVisible(true);
+      await current.allowOutgoingRingback();
+      await Future<void>.delayed(Duration.zero);
+      expect(fakePlatform.permissions, ['permission-reuse|current']);
+      expect(fakePlatform.readiness, ['permission-reuse|current']);
+    },
+  );
+
   test(
     'screen readiness stays bound to its session when a call ID is reused',
     () async {
@@ -69,6 +201,10 @@ void main() {
       const CallData(callId: 'o1', callerName: 'Bob', handle: '+2'),
     );
     expect(fakePlatform.lastOutgoingCallData?.playRingback, isTrue);
+    expect(
+      fakePlatform.lastOutgoingCallData?.ringbackStartMode,
+      platform.RingbackStartMode.automatic,
+    );
     expect(fakePlatform.lastOutgoingCallData?.maxRingbackSeconds, 120);
 
     await CallwaveFlutter.instance.showOutgoingCall(
@@ -77,10 +213,15 @@ void main() {
         callerName: 'Bob',
         handle: '+2',
         playRingback: false,
+        ringbackStartMode: RingbackStartMode.appControlled,
         maxRingbackDuration: Duration(seconds: 45),
       ),
     );
     expect(fakePlatform.lastOutgoingCallData?.playRingback, isFalse);
+    expect(
+      fakePlatform.lastOutgoingCallData?.ringbackStartMode,
+      platform.RingbackStartMode.appControlled,
+    );
     expect(fakePlatform.lastOutgoingCallData?.maxRingbackSeconds, 45);
 
     await CallwaveFlutter.instance.showOutgoingCall(
@@ -1245,6 +1386,15 @@ void main() {
 
 class _FakePlatform extends platform.CallwaveFlutterPlatform {
   final readiness = <String>[];
+  final permissions = <String>[];
+
+  @override
+  Future<void> allowOutgoingRingback(
+    String callId, {
+    required String requestId,
+  }) async {
+    permissions.add('$callId|$requestId');
+  }
 
   @override
   Future<void> reportOutgoingCallScreenVisible(
@@ -1265,6 +1415,7 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   String? lastIncomingCallId;
   platform.CallDataDto? lastIncomingCallData;
   platform.CallDataDto? lastOutgoingCallData;
+  bool emitOutgoingStarted = false;
   String? lastConfirmedCallId;
   String? lastMarkedMissedCallId;
   Map<String, dynamic>? lastMarkedMissedExtra;
@@ -1449,6 +1600,22 @@ class _FakePlatform extends platform.CallwaveFlutterPlatform {
   @override
   Future<void> showOutgoingCall(platform.CallDataDto data) async {
     lastOutgoingCallData = data;
+    if (emitOutgoingStarted) {
+      emit(
+        platform.CallEventDto(
+          callId: data.callId,
+          type: platform.CallEventType.started,
+          timestampMs: DateTime.now().millisecondsSinceEpoch,
+          extra: {
+            'ringbackStartMode': data.ringbackStartMode.wireValue,
+            'playRingback': data.playRingback,
+            'maxRingbackSeconds': data.maxRingbackSeconds,
+            if (data.playRingback)
+              CallEventExtraKeys.outgoingRingbackRequestId: 'attempt-1',
+          },
+        ),
+      );
+    }
   }
 }
 

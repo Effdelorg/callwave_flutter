@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../enums/call_event_type.dart';
 import '../enums/call_session_state.dart';
+import '../enums/ringback_start_mode.dart';
 import '../models/call_data.dart';
 import '../models/call_event.dart';
 import '../models/call_event_extra_keys.dart';
@@ -42,6 +43,8 @@ class CallSession extends ChangeNotifier {
     _CallIdAction? endNative,
     _OutgoingStartAction? startOutgoingNative,
     Future<void> Function(String requestId)? reportOutgoingScreenVisible,
+    Future<void> Function(String requestId)? reportOutgoingScreenHidden,
+    Future<void> Function(String requestId)? allowOutgoingRingbackNative,
   }) : _callData = callData,
        _state = initialState,
        _connectedAt = initialConnectedAt,
@@ -51,6 +54,10 @@ class CallSession extends ChangeNotifier {
        _declineNative = declineNative ?? _defaultCallIdAction,
        _endNative = endNative ?? _defaultCallIdAction,
        _startOutgoingNative = startOutgoingNative ?? _defaultOutgoingAction,
+       _reportOutgoingScreenHidden =
+           reportOutgoingScreenHidden ?? _defaultCallIdAction,
+       _allowOutgoingRingbackNative =
+           allowOutgoingRingbackNative ?? _defaultCallIdAction,
        _reportOutgoingScreenVisible =
            reportOutgoingScreenVisible ?? _defaultCallIdAction {
     if (_state == CallSessionState.connected ||
@@ -74,6 +81,21 @@ class CallSession extends ChangeNotifier {
   final _CallIdAction _endNative;
   final _OutgoingStartAction _startOutgoingNative;
   final Future<void> Function(String requestId) _reportOutgoingScreenVisible;
+  final Future<void> Function(String requestId) _reportOutgoingScreenHidden;
+  final Future<void> Function(String requestId) _allowOutgoingRingbackNative;
+  bool _ringbackAllowed = false;
+  bool _permissionSent = false;
+  bool _permissionAcknowledged = false;
+  bool get _appControlled =>
+      callData.ringbackStartMode == RingbackStartMode.appControlled;
+  bool get _canPrepareRingback =>
+      !_disposed &&
+      isOutgoing &&
+      !isEnded &&
+      !_endRequested &&
+      !_declineRequested &&
+      _connectedAt == null &&
+      callData.playRingback;
   String? _ringbackRequestId;
   bool _outgoingPreparationReceived = false;
   bool _callScreenVisible = false;
@@ -125,7 +147,7 @@ class CallSession extends ChangeNotifier {
   bool get needsOutgoingScreenReadiness =>
       !_disposed &&
       isOutgoing &&
-      !_ringbackReadinessSent &&
+      (!_ringbackReadinessSent || _appControlled) &&
       (!_outgoingPreparationReceived || _ringbackRequestId != null) &&
       !_endRequested &&
       !_declineRequested &&
@@ -139,13 +161,58 @@ class CallSession extends ChangeNotifier {
   /// later. Route wrappers use it to reject a screen hidden since its last frame.
   void setCallScreenVisible(bool visible, {bool Function()? isStillVisible}) {
     if (_disposed) return;
+    final wasVisible = _callScreenVisible;
     _callScreenVisible = visible;
     _isScreenStillVisible = visible ? isStillVisible : null;
+    if (!visible && wasVisible && _appControlled && _ringbackReadinessSent) {
+      _ringbackReadinessSent = false;
+      final requestId = _ringbackRequestId;
+      if (requestId != null) unawaited(_sendHidden(requestId));
+    }
     _reportScreenReadyIfNeeded();
+  }
+
+  /// Permits outgoing ringback after the host has prepared its audio route.
+  /// Supported on Android and iOS; iOS also waits for CallKit audio activation.
+  /// Remembers permission before screen/native readiness. Completion acknowledges
+  /// permission locally, without waiting for visibility or successful playback.
+  /// Duplicate, incoming, connected, terminal and disposed-session calls are ignored.
+  Future<void> allowOutgoingRingback() async {
+    if (!_canPrepareRingback || !_appControlled || _ringbackAllowed) return;
+    _ringbackAllowed = true;
+    _reportScreenReadyIfNeeded();
+  }
+
+  Future<void> _sendHidden(String requestId) async {
+    try {
+      await _reportOutgoingScreenHidden(requestId);
+    } catch (error, stackTrace) {
+      _logError('reportOutgoingCallScreenHidden', error, stackTrace);
+    }
+  }
+
+  Future<void> _sendPermission(String requestId) async {
+    try {
+      await _allowOutgoingRingbackNative(requestId);
+      if (!_canPrepareRingback || requestId != _ringbackRequestId) return;
+      _permissionAcknowledged = true;
+      _reportScreenReadyIfNeeded();
+    } catch (error, stackTrace) {
+      _logError('allowOutgoingRingback', error, stackTrace);
+    }
   }
 
   void _reportScreenReadyIfNeeded() {
     final requestId = _ringbackRequestId;
+    if (!_canPrepareRingback) return;
+    if (_appControlled) {
+      if (!_ringbackAllowed || requestId == null) return;
+      if (!_permissionSent) {
+        _permissionSent = true;
+        unawaited(_sendPermission(requestId));
+      }
+      if (!_permissionAcknowledged) return;
+    }
     if (!_callScreenVisible ||
         _isScreenStillVisible?.call() == false ||
         requestId == null ||
@@ -606,6 +673,7 @@ class CallSession extends ChangeNotifier {
     if (_disposed) {
       return;
     }
+    setCallScreenVisible(false);
     _disposed = true;
     _callScreenVisible = false;
     _isScreenStillVisible = null;

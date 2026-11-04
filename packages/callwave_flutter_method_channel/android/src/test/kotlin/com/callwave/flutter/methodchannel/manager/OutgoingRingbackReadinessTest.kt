@@ -10,6 +10,57 @@ class OutgoingRingbackReadinessTest {
                         connected: Boolean = false, enabled: Boolean = true): Boolean =
         readiness.consume("call", id, active, outgoing, connected, enabled)
 
+    @Test fun appControlledRequiresBothSignalsInEitherOrder() {
+        for (permissionFirst in listOf(true, false)) {
+            readiness.prepare("call", true, appControlled = true)
+            val id = readiness.requestId("call")!!
+            if (permissionFirst) {
+                readiness.allow("call", id)
+                assertFalse(readiness.consume("call", id, true, true, false, true, visible = false))
+                assertTrue(consume(id))
+            } else {
+                assertFalse(consume(id))
+                readiness.allow("call", id)
+                assertTrue(readiness.consume("call", id, true, true, false, true, visible = false))
+            }
+            readiness.allow("call", id)
+            assertFalse(consume(id))
+        }
+    }
+
+    @Test fun hiddenPendingAttemptKeepsPermissionButCannotStart() {
+        readiness.prepare("call", true, appControlled = true)
+        val id = readiness.requestId("call")!!
+        assertFalse(consume(id))
+        readiness.hide("call", id)
+        readiness.allow("call", id)
+        assertFalse(readiness.consume("call", id, true, true, false, true, visible = false))
+        assertTrue(consume(id))
+    }
+
+    @Test fun stalePermissionCannotAllowReplacementWithSameCallId() {
+        readiness.prepare("call", true, appControlled = true)
+        val old = readiness.requestId("call")!!
+        readiness.prepare("call", true, appControlled = true)
+        val current = readiness.requestId("call")!!
+        readiness.allow("call", old)
+        assertFalse(consume(current))
+        readiness.hide("call", old)
+        readiness.allow("call", current)
+        assertTrue(readiness.consume("call", current, true, true, false, true, visible = false))
+    }
+
+    @Test fun connectingOrEndingBeforePermissionInvalidatesStartup() {
+        for (connected in listOf(true, false)) {
+            readiness.prepare("call", true, appControlled = true)
+            val id = readiness.requestId("call")!!
+            assertFalse(consume(id))
+            readiness.allow("call", id)
+            assertFalse(consume(id, connected = connected, active = connected))
+            assertFalse(consume(id))
+        }
+    }
+
     @Test fun startsOnceAndCannotRestartAfterPlaybackStops() {
         readiness.prepare("call", true)
         val id = readiness.requestId("call")!!

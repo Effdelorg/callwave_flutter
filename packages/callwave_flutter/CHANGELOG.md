@@ -7,18 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-04
+
+### Added
+
+- `CallData.ringbackStartMode` with `automatic` (default) and `appControlled` modes.
+- `CallSession.allowOutgoingRingback()` lets the host grant playback permission
+  after preparing its audio route. App-controlled playback also requires a visible
+  call screen; iOS additionally requires CallKit audio activation.
+- `CallwaveCallScreenReady` reports readiness for custom call screens.
+- Raw-event APIs for reporting screen visibility and granting playback permission
+  using the outgoing attempt's request ID.
+
 ### Changed
 
-- Android outgoing ringback now waits until call-screen navigation completes.
-  Built-in screens report readiness automatically. Custom navigation must use
-  `CallwaveCallScreenReady` or `CallSession.setCallScreenVisible`; raw-event
-  integrations can report readiness with the captured native attempt token.
-  Delayed callbacks cannot restart sound after connection or cleanup, or affect
-  a newer call attempt using the same call ID. Readiness requires painted,
-  visible content and completed entrance animations; nested wrappers delegate
-  to the innermost screen. Readiness listeners stop when no longer needed.
-  Repeated Android outgoing setup does not emit another start event.
-  iOS behavior is unchanged.
+- Android ringback waits until the call screen is visible and its entrance
+  animation has completed. Built-in screens report readiness automatically.
+  Custom screens must use `CallwaveCallScreenReady` or report visibility directly.
+- iOS automatic mode keeps CallKit-based startup. Its ringback duration cap now
+  starts when playback succeeds and is not extended by audio reactivation.
+- Repeated outgoing setup updates the call without starting signaling again.
+- Updated both federated dependencies to `^0.4.0`.
+
+### Fixed
+
+- Cached screens report visibility again after hiding and reopening.
+- Automatically created sessions retain native ringback settings. Reused call IDs
+  do not inherit settings from ended sessions awaiting cleanup.
+- Stale readiness signals and CallKit callbacks cannot affect replacement attempts.
+  Connection, cleanup, and engine teardown invalidate pending playback.
 
 ## [0.6.0] - 2026-10-28
 

@@ -1,39 +1,70 @@
 # callwave_flutter_method_channel
 
-Internal MethodChannel implementation for `callwave_flutter`.
+Native Android and iOS implementation for
+[callwave_flutter](https://pub.dev/packages/callwave_flutter).
+App developers should depend on the public package.
 
-## Why callwave_flutter?
+## Version and requirements
 
-**Plug-and-play call UI for WebRTC video and audio calls.** Add WhatsApp-style incoming/outgoing call screens to your Flutter app in minutes—no reinventing the wheel.
+Version `0.4.0` uses `callwave_flutter_platform_interface: ^0.4.0` and ships with
+`callwave_flutter: ^0.7.0`.
 
-- **Works with any WebRTC backend** — LiveKit, Agora, Twilio, Daily, VideoSDK, Cloudflare Calls (Real-time), or your own. Implement `CallwaveEngine`, wire your SDK in a few callbacks, and you're done.
-- **Native UX out of the box** — Full-screen incoming call UI on Android, CallKit on iOS. Handles accept, decline, timeout, missed, and callback flows.
-- **Cold-start ready** — Event buffering and startup route resolution so calls work even when the app launches from a push notification.
-- **Conference support** — Built-in multi-participant UI with customizable tiles and controls.
+- Dart `^3.11.0` and Flutter `>=3.41.0`.
+- Android API 26+: incoming and ongoing notifications, full-screen incoming call
+  UI, actions, timeouts, and buffered events.
+- iOS 13+: CallKit, missed-call notifications, and buffered events. Both CocoaPods
+  and Swift Package Manager are supported. The package includes a privacy
+  manifest for its `UserDefaults` use.
 
-If you're building video or voice calls with WebRTC, callwave_flutter gives you the call UX layer so you can focus on your media and signaling. **App developers should use [callwave_flutter](https://pub.dev/packages/callwave_flutter), not this package directly.**
+## Outgoing ringback
 
-> **Platform status:** Android has custom native incoming call UI (`FullScreenCallActivity`) and full call UX. iOS uses CallKit system UI for incoming calls (Apple's native UI; no custom UI from the plugin). In-app call screen is shared Flutter UI on both platforms.
+`CallDataDto.ringbackStartMode` defaults to `RingbackStartMode.automatic`.
+The wire values are `automatic` and `appControlled`; missing or unknown values
+use `automatic`.
 
-iOS supports both CocoaPods and Swift Package Manager. Swift Package Manager
-support requires Flutter `>=3.41.0`, while CocoaPods remains supported. The iOS
-target bundles an Apple privacy manifest declaring `UserDefaults` access for
-plugin-owned call state such as buffered events and pending startup actions.
-Missed-call notifications also show while the app is in the foreground:
-alert on iOS 13, banner and Notification Center on iOS 14+.
+| Mode | Android startup | iOS startup |
+| --- | --- | --- |
+| `automatic` | Screen readiness | CallKit audio activation |
+| `appControlled` | Screen readiness and host permission | Screen readiness, host permission, and CallKit audio activation |
 
-For terminated-state decline handling, the native layers now wait for the
-headless Flutter decline callback result before finalizing the call outcome:
+`playRingback: false` disables sound in either mode. The host owns audio routing.
+`maxRingbackSeconds` limits playback, not call duration. The iOS cap starts at
+successful playback and is not extended by audio reactivation.
 
-- `reported` closes the incoming call without missed-call UI.
-- `failed`, throw, or timeout falls back to missed-call handling.
-- On iOS, host apps that need Flutter plugins inside headless background
-  callbacks should register plugins for the background engine via
-  `CallwaveFlutterPlugin.setBackgroundFlutterPluginRegistrant(...)`.
+These channel methods require `callId` and the captured outgoing `requestId`:
 
-## Contains
-- Dart MethodChannel/EventChannel bridge
-- Android native implementation (notifications, actions, buffering)
-- iOS native implementation (CallKit, missed-call notifications, buffering)
+- `reportOutgoingCallScreenVisible`: reports completed screen navigation.
+- `allowOutgoingRingback`: grants host permission without waiting for playback.
+- `reportOutgoingCallScreenHidden`: clears pending visibility without pausing
+  sound that has already started.
 
-App developers should use `callwave_flutter`, not this package directly.
+Readiness is kept in memory. Connection, cleanup, and engine teardown invalidate
+pending playback. Process restoration does not restart sound. Native event
+metadata carries `playRingback`, `ringbackStartMode`, and `maxRingbackSeconds`
+so automatically created outgoing sessions receive the correct settings.
+
+## Background decline handling
+
+Native code waits for the headless Flutter decline callback before completing
+the incoming-call flow:
+
+- `reported` closes the call without missed-call UI.
+- `failed`, an exception, or timeout falls back to missed-call handling.
+
+On iOS, register plugins needed by headless callbacks with
+`CallwaveFlutterPlugin.setBackgroundFlutterPluginRegistrant(...)`.
+Foreground missed-call notifications use an alert on iOS 13 and banner plus
+Notification Center on iOS 14+.
+
+## Native readiness tests
+
+From this package's `ios` directory on macOS with Xcode tools:
+
+```sh
+src=callwave_flutter_method_channel/Sources/callwave_flutter_method_channel
+xcrun swiftc -module-cache-path /tmp/callwave-swift-module-cache \
+  "$src/manager/OutgoingRingbackReadiness.swift" \
+  "$src/model/CallPayload.swift" "$src/JSONValueSanitizer.swift" \
+  tests/OutgoingRingbackReadinessTests.swift -o /tmp/callwave-ringback-tests
+/tmp/callwave-ringback-tests
+```

@@ -1,3 +1,4 @@
+import '../enums/ringback_start_mode.dart';
 import '../enums/call_type.dart';
 import '../enums/incoming_accept_strategy.dart';
 
@@ -15,6 +16,7 @@ class CallDataDto {
     this.backgroundCallbackHandle,
     this.backgroundDeclineCallbackHandle,
     this.playRingback = true,
+    this.ringbackStartMode = RingbackStartMode.automatic,
     this.maxRingbackSeconds = 120,
   });
 
@@ -30,6 +32,10 @@ class CallDataDto {
   final int? backgroundCallbackHandle;
   final int? backgroundDeclineCallbackHandle;
   final bool playRingback;
+
+  /// Startup policy for outgoing sound; ignored when playRingback is false.
+  /// Supported on Android and iOS. Audio routing remains owned by the host.
+  final RingbackStartMode ringbackStartMode;
   final int maxRingbackSeconds;
 
   CallDataDto copyWith({
@@ -45,6 +51,7 @@ class CallDataDto {
     int? backgroundCallbackHandle,
     int? backgroundDeclineCallbackHandle,
     bool? playRingback,
+    RingbackStartMode? ringbackStartMode,
     int? maxRingbackSeconds,
   }) {
     return CallDataDto(
@@ -64,6 +71,7 @@ class CallDataDto {
       backgroundDeclineCallbackHandle: backgroundDeclineCallbackHandle ??
           this.backgroundDeclineCallbackHandle,
       playRingback: playRingback ?? this.playRingback,
+      ringbackStartMode: ringbackStartMode ?? this.ringbackStartMode,
       maxRingbackSeconds: maxRingbackSeconds ?? this.maxRingbackSeconds,
     );
   }

@@ -27,8 +27,20 @@ abstract class CallwaveFlutterPlatform extends PlatformInterface {
 
   Future<void> showOutgoingCall(CallDataDto data);
 
-  /// Allows one pending Android ringback attempt to start after UI navigation.
-  /// Other platforms may ignore this signal.
+  /// Acknowledges host permission for this outgoing attempt; never waits for playback.
+  Future<void> allowOutgoingRingback(
+    String callId, {
+    required String requestId,
+  }) async {}
+
+  /// Clears visibility while startup is pending; does not pause playing sound.
+  Future<void> reportOutgoingCallScreenHidden(
+    String callId, {
+    required String requestId,
+  }) async {}
+
+  /// Allows one pending outgoing ringback attempt to start after UI navigation.
+  /// Android always uses visibility; iOS uses it in app-controlled mode.
   Future<void> reportOutgoingCallScreenVisible(
     String callId, {
     required String requestId,

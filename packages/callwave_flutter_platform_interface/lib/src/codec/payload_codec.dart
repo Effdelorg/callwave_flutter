@@ -1,3 +1,4 @@
+import '../enums/ringback_start_mode.dart';
 import '../enums/call_event_type.dart';
 import '../enums/call_startup_action_type.dart';
 import '../enums/call_type.dart';
@@ -25,6 +26,7 @@ class PayloadCodec {
       'backgroundDeclineCallbackHandle';
   static const String keyStartupActionType = 'startupActionType';
   static const String keyConnectedAtMs = 'connectedAtMs';
+  static const String keyRingbackStartMode = 'ringbackStartMode';
   static const String keyPlayRingback = 'playRingback';
   static const String keyMaxRingbackSeconds = 'maxRingbackSeconds';
 
@@ -42,6 +44,7 @@ class PayloadCodec {
       keyBackgroundCallbackHandle: data.backgroundCallbackHandle,
       keyBackgroundDeclineCallbackHandle: data.backgroundDeclineCallbackHandle,
       keyPlayRingback: data.playRingback,
+      keyRingbackStartMode: data.ringbackStartMode.wireValue,
       keyMaxRingbackSeconds: data.maxRingbackSeconds,
     };
   }
@@ -68,6 +71,9 @@ class PayloadCodec {
       backgroundDeclineCallbackHandle:
           (map[keyBackgroundDeclineCallbackHandle] as num?)?.toInt(),
       playRingback: (map[keyPlayRingback] as bool?) ?? true,
+      ringbackStartMode: RingbackStartMode.fromWireValue(
+        map[keyRingbackStartMode] as String?,
+      ),
       maxRingbackSeconds: (map[keyMaxRingbackSeconds] as num?)?.toInt() ?? 120,
     );
   }
