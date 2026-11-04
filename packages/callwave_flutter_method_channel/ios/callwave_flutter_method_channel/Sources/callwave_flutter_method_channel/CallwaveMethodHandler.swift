@@ -35,6 +35,9 @@ final class CallwaveMethodHandler {
       callManager.showOutgoingCall(payload)
       result(nil)
 
+    case "reportOutgoingCallScreenVisible":
+      result(nil)
+
     case "registerBackgroundIncomingCallValidator":
       let args = call.arguments as? [String: Any]
       guard

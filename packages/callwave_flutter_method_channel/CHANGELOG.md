@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Android prepares outgoing ringback without starting audio, then accepts a
+  one-shot `reportOutgoingCallScreenVisible` signal with a native attempt token.
+  Connection, cleanup and engine detach invalidate pending playback. Repeated
+  outgoing setup preserves connected/consumed state. iOS accepts readiness as a
+  no-op and keeps its existing CallKit audio behavior.
+
 ## [0.3.0] - 2026-10-28
 
 ### Added

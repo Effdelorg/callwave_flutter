@@ -15,6 +15,48 @@ void main() {
     CallwaveFlutter.instance.setEngine(_FakeEngine());
   });
 
+  testWidgets('custom auto-routed screen signals only after transition', (
+    tester,
+  ) async {
+    final recording = _NoopPlatform();
+    platform.CallwaveFlutterPlatform.instance = recording;
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        builder: (_, child) => CallwaveScope(
+          navigatorKey: navigatorKey,
+          callScreenBuilder: (_, session) =>
+              const Scaffold(body: Text('Custom call')),
+          child: child!,
+        ),
+        home: const SizedBox(),
+      ),
+    );
+    final session = CallwaveFlutter.instance.createSession(
+      callData: const CallData(
+        callId: 'ready-call',
+        callerName: 'Ava',
+        handle: '+1',
+      ),
+      isOutgoing: true,
+    );
+    await session.applyNativeEvent(
+      CallEvent(
+        callId: session.callId,
+        type: CallEventType.started,
+        timestamp: DateTime.now(),
+        extra: {CallEventExtraKeys.outgoingRingbackRequestId: 'scope-attempt'},
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(recording.readiness, isEmpty);
+    await tester.pumpAndSettle();
+    expect(find.text('Custom call'), findsOneWidget);
+    expect(recording.readiness, ['ready-call|scope-attempt']);
+  });
+
   testWidgets('hydrates sessions created before scope listener attaches',
       (tester) async {
     CallwaveFlutter.instance.createSession(
@@ -411,6 +453,16 @@ Future<void> _pumpUntilCallScreen(WidgetTester tester) async {
 }
 
 class _NoopPlatform extends platform.CallwaveFlutterPlatform {
+  final readiness = <String>[];
+
+  @override
+  Future<void> reportOutgoingCallScreenVisible(
+    String callId, {
+    required String requestId,
+  }) async {
+    readiness.add('$callId|$requestId');
+  }
+
   @override
   Stream<platform.CallEventDto> get events =>
       const Stream<platform.CallEventDto>.empty();

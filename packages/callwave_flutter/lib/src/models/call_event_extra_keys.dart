@@ -5,6 +5,10 @@
 abstract final class CallEventExtraKeys {
   CallEventExtraKeys._();
 
+  /// Opaque Android ringback attempt token, present while screen readiness is
+  /// pending. Raw-event integrations must capture this from the `started` event.
+  static const String outgoingRingbackRequestId = 'outgoingRingbackRequestId';
+
   /// Indicates how the user opened the app to this event.
   ///
   /// On Android, when the user taps the ongoing call notification (body or

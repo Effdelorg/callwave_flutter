@@ -141,7 +141,8 @@ class CallwaveFlutter {
 
     _terminalEventTypesByCallId.remove(callData.callId);
 
-    final session = CallSession(
+    late final CallSession session;
+    session = CallSession(
       callData: callData,
       isOutgoing: isOutgoing,
       initialState: initialState,
@@ -151,6 +152,13 @@ class CallwaveFlutter {
       declineNative: declineCall,
       endNative: endCall,
       startOutgoingNative: showOutgoingCall,
+      reportOutgoingScreenVisible: (requestId) async {
+        if (!identical(_sessions[callData.callId], session)) return;
+        await reportOutgoingCallScreenVisible(
+          session.callId,
+          requestId: requestId,
+        );
+      },
     );
 
     _sessions[callData.callId] = session;
@@ -297,6 +305,20 @@ class CallwaveFlutter {
 
   Future<void> showOutgoingCall(CallData data) {
     return _platform.showOutgoingCall(_toDto(data));
+  }
+
+  /// Reports completed outgoing screen navigation for raw-event integrations.
+  /// Capture [requestId] from the started event's
+  /// [CallEventExtraKeys.outgoingRingbackRequestId]. Session integrations should
+  /// use [CallSession.setCallScreenVisible] or `CallwaveCallScreenReady`.
+  Future<void> reportOutgoingCallScreenVisible(
+    String callId, {
+    required String requestId,
+  }) {
+    return _platform.reportOutgoingCallScreenVisible(
+      callId,
+      requestId: requestId,
+    );
   }
 
   /// Accepts an active incoming call.

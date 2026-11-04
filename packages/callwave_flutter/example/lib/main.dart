@@ -449,21 +449,24 @@ Widget _buildCallScreen({
   OneToOneLocalVideoBuilder? oneToOneLocalVideoBuilder,
   VoidCallback? onCallEnded,
 }) {
+  final Widget screen;
   if (session.callData.callType != CallType.video) {
-    return CallScreen(
+    screen = CallScreen(
       session: session,
       onCallEnded: onCallEnded,
       oneToOneRemoteVideoBuilder: oneToOneRemoteVideoBuilder,
       oneToOneLocalVideoBuilder: oneToOneLocalVideoBuilder,
     );
+  } else {
+    screen = ExampleVideoCallScreen(
+      session: session,
+      cameraController: cameraController,
+      oneToOneRemoteVideoBuilder: oneToOneRemoteVideoBuilder,
+      oneToOneLocalVideoBuilder: oneToOneLocalVideoBuilder,
+      onCallEnded: onCallEnded,
+    );
   }
-  return ExampleVideoCallScreen(
-    session: session,
-    cameraController: cameraController,
-    oneToOneRemoteVideoBuilder: oneToOneRemoteVideoBuilder,
-    oneToOneLocalVideoBuilder: oneToOneLocalVideoBuilder,
-    onCallEnded: onCallEnded,
-  );
+  return CallwaveCallScreenReady(session: session, child: screen);
 }
 
 class CallDemoScreen extends StatefulWidget {

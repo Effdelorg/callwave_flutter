@@ -24,7 +24,8 @@ class CallData {
   final Map<String, dynamic>? extra;
 
   /// Whether the plugin plays a ringback tone for an outgoing call until it
-  /// connects or ends. Set to `false` when your media stack plays its own
+  /// connects or ends. On Android, playback waits for call-screen readiness.
+  /// Set to `false` when your media stack plays its own
   /// (for example SIP early media). Ignored for incoming calls.
   final bool playRingback;
 

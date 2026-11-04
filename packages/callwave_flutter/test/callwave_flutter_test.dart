@@ -20,6 +20,42 @@ void main() {
     await fakePlatform.dispose();
   });
 
+  test(
+    'screen readiness stays bound to its session when a call ID is reused',
+    () async {
+      CallEvent started(String requestId) => CallEvent(
+        callId: 'reused',
+        type: CallEventType.started,
+        timestamp: DateTime.now(),
+        extra: {CallEventExtraKeys.outgoingRingbackRequestId: requestId},
+      );
+      const data = CallData(callId: 'reused', callerName: 'Ava', handle: '+1');
+      final old = CallwaveFlutter.instance.createSession(
+        callData: data,
+        isOutgoing: true,
+      );
+      await old.applyNativeEvent(started('old-attempt'));
+      old.reportEnded();
+      final current = CallwaveFlutter.instance.createSession(
+        callData: data,
+        isOutgoing: true,
+      );
+      await current.applyNativeEvent(started('new-attempt'));
+      old.setCallScreenVisible(true);
+      expect(fakePlatform.readiness, isEmpty);
+      current.setCallScreenVisible(true);
+      expect(fakePlatform.readiness, ['reused|new-attempt']);
+    },
+  );
+
+  test('raw-event screen readiness forwards the captured token', () async {
+    await CallwaveFlutter.instance.reportOutgoingCallScreenVisible(
+      'raw-call',
+      requestId: 'raw-attempt',
+    );
+    expect(fakePlatform.readiness, ['raw-call|raw-attempt']);
+  });
+
   test('showIncomingCall delegates to platform interface', () async {
     await CallwaveFlutter.instance.showIncomingCall(
       const CallData(callId: 'c1', callerName: 'Ava', handle: '+1'),
@@ -1208,6 +1244,16 @@ void main() {
 }
 
 class _FakePlatform extends platform.CallwaveFlutterPlatform {
+  final readiness = <String>[];
+
+  @override
+  Future<void> reportOutgoingCallScreenVisible(
+    String callId, {
+    required String requestId,
+  }) async {
+    readiness.add('$callId|$requestId');
+  }
+
   final StreamController<platform.CallEventDto> _controller =
       StreamController<platform.CallEventDto>.broadcast();
 

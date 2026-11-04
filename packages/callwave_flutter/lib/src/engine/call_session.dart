@@ -41,15 +41,18 @@ class CallSession extends ChangeNotifier {
     _CallIdAction? declineNative,
     _CallIdAction? endNative,
     _OutgoingStartAction? startOutgoingNative,
-  })  : _callData = callData,
-        _state = initialState,
-        _connectedAt = initialConnectedAt,
-        _conferenceState = _normalizeConferenceState(initialConferenceState),
-        _engineProvider = engineProvider ?? _defaultEngineProvider,
-        _acceptNative = acceptNative ?? _defaultCallIdAction,
-        _declineNative = declineNative ?? _defaultCallIdAction,
-        _endNative = endNative ?? _defaultCallIdAction,
-        _startOutgoingNative = startOutgoingNative ?? _defaultOutgoingAction {
+    Future<void> Function(String requestId)? reportOutgoingScreenVisible,
+  }) : _callData = callData,
+       _state = initialState,
+       _connectedAt = initialConnectedAt,
+       _conferenceState = _normalizeConferenceState(initialConferenceState),
+       _engineProvider = engineProvider ?? _defaultEngineProvider,
+       _acceptNative = acceptNative ?? _defaultCallIdAction,
+       _declineNative = declineNative ?? _defaultCallIdAction,
+       _endNative = endNative ?? _defaultCallIdAction,
+       _startOutgoingNative = startOutgoingNative ?? _defaultOutgoingAction,
+       _reportOutgoingScreenVisible =
+           reportOutgoingScreenVisible ?? _defaultCallIdAction {
     if (_state == CallSessionState.connected ||
         (_state == CallSessionState.reconnecting && _connectedAt != null)) {
       _connectedAt ??= DateTime.now();
@@ -70,6 +73,12 @@ class CallSession extends ChangeNotifier {
   final _CallIdAction _declineNative;
   final _CallIdAction _endNative;
   final _OutgoingStartAction _startOutgoingNative;
+  final Future<void> Function(String requestId) _reportOutgoingScreenVisible;
+  String? _ringbackRequestId;
+  bool _outgoingPreparationReceived = false;
+  bool _callScreenVisible = false;
+  bool Function()? _isScreenStillVisible;
+  bool _ringbackReadinessSent = false;
 
   CallData _callData;
   CallSessionState _state;
@@ -109,6 +118,58 @@ class CallSession extends ChangeNotifier {
   int get participantCount => _conferenceState.participants.length;
   bool get isEnded =>
       _state == CallSessionState.ended || _state == CallSessionState.failed;
+
+  /// Whether UI observation can still contribute to outgoing ringback startup.
+  /// Used by the built-in readiness wrapper to stop observing completed calls.
+  @internal
+  bool get needsOutgoingScreenReadiness =>
+      !_disposed &&
+      isOutgoing &&
+      !_ringbackReadinessSent &&
+      (!_outgoingPreparationReceived || _ringbackRequestId != null) &&
+      !_endRequested &&
+      !_declineRequested &&
+      _connectedAt == null &&
+      !isEnded;
+
+  /// For custom navigation: set true only after the call screen's entrance
+  /// transition has rendered, and false when it is hidden or disposed.
+  /// Built-in routes and `CallwaveCallScreenReady` manage this automatically.
+  /// [isStillVisible] optionally rechecks visibility when native setup arrives
+  /// later. Route wrappers use it to reject a screen hidden since its last frame.
+  void setCallScreenVisible(bool visible, {bool Function()? isStillVisible}) {
+    if (_disposed) return;
+    _callScreenVisible = visible;
+    _isScreenStillVisible = visible ? isStillVisible : null;
+    _reportScreenReadyIfNeeded();
+  }
+
+  void _reportScreenReadyIfNeeded() {
+    final requestId = _ringbackRequestId;
+    if (!_callScreenVisible ||
+        _isScreenStillVisible?.call() == false ||
+        requestId == null ||
+        _ringbackReadinessSent ||
+        _disposed ||
+        !isOutgoing ||
+        _endRequested ||
+        _declineRequested ||
+        _state != CallSessionState.connecting ||
+        _connectedAt != null) {
+      return;
+    }
+    _ringbackReadinessSent = true;
+    unawaited(_sendScreenReadiness(requestId));
+  }
+
+  Future<void> _sendScreenReadiness(String requestId) async {
+    try {
+      await _reportOutgoingScreenVisible(requestId);
+    } catch (error, stackTrace) {
+      // An optional UI sound must not fail the call or its signaling.
+      _logError('reportOutgoingCallScreenVisible', error, stackTrace);
+    }
+  }
 
   void updateCallData(CallData next) {
     if (next.callId != callId) {
@@ -279,7 +340,7 @@ class CallSession extends ChangeNotifier {
   }
 
   Future<void> applyNativeEvent(CallEvent event) async {
-    if (event.callId != callId || isEnded) {
+    if (event.callId != callId || isEnded || _disposed) {
       return;
     }
     switch (event.type) {
@@ -289,6 +350,19 @@ class CallSession extends ChangeNotifier {
       case CallEventType.accepted:
         return;
       case CallEventType.started:
+        final requestId =
+            event.extra?[CallEventExtraKeys.outgoingRingbackRequestId];
+        var preparationChanged = !_outgoingPreparationReceived;
+        _outgoingPreparationReceived = true;
+        // Bind once to this session; replay must not replace its attempt token.
+        if (_ringbackRequestId == null &&
+            requestId is String &&
+            requestId.isNotEmpty) {
+          _ringbackRequestId = requestId;
+          preparationChanged = true;
+        }
+        if (preparationChanged) notifyListeners();
+        _reportScreenReadyIfNeeded();
         await beginOutgoingStart();
         return;
       case CallEventType.ended:
@@ -459,6 +533,7 @@ class CallSession extends ChangeNotifier {
       unawaited(_invokeEndEngineOnce());
     }
     notifyListeners();
+    _reportScreenReadyIfNeeded();
   }
 
   void _startTimerIfNeeded() {
@@ -532,6 +607,8 @@ class CallSession extends ChangeNotifier {
       return;
     }
     _disposed = true;
+    _callScreenVisible = false;
+    _isScreenStillVisible = null;
     _stopTimer();
     unawaited(_engineProvider()?.onDispose(this));
     super.dispose();

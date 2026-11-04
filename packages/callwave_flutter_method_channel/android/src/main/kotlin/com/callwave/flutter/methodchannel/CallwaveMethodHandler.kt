@@ -38,6 +38,17 @@ class CallwaveMethodHandler(
                 result.success(null)
             }
 
+            "reportOutgoingCallScreenVisible" -> {
+                val callId = call.argument<String>(CallwaveConstants.EXTRA_CALL_ID)
+                val requestId = call.argument<String>("requestId")
+                if (callId.isNullOrBlank() || requestId.isNullOrBlank()) {
+                    result.error("invalid_payload", "callId and requestId are required", null)
+                    return
+                }
+                callManager.reportOutgoingCallScreenVisible(callId, requestId)
+                result.success(null)
+            }
+
             "registerBackgroundIncomingCallValidator" -> {
                 val dispatcherHandle = call.argument<Number>(
                     CallwaveConstants.EXTRA_BACKGROUND_DISPATCHER_HANDLE,

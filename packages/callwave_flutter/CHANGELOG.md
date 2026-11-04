@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Android outgoing ringback now waits until call-screen navigation completes.
+  Built-in screens report readiness automatically. Custom navigation must use
+  `CallwaveCallScreenReady` or `CallSession.setCallScreenVisible`; raw-event
+  integrations can report readiness with the captured native attempt token.
+  Delayed callbacks cannot restart sound after connection or cleanup, or affect
+  a newer call attempt using the same call ID. Readiness requires painted,
+  visible content and completed entrance animations; nested wrappers delegate
+  to the innermost screen. Readiness listeners stop when no longer needed.
+  Repeated Android outgoing setup does not emit another start event.
+  iOS behavior is unchanged.
+
 ## [0.6.0] - 2026-10-28
 
 ### Added

@@ -417,3 +417,56 @@ oneToOneLocalVideoBuilder: (context, session) {
 - `CallwaveScope` auto-pushes one call screen per `callId` and does not auto-pop.
 - `CallwaveScope.navigatorKey` must be the same key used by your app's `MaterialApp`.
 - `CallwaveEngine` must be set before session operations (including `restoreActiveSessions`).
+
+
+## Android outgoing ringback and navigation
+
+Android ringback starts only after the outgoing call screen finishes entering
+and renders. `playRingback` enables or disables sound; it does not control timing.
+`CallwaveScope` (including `callScreenBuilder`) and standalone `CallScreen`
+report readiness automatically. Signaling starts independently of navigation.
+
+Wrap custom screens, including routes handled by `onRouteSession`, startup
+routes listed in `preRoutedCallIds`, and router-managed call pages:
+
+```dart
+CallwaveCallScreenReady(
+  session: session,
+  child: MyCallScreen(session: session),
+)
+```
+
+The wrapper waits for a current, onstage route with a completed entrance
+animation and a resumed app. It clears visibility when hidden or disposed.
+The built-in screen also waits for its content fade to finish. For custom
+entrance animations, pass `entranceAnimation` to the wrapper. For loading states,
+handle navigation through `onRouteSession` or your own router and mount the
+wrapper only when the call screen is ready. Nested wrappers for the
+same session delegate to the innermost screen and honor ancestor animation gates.
+A completed frame alone does not authorize hidden or fully transparent content.
+Without a `ModalRoute`, report visibility yourself:
+
+```dart
+session.setCallScreenVisible(true); // After your screen transition renders.
+session.setCallScreenVisible(false); // When hidden or disposed.
+```
+
+Readiness works whether the screen appears before or after native call setup.
+If no screen reports readiness, Android ringback stays silent. This changes the
+previous immediate-playback behavior; custom-navigation apps must integrate it.
+
+Apps using raw events without sessions must capture
+`event.extra?[CallEventExtraKeys.outgoingRingbackRequestId]` from the `started`
+event and call `CallwaveFlutter.instance.reportOutgoingCallScreenVisible(
+event.callId, requestId: capturedRequestId)` after their transition completes.
+Keep the captured request ID with that call attempt; never reuse it for another
+attempt, even if its call ID is the same.
+
+Connection, cancellation, failure, and native cleanup stop sound and invalidate
+pending playback. Repeating outgoing setup updates the existing call without
+emitting another start event or invoking signaling again. Engine detach and
+process restoration do not restart ringback.
+`maxRingbackDuration` starts counting when playback starts and stops only the
+sound, not the call. `CallData.timeout` is an incoming-call timeout; outgoing
+signaling timeouts must be reported through the call lifecycle. iOS behavior is
+unchanged.
