@@ -7,6 +7,7 @@ import '../engine/call_session.dart';
 import '../enums/call_session_state.dart';
 import '../models/call_event_extra_keys.dart';
 import 'call_screen.dart';
+import 'callwave_call_screen_ready.dart';
 import 'call_screen_builders.dart';
 import 'inherited_call_session.dart';
 import 'theme/callwave_theme.dart';
@@ -232,7 +233,10 @@ class _CallwaveScopeState extends State<CallwaveScope> {
                 );
             return InheritedCallSession(
               session: session,
-              child: callScreen,
+              child: CallwaveCallScreenReady(
+                session: session,
+                child: callScreen,
+              ),
             );
           },
         ),

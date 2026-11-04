@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.4.0] - 2026-11-04
+
+### Added
+
+- `RingbackStartMode` and `CallDataDto.ringbackStartMode`, preserved by `copyWith`
+  and payload serialization. Missing or unknown wire values use `automatic`.
+- `allowOutgoingRingback(callId, requestId: ...)`,
+  `reportOutgoingCallScreenVisible(callId, requestId: ...)`, and
+  `reportOutgoingCallScreenHidden(callId, requestId: ...)` platform methods.
+  Each has a default no-op implementation for custom platforms.
+
 ## [0.3.0] - 2026-10-28
 
 ### Added

@@ -1,25 +1,50 @@
 # callwave_flutter_platform_interface
 
-Shared contracts for `callwave_flutter` implementations.
+Shared contracts, DTOs, enums, and payload codecs for
+[callwave_flutter](https://pub.dev/packages/callwave_flutter) platform implementations.
+App developers should depend on the public package.
 
-## Why callwave_flutter?
+## Version and requirements
 
-**Plug-and-play call UI for WebRTC video and audio calls.** Add WhatsApp-style incoming/outgoing call screens to your Flutter app in minutes—no reinventing the wheel.
+Version `0.4.0` is used by `callwave_flutter: ^0.7.0` and
+`callwave_flutter_method_channel: ^0.4.0`.
+Requires Dart `^3.11.0` and Flutter `>=3.41.0`.
 
-- **Works with any WebRTC backend** — LiveKit, Agora, Twilio, Daily, VideoSDK, Cloudflare Calls (Real-time), or your own. Implement `CallwaveEngine`, wire your SDK in a few callbacks, and you're done.
-- **Native UX out of the box** — Full-screen incoming call UI on Android, CallKit on iOS. Handles accept, decline, timeout, missed, and callback flows.
-- **Cold-start ready** — Event buffering and startup route resolution so calls work even when the app launches from a push notification.
-- **Conference support** — Built-in multi-participant UI with customizable tiles and controls.
+## Outgoing ringback contract
 
-If you're building video or voice calls with WebRTC, callwave_flutter gives you the call UX layer so you can focus on your media and signaling. **App developers should use [callwave_flutter](https://pub.dev/packages/callwave_flutter), not this package directly.**
+`CallDataDto` includes these settings:
 
-> **Platform status:** Android has custom native incoming call UI (`FullScreenCallActivity`) and full call UX. iOS uses CallKit system UI for incoming calls (Apple's native UI; no custom UI from the plugin). In-app call screen is shared Flutter UI on both platforms.
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `playRingback` | `true` | Enables the plugin's outgoing tone |
+| `ringbackStartMode` | `RingbackStartMode.automatic` | Selects automatic or host-controlled startup |
+| `maxRingbackSeconds` | `120` | Caps playback without ending the call |
 
-This package requires Flutter `>=3.41.0` so the federated iOS implementation
-can support Swift Package Manager alongside CocoaPods.
+`copyWith` and `PayloadCodec` preserve the mode. Wire values are `automatic` and
+`appControlled`; missing or unknown values use `automatic`.
 
-## Includes
-- Abstract platform API
-- DTO models
-- Payload codec helpers
-- Event and call enums
+The bundled implementation applies these startup rules:
+
+| Mode | Android | iOS |
+| --- | --- | --- |
+| `automatic` | Screen readiness | CallKit audio activation |
+| `appControlled` | Screen readiness and host permission | Screen readiness, host permission, and CallKit audio activation |
+
+`playRingback: false` disables either mode. Audio routing belongs to the host.
+
+## Readiness methods
+
+Each method takes a call ID and the request ID captured from that attempt's
+`started` event:
+
+- `reportOutgoingCallScreenVisible(callId, requestId: ...)` reports screen readiness.
+- `allowOutgoingRingback(callId, requestId: ...)` grants host permission without
+  waiting for playback.
+- `reportOutgoingCallScreenHidden(callId, requestId: ...)` clears pending visibility;
+  it does not pause sound that has already started.
+
+These methods have default no-op implementations, so existing custom platforms
+remain source-compatible. Custom implementations must override them to support
+the readiness flow. Keep request IDs specific to each attempt and invalidate
+pending playback on connection, cleanup, or engine teardown. Do not recreate
+playback permission during process restoration.

@@ -4,6 +4,37 @@ import 'package:callwave_flutter/callwave_flutter.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+    'outgoing signaling starts without waiting for screen visibility',
+    () async {
+      final engine = _FakeEngine();
+      final readiness = <String>[];
+      final session = CallSession(
+        callData: const CallData(
+          callId: 'start-now',
+          callerName: 'Ava',
+          handle: '+1',
+        ),
+        isOutgoing: true,
+        engineProvider: () => engine,
+        reportOutgoingScreenVisible: (id) async {
+          readiness.add(id);
+        },
+      );
+      addTearDown(session.dispose);
+      await session.applyNativeEvent(
+        CallEvent(
+          callId: session.callId,
+          type: CallEventType.started,
+          timestamp: DateTime.now(),
+          extra: {CallEventExtraKeys.outgoingRingbackRequestId: 'attempt'},
+        ),
+      );
+      expect(engine.startCount, 1);
+      expect(readiness, isEmpty);
+    },
+  );
+
   test('beginAnswering invokes answer hook once', () async {
     final engine = _FakeEngine();
     final session = CallSession(

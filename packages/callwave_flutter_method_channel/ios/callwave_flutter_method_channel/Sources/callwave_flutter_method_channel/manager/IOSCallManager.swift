@@ -25,6 +25,7 @@ final class IOSCallManager {
   private let backgroundValidator = IOSBackgroundValidator()
   private let backgroundValidatorRegistrationStore: BackgroundValidatorRegistrationStore
   private let outgoingRingbackPlayer = OutgoingRingbackPlayer()
+  private let outgoingRingbackReadiness = OutgoingRingbackReadiness()
 
   private var payloadStore: [String: CallPayload] = [:]
   private var uuidByCallId: [String: UUID] = [:]
@@ -156,6 +157,13 @@ final class IOSCallManager {
   }
 
   func showOutgoingCall(_ payload: CallPayload) {
+    // Re-entry cannot reset connected state or re-arm consumed startup.
+    if activeCallRegistry.activeCallIds().contains(payload.callId), outgoingCallIds.contains(payload.callId) {
+      payloadStore[payload.callId] = payload
+      if !payload.playRingback { stopRingback(callId: payload.callId) }
+      persistOngoingCall(payload: payload, eventType: "started", uuid: uuidByCallId[payload.callId])
+      return
+    }
     guard activeCallRegistry.tryStart(callId: payload.callId) else {
       emit(callId: payload.callId, type: "declined", extra: payload.extra)
       return
@@ -171,7 +179,7 @@ final class IOSCallManager {
     connectedAtMsByCallId.removeValue(forKey: payload.callId)
     if payload.playRingback {
       ringbackCallId = payload.callId
-      scheduleRingbackCap(callId: payload.callId, seconds: payload.maxRingbackSeconds)
+      outgoingRingbackReadiness.prepare(callId: payload.callId, appControlled: payload.ringbackStartMode == "appControlled")
     } else {
       stopRingback(callId: payload.callId)
     }
@@ -185,7 +193,7 @@ final class IOSCallManager {
 
     let transaction = CXTransaction(action: startAction)
     callController.request(transaction) { [weak self] error in
-      guard let self else { return }
+      guard let self, self.uuidByCallId[payload.callId] == uuid else { return }
       if let error {
         self.cleanup(callId: payload.callId, uuid: uuid)
         self.emit(
@@ -204,12 +212,34 @@ final class IOSCallManager {
         eventType: "started",
         uuid: uuid
       )
+      if let token = self.outgoingRingbackReadiness.token(callId: payload.callId) {
+        self.outgoingRingbackReadiness.confirm(callId: payload.callId, token: token)
+      }
       self.startRingbackIfNeeded()
-      self.emit(callId: payload.callId, type: "started", extra: payload.extra)
+      self.emit(callId: payload.callId, type: "started", extra: self.eventExtra(payload: payload))
     }
   }
 
+  func allowOutgoingRingback(callId: String, requestId: String) {
+    if outgoingRingbackReadiness.allow(callId: callId, token: requestId) { startRingbackIfNeeded() }
+  }
+
+  func reportOutgoingCallScreenVisible(callId: String, requestId: String) {
+    if outgoingRingbackReadiness.setVisible(callId: callId, token: requestId, visible: true) { startRingbackIfNeeded() }
+  }
+
+  func reportOutgoingCallScreenHidden(callId: String, requestId: String) {
+    outgoingRingbackReadiness.setVisible(callId: callId, token: requestId, visible: false)
+  }
+
+  /// Engine teardown must not leave pending startup that a new engine can replay.
+  func stopOutgoingRingback() {
+    if let callId = ringbackCallId { stopRingback(callId: callId) }
+    outgoingRingbackReadiness.clear()
+  }
+
   func endCall(callId: String) {
+    stopRingback(callId: callId)
     guard let uuid = uuidByCallId[callId] else {
       clearCallState(callId: callId)
       emit(callId: callId, type: "ended", extra: nil)
@@ -220,7 +250,7 @@ final class IOSCallManager {
     let endAction = CXEndCallAction(call: uuid)
     let transaction = CXTransaction(action: endAction)
     callController.request(transaction) { [weak self] error in
-      guard let self else { return }
+      guard let self, self.uuidByCallId[callId] == uuid else { return }
       if let error {
         self.emit(
           callId: callId,
@@ -446,7 +476,7 @@ final class IOSCallManager {
   }
 
   func handleAccept(uuid: UUID) {
-    guard let callId = callIdByUuid[uuid] else { return }
+    guard let callId = callIdByUuid[uuid], uuidByCallId[callId] == uuid else { return }
     let payload = payloadStore[callId]
     if let payload, !reconcileIncomingTimeout(callId: callId, payload: payload, rescheduleIfPending: false) {
       return
@@ -481,7 +511,7 @@ final class IOSCallManager {
   }
 
   func handleEnd(uuid: UUID, reason: CXCallEndedReason?) {
-    guard let callId = callIdByUuid[uuid] else { return }
+    guard let callId = callIdByUuid[uuid], uuidByCallId[callId] == uuid else { return }
     let payload = payloadStore[callId]
     let isTimeout = reason == .unanswered
     let wasIncomingDecline = !isTimeout && isIncomingRingingCall(callId: callId)
@@ -542,6 +572,7 @@ final class IOSCallManager {
   }
 
   private func handleReset() {
+    outgoingRingbackReadiness.clear()
     ringbackCallId = nil
     ringbackCapItem?.cancel()
     ringbackCapItem = nil
@@ -663,6 +694,7 @@ final class IOSCallManager {
   }
 
   private func cleanup(callId: String, uuid: UUID) {
+    guard uuidByCallId[callId] == uuid else { return }
     cancelTimeout(callId: callId)
     missedCallNotificationManager.dismissMissedCall(callId: callId)
     activeCallRegistry.remove(callId: callId)
@@ -682,7 +714,7 @@ final class IOSCallManager {
   }
 
   private func handleStartCall(uuid: UUID) {
-    guard let callId = callIdByUuid[uuid], ringbackCallId == callId else { return }
+    guard let callId = callIdByUuid[uuid], uuidByCallId[callId] == uuid, ringbackCallId == callId else { return }
     // Only for calls that play ringback. CallKit activates the session with the
     // current category; a voice-call category keeps ringback audible when the
     // ring/silent switch is on. A host that already chose .playAndRecord is untouched.
@@ -708,15 +740,28 @@ final class IOSCallManager {
       isCallAudioSessionActive,
       let callId = ringbackCallId,
       outgoingCallIds.contains(callId),
+      activeCallRegistry.activeCallIds().contains(callId),
       uuidByCallId[callId] != nil,
-      connectedAtMsByCallId[callId] == nil
+      connectedAtMsByCallId[callId] == nil,
+      payloadStore[callId]?.playRingback == true,
+      outgoingRingbackReadiness.canStart(callId: callId, audioActive: isCallAudioSessionActive)
     else {
       return
     }
-    outgoingRingbackPlayer.start(callId: callId)
+    guard outgoingRingbackPlayer.start(callId: callId) else {
+      stopRingback(callId: callId)
+      return
+    }
+    guard
+      let payload = payloadStore[callId],
+      let token = outgoingRingbackReadiness.token(callId: callId),
+      let deadline = outgoingRingbackReadiness.didStart(callId: callId, seconds: payload.maxRingbackSeconds)
+    else { return }
+    if ringbackCapItem == nil { scheduleRingbackCap(callId: callId, token: token, deadline: deadline) }
   }
 
   private func stopRingback(callId: String) {
+    outgoingRingbackReadiness.invalidate(callId: callId)
     if ringbackCallId == callId {
       ringbackCallId = nil
       ringbackCapItem?.cancel()
@@ -725,14 +770,15 @@ final class IOSCallManager {
     outgoingRingbackPlayer.stop(callId: callId)
   }
 
-  private func scheduleRingbackCap(callId: String, seconds: Int) {
+  private func scheduleRingbackCap(callId: String, token: String, deadline: Date) {
     ringbackCapItem?.cancel()
     let item = DispatchWorkItem { [weak self] in
-      guard let self, self.ringbackCallId == callId else { return }
+      guard let self, self.ringbackCallId == callId,
+        self.outgoingRingbackReadiness.token(callId: callId) == token else { return }
       self.stopRingback(callId: callId)
     }
     ringbackCapItem = item
-    DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(seconds), execute: item)
+    DispatchQueue.main.asyncAfter(deadline: .now() + max(0, deadline.timeIntervalSinceNow), execute: item)
   }
 
   private func emit(callId: String, type: String, extra: [String: Any]?) {
@@ -882,7 +928,17 @@ final class IOSCallManager {
     merged["handle"] = payload?.handle ?? (merged["handle"] as? String ?? "")
     merged["callType"] = payload?.callType ?? (merged["callType"] as? String ?? "audio")
     merged["avatarUrl"] = payload?.avatarUrl ?? merged["avatarUrl"] ?? NSNull()
+    if let payload {
+      merged["playRingback"] = payload.playRingback
+      merged["ringbackStartMode"] = payload.ringbackStartMode
+      merged["maxRingbackSeconds"] = payload.maxRingbackSeconds
+    }
     let resolvedCallId = callId ?? payload?.callId
+    // Tokens are runtime-only and must never survive consumption/restoration.
+    merged.removeValue(forKey: "outgoingRingbackRequestId")
+    if let resolvedCallId, let token = outgoingRingbackReadiness.pendingToken(callId: resolvedCallId) {
+      merged["outgoingRingbackRequestId"] = token
+    }
     if let resolvedCallId, let connectedAtMs = connectedAtMsByCallId[resolvedCallId] {
       merged["connectedAtMs"] = connectedAtMs
     } else {

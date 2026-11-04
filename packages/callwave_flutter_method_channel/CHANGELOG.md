@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.4.0] - 2026-11-04
+
+### Added
+
+- Android and iOS support for `ringbackStartMode: appControlled`.
+- Attempt-specific `allowOutgoingRingback` and
+  `reportOutgoingCallScreenHidden` channel methods.
+- `reportOutgoingCallScreenVisible` channel method for screen readiness.
+- Ringback settings in native event metadata so automatically created outgoing
+  sessions receive the correct playback mode, enabled flag, and duration cap.
+
+### Changed
+
+- Android defers automatic ringback until screen readiness.
+- App-controlled mode requires visibility and host permission on both platforms;
+  iOS also requires CallKit audio activation.
+- iOS ringback duration caps start at successful playback and remain unchanged
+  across audio reactivation.
+- Repeated iOS outgoing setup preserves connection and playback state without
+  requesting another CallKit start transaction.
+- Updated `callwave_flutter_platform_interface` to `^0.4.0` and the iOS podspec
+  version to `0.4.0`.
+
+### Fixed
+
+- Stale CallKit completions and actions cannot clean up a replacement call.
+- Engine teardown stops iOS ringback and invalidates pending playback.
+
 ## [0.3.0] - 2026-10-28
 
 ### Added

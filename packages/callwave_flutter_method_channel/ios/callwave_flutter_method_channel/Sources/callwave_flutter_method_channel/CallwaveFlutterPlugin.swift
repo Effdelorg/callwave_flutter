@@ -16,6 +16,7 @@ public class CallwaveFlutterPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let instance = CallwaveFlutterPlugin()
+    registrar.publish(instance)
     instance.installNotificationHandling()
 
     let methodChannel = FlutterMethodChannel(
@@ -104,6 +105,10 @@ public class CallwaveFlutterPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
   public func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
     eventBridge.attach(events)
     return nil
+  }
+
+  public func detachFromEngine(for registrar: FlutterPluginRegistrar) {
+    callManager.stopOutgoingRingback()
   }
 
   public func onCancel(withArguments arguments: Any?) -> FlutterError? {

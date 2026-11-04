@@ -90,6 +90,16 @@ Apps using SPM on iOS may need `flutter config --enable-swift-package-manager` f
 
 ---
 
+## Installation
+
+```yaml
+dependencies:
+  callwave_flutter: ^0.7.0
+```
+
+Requires Dart `^3.11.0`, Flutter `>=3.41.0`, Android API 26+, and iOS 13+.
+iOS supports CocoaPods and Swift Package Manager.
+
 ## Getting started in 3 steps
 
 ### Step 1 — Tell the plugin what to do when a call is accepted or ended
@@ -271,39 +281,70 @@ extra: {
 
 Works with LiveKit, Agora, Twilio, Daily, VideoSDK, Cloudflare Calls, and any custom backend.
 
-### Outgoing calls
+### Outgoing calls and ringback
 
 ```dart
 await CallwaveFlutter.instance.showOutgoingCall(
-  CallData(callId: 'call-456', callerName: 'Bob', handle: 'bob@example.com'),
+  const CallData(
+    callId: 'call-456',
+    callerName: 'Bob',
+    handle: 'bob@example.com',
+  ),
 );
 ```
 
-The caller hears a ringback tone ("tuut... tuut...") until you report the call
-connected (`session.reportConnected()`) or it ends. A safety cap stops the
-tone after `maxRingbackDuration` (default 120 seconds) in case neither
-happens; the call itself stays active. If your audio/video SDK
-already plays its own ringback (for example SIP early media), turn the
-plugin's tone off for that call:
+Ringback plays until the call connects, ends, or reaches `maxRingbackDuration`
+(default 120 seconds from playback). Reaching the cap stops only sound. Set
+`playRingback: false` when your media SDK supplies its own tone.
+
+| Mode | Android starts when | iOS starts when |
+| --- | --- | --- |
+| `automatic` (default) | The call screen is visible after its entrance finishes | CallKit activates audio |
+| `appControlled` | The screen is visible and the host grants permission | The screen is visible, the host grants permission, and CallKit activates audio |
+
+For host-controlled playback, configure your engine, create a session, and grant
+permission after your app or media SDK prepares its audio route:
 
 ```dart
-await CallwaveFlutter.instance.showOutgoingCall(
-  data.copyWith(playRingback: false),
+final session = CallwaveFlutter.instance.createSession(
+  callData: const CallData(
+    callId: 'call-456',
+    callerName: 'Bob',
+    handle: 'bob@example.com',
+    ringbackStartMode: RingbackStartMode.appControlled,
+  ),
+  isOutgoing: true,
 );
+await session.start();
 
-// Or keep the plugin's tone but change the cap (whole seconds, minimum 1).
-await CallwaveFlutter.instance.showOutgoingCall(
-  data.copyWith(maxRingbackDuration: const Duration(seconds: 60)),
-);
+// Call after your app or media SDK has prepared its audio route.
+await session.allowOutgoingRingback();
 ```
 
-- **Android:** plays the device's regional ringback tone on the voice-call
-  stream. The plugin does not change the audio mode or route; set
-  `MODE_IN_COMMUNICATION` in your media stack if you want it on the earpiece.
-- **iOS:** plays once CallKit activates the call's audio session. If the
-  session category is not already `.playAndRecord`, the plugin sets
-  `.playAndRecord` / `.voiceChat` so the silent switch does not mute the tone.
-  With `playRingback: false` the plugin leaves the category alone.
+Permission is remembered if the screen or native setup is not ready yet. The
+method returns without waiting for playback. Without permission, app-controlled
+ringback stays silent while signaling continues. Choose the mode when creating
+the call; live switching is unsupported.
+
+Built-in screens report visibility automatically. Wrap custom call screens with
+`CallwaveCallScreenReady(session: session, child: yourScreen)`. Without a
+`ModalRoute`, call `session.setCallScreenVisible(true)` after the entrance renders
+and `false` when hidden or disposed.
+
+**Upgrading from 0.6.x:** Android now waits for screen readiness. Custom navigation
+must report it to hear ringback. iOS automatic mode still uses CallKit activation.
+
+In app-controlled mode, hiding before playback delays startup until the screen
+is visible again and keeps permission. Hiding after playback does not pause
+sound. Connection, call cleanup, and engine teardown invalidate pending playback;
+stale signals and process restoration cannot restart it.
+
+Audio routing remains owned by the host. Android uses the voice-call stream;
+iOS retains its CallKit audio-session category behavior. Permission does not
+select an earpiece or Bluetooth device.
+
+See the [outgoing-call guide](packages/callwave_flutter/README.md#outgoing-calls-and-ringback)
+for custom transitions, raw-event APIs, duration limits, and audio routing.
 
 ### End a call
 

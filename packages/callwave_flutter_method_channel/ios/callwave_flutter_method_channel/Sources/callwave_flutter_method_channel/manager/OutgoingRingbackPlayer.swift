@@ -19,16 +19,17 @@ final class OutgoingRingbackPlayer {
   private var activeCallId: String?
   private var configurationObserver: NSObjectProtocol?
 
-  func start(callId: String) {
+  @discardableResult
+  func start(callId: String) -> Bool {
     if activeCallId == callId, engine != nil {
-      return
+      return true
     }
     stop()
     guard
       let format = AVAudioFormat(standardFormatWithSampleRate: Self.sampleRate, channels: 1),
       let buffer = Self.makeCycleBuffer(format: format)
     else {
-      return
+      return false
     }
 
     let engine = AVAudioEngine()
@@ -41,7 +42,7 @@ final class OutgoingRingbackPlayer {
       try engine.start()
     } catch {
       engine.detach(playerNode)
-      return
+      return false
     }
     playerNode.play()
 
@@ -60,6 +61,7 @@ final class OutgoingRingbackPlayer {
       self.stop()
       self.start(callId: callId)
     }
+    return true
   }
 
   func stop(callId: String) {

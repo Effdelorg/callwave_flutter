@@ -6,6 +6,36 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('screen readiness forwards the captured call attempt', () async {
+    const channel = MethodChannel('callwave_flutter/methods');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          return null;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+    final plugin = MethodChannelCallwaveFlutter();
+    await plugin.reportOutgoingCallScreenVisible(
+      'call',
+      requestId: 'attempt-1',
+    );
+    expect(calls.map((call) => call.method), [
+      'initialize',
+      'reportOutgoingCallScreenVisible',
+    ]);
+    expect(calls.last.arguments, {'callId': 'call', 'requestId': 'attempt-1'});
+    await plugin.allowOutgoingRingback('call', requestId: 'attempt-1');
+    expect(calls.last.method, 'allowOutgoingRingback');
+    expect(calls.last.arguments, {'callId': 'call', 'requestId': 'attempt-1'});
+    await plugin.reportOutgoingCallScreenHidden('call', requestId: 'attempt-1');
+    expect(calls.last.method, 'reportOutgoingCallScreenHidden');
+    expect(calls.last.arguments, {'callId': 'call', 'requestId': 'attempt-1'});
+  });
+
   test('registerWith sets platform instance', () {
     MethodChannelCallwaveFlutter.registerWith();
     expect(

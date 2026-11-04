@@ -7,6 +7,7 @@ import '../models/call_data.dart';
 import '../models/call_data_extra_keys.dart';
 import 'call_screen_builders.dart';
 import 'call_screen_controller.dart';
+import 'callwave_call_screen_ready.dart';
 import 'theme/callwave_theme.dart';
 import 'theme/call_screen_theme.dart';
 import 'theme/callwave_theme_data.dart';
@@ -167,23 +168,28 @@ class _CallScreenState extends State<CallScreen>
           ),
           child: FadeTransition(
             opacity: _fadeAnimation,
-            child: isConference
-                ? (conferenceScreenBuilder != null
-                    ? conferenceScreenBuilder(context, widget.session)
-                    : SafeArea(
-                        child: ConferenceCallView(
-                          session: widget.session,
-                          controller: _controller,
-                          participantTileBuilder: widget.participantTileBuilder,
-                          conferenceControlsBuilder:
-                              widget.conferenceControlsBuilder,
-                        ),
-                      ))
-                : SafeArea(
-                    child: _controller.isVideo
-                        ? _buildOneToOneVideoView(displayData)
-                        : _buildOneToOneAudioView(displayData),
-                  ),
+            child: CallwaveCallScreenReady(
+              session: widget.session,
+              entranceAnimation: _fadeAnimation,
+              child: isConference
+                  ? (conferenceScreenBuilder != null
+                        ? conferenceScreenBuilder(context, widget.session)
+                        : SafeArea(
+                            child: ConferenceCallView(
+                              session: widget.session,
+                              controller: _controller,
+                              participantTileBuilder:
+                                  widget.participantTileBuilder,
+                              conferenceControlsBuilder:
+                                  widget.conferenceControlsBuilder,
+                            ),
+                          ))
+                  : SafeArea(
+                      child: _controller.isVideo
+                          ? _buildOneToOneVideoView(displayData)
+                          : _buildOneToOneAudioView(displayData),
+                    ),
+            ),
           ),
         ),
       ),

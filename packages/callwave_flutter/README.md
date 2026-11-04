@@ -2,6 +2,16 @@
 
 Public Flutter API for Callwave VoIP/video call UX.
 
+## Installation
+
+```yaml
+dependencies:
+  callwave_flutter: ^0.7.0
+```
+
+Requires Dart `^3.11.0`, Flutter `>=3.41.0`, Android API 26+, and iOS 13+.
+iOS supports CocoaPods and Swift Package Manager.
+
 ## Screenshots
 
 | Incoming call | Native plugin |
@@ -417,3 +427,123 @@ oneToOneLocalVideoBuilder: (context, session) {
 - `CallwaveScope` auto-pushes one call screen per `callId` and does not auto-pop.
 - `CallwaveScope.navigatorKey` must be the same key used by your app's `MaterialApp`.
 - `CallwaveEngine` must be set before session operations (including `restoreActiveSessions`).
+
+## Outgoing calls and ringback
+
+### Automatic playback
+
+```dart
+await CallwaveFlutter.instance.showOutgoingCall(
+  const CallData(
+    callId: 'call-456',
+    callerName: 'Bob',
+    handle: 'bob@example.com',
+  ),
+);
+```
+
+`RingbackStartMode.automatic` is the default. Playback starts when the platform
+is ready:
+
+| Mode | Android | iOS |
+| --- | --- | --- |
+| `automatic` | Call screen is visible after its entrance finishes | CallKit activates the audio session |
+| `appControlled` | Screen is visible and host grants permission | Screen is visible, host grants permission, and CallKit activates audio |
+
+Signaling continues independently of ringback. Set `playRingback: false` if your
+media SDK supplies its own tone. `maxRingbackDuration` defaults to 120 seconds,
+counts from playback, and stops only sound. It is sent in whole seconds with a
+minimum of one second. `CallData.timeout` applies to incoming calls.
+
+### Host-controlled playback
+
+Choose `appControlled` when your app must prepare its audio route before sound
+starts. Configure your `CallwaveEngine` before creating the session:
+
+```dart
+final session = CallwaveFlutter.instance.createSession(
+  callData: const CallData(
+    callId: 'call-456',
+    callerName: 'Bob',
+    handle: 'bob@example.com',
+    ringbackStartMode: RingbackStartMode.appControlled,
+  ),
+  isOutgoing: true,
+);
+await session.start();
+
+// Call after your app or media SDK has prepared its audio route.
+await session.allowOutgoingRingback();
+```
+
+Permission can be granted before the screen or native setup is ready. It is
+remembered for that attempt. The method returns after recording permission
+locally; it does not wait for visibility, CallKit activation, or playback.
+Without permission, ringback stays silent. `playRingback: false` disables sound
+in either mode. Choose the mode when creating the attempt; live switching is
+unsupported.
+
+Sessions created automatically by `showOutgoingCall()` receive the native
+ringback settings. Existing sessions keep their attempt settings.
+
+### Custom screens and navigation
+
+`CallwaveScope`, its `callScreenBuilder`, and standalone `CallScreen` report
+readiness automatically. Wrap other call screens, including custom routers and
+startup routes, with:
+
+```dart
+CallwaveCallScreenReady(
+  session: session,
+  child: MyCallScreen(session: session),
+)
+```
+
+The wrapper waits until the route is current, the app is resumed, the content
+has painted, and entrance animations have completed. Hidden or fully transparent
+content cannot report readiness. Pass `entranceAnimation` for a custom content
+transition. Mount the wrapper when loading has finished and the screen is ready.
+Nested wrappers use the innermost screen and also wait for ancestor animations.
+
+Without a `ModalRoute`, report visibility directly:
+
+```dart
+session.setCallScreenVisible(true); // After the screen entrance renders.
+session.setCallScreenVisible(false); // When hidden or disposed.
+```
+
+**Upgrading from 0.6.x:** Android no longer plays ringback immediately. Custom
+navigation must report readiness; otherwise the call continues silently. iOS
+automatic mode still uses CallKit activation.
+
+In app-controlled mode, hiding before playback prevents startup until the
+screen is visible again and retains permission. Hiding after playback does not
+pause sound. Cached screens can become ready again without repainting.
+
+### Raw-event integrations
+
+Capture `CallEventExtraKeys.outgoingRingbackRequestId` from the attempt's
+`started` event. Pass that same request ID to these `CallwaveFlutter.instance`
+methods:
+
+| Method | When to call |
+| --- | --- |
+| `reportOutgoingCallScreenVisible(callId, requestId: token)` | After the screen entrance has rendered |
+| `allowOutgoingRingback(callId, requestId: token)` | When the host is ready for sound in app-controlled mode |
+| `reportOutgoingCallScreenHidden(callId, requestId: token)` | When a pending app-controlled screen is hidden or disposed |
+
+Keep the token with its attempt, even when reusing a call ID. Native permission
+completion acknowledges the signal without waiting for playback.
+
+### Playback lifecycle and audio routing
+
+Connection, termination, failure, cleanup, and engine teardown invalidate
+pending playback. Duplicate or stale signals cannot restart sound or affect a
+replacement attempt. Process restoration does not restart ringback. Repeated
+outgoing setup updates the active call without emitting another start event.
+iOS audio reactivation does not extend the original playback duration cap.
+
+The host owns audio routing. Permission does not select an earpiece or Bluetooth
+device. Android uses the voice-call stream without changing audio mode or route.
+iOS keeps its CallKit behavior: when ringback is enabled and the category is not
+already `.playAndRecord`, the plugin selects `.playAndRecord` / `.voiceChat`.

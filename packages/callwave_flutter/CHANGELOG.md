@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.7.0] - 2026-11-04
+
+### Added
+
+- `CallData.ringbackStartMode` with `automatic` (default) and `appControlled` modes.
+- `CallSession.allowOutgoingRingback()` lets the host grant playback permission
+  after preparing its audio route. App-controlled playback also requires a visible
+  call screen; iOS additionally requires CallKit audio activation.
+- `CallwaveCallScreenReady` reports readiness for custom call screens.
+- Raw-event APIs for reporting screen visibility and granting playback permission
+  using the outgoing attempt's request ID.
+
+### Changed
+
+- Android ringback waits until the call screen is visible and its entrance
+  animation has completed. Built-in screens report readiness automatically.
+  Custom screens must use `CallwaveCallScreenReady` or report visibility directly.
+- iOS automatic mode keeps CallKit-based startup. Its ringback duration cap now
+  starts when playback succeeds and is not extended by audio reactivation.
+- Repeated outgoing setup updates the call without starting signaling again.
+- Updated both federated dependencies to `^0.4.0`.
+
+### Fixed
+
+- Cached screens report visibility again after hiding and reopening.
+- Automatically created sessions retain native ringback settings. Reused call IDs
+  do not inherit settings from ended sessions awaiting cleanup.
+- Stale readiness signals and CallKit callbacks cannot affect replacement attempts.
+  Connection, cleanup, and engine teardown invalidate pending playback.
+
 ## [0.6.0] - 2026-10-28
 
 ### Added

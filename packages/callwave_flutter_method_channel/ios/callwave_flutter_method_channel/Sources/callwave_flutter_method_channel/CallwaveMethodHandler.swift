@@ -35,6 +35,20 @@ final class CallwaveMethodHandler {
       callManager.showOutgoingCall(payload)
       result(nil)
 
+    case "reportOutgoingCallScreenVisible", "reportOutgoingCallScreenHidden", "allowOutgoingRingback":
+      let args = call.arguments as? [String: Any]
+      guard let callId = args?["callId"] as? String, !callId.isEmpty,
+        let requestId = args?["requestId"] as? String, !requestId.isEmpty else {
+        result(FlutterError(code: "invalid_payload", message: "callId and requestId are required", details: nil))
+        return
+      }
+      switch call.method {
+      case "allowOutgoingRingback": callManager.allowOutgoingRingback(callId: callId, requestId: requestId)
+      case "reportOutgoingCallScreenHidden": callManager.reportOutgoingCallScreenHidden(callId: callId, requestId: requestId)
+      default: callManager.reportOutgoingCallScreenVisible(callId: callId, requestId: requestId)
+      }
+      result(nil)
+
     case "registerBackgroundIncomingCallValidator":
       let args = call.arguments as? [String: Any]
       guard

@@ -34,6 +34,8 @@ object CallwaveConstants {
     const val EXTRA_EXPIRES_AT_MS = "expiresAtMs"
     const val EXTRA_OUTCOME_REASON = "outcomeReason"
     const val EXTRA_INCOMING_ACCEPT_STRATEGY = "incomingAcceptStrategy"
+    const val EXTRA_OUTGOING_RINGBACK_REQUEST_ID = "outgoingRingbackRequestId"
+    const val EXTRA_RINGBACK_START_MODE = "ringbackStartMode"
     const val EXTRA_PLAY_RINGBACK = "playRingback"
     const val EXTRA_MAX_RINGBACK_SECONDS = "maxRingbackSeconds"
     const val DEFAULT_MAX_RINGBACK_SECONDS = 120

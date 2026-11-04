@@ -56,6 +56,42 @@ class MethodChannelCallwaveFlutter extends CallwaveFlutterPlatform {
   }
 
   @override
+  Future<void> allowOutgoingRingback(
+    String callId, {
+    required String requestId,
+  }) async {
+    await initialize();
+    await _methodChannel.invokeMethod<void>(
+      'allowOutgoingRingback',
+      <String, dynamic>{'callId': callId, 'requestId': requestId},
+    );
+  }
+
+  @override
+  Future<void> reportOutgoingCallScreenHidden(
+    String callId, {
+    required String requestId,
+  }) async {
+    await initialize();
+    await _methodChannel.invokeMethod<void>(
+      'reportOutgoingCallScreenHidden',
+      <String, dynamic>{'callId': callId, 'requestId': requestId},
+    );
+  }
+
+  @override
+  Future<void> reportOutgoingCallScreenVisible(
+    String callId, {
+    required String requestId,
+  }) async {
+    await initialize();
+    await _methodChannel.invokeMethod<void>(
+      'reportOutgoingCallScreenVisible',
+      <String, dynamic>{'callId': callId, 'requestId': requestId},
+    );
+  }
+
+  @override
   Future<void> registerBackgroundIncomingCallValidator({
     required int backgroundDispatcherHandle,
     int? backgroundCallbackHandle,

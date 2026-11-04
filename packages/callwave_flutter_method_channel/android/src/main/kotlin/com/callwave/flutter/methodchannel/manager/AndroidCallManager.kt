@@ -36,6 +36,7 @@ class AndroidCallManager(
     private val ongoingCallStore = OngoingCallStore(context)
     private val incomingRingtoneController = IncomingRingtoneController(context)
     private val outgoingRingbackController = OutgoingRingbackController()
+    private val outgoingRingbackReadiness = OutgoingRingbackReadiness()
     private val payloadStore = HashMap<String, CallPayload>()
     private val incomingExpiresAtByCallId = HashMap<String, Long>()
     private val openedIncomingCalls = HashSet<String>()
@@ -103,8 +104,8 @@ class AndroidCallManager(
         pendingDeclinedCalls.remove(payload.callId)
         pendingLaunchAfterConfirm.remove(payload.callId)
         launchActionOverrides.remove(payload.callId)
+        stopRingbackForCall(payload.callId)
         outgoingCalls.remove(payload.callId)
-        outgoingRingbackController.stop(payload.callId)
         connectedAtByCallId.remove(payload.callId)
         incomingCallStore.save(payload, expiresAtMs)
 
@@ -124,6 +125,15 @@ class AndroidCallManager(
     }
 
     fun showOutgoingCall(payload: CallPayload) {
+        check(Looper.myLooper() == Looper.getMainLooper())
+        // Re-entry must not reset connected state or re-arm consumed readiness.
+        if (activeCallRegistry.contains(payload.callId) && outgoingCalls.contains(payload.callId)) {
+            payloadStore[payload.callId] = payload
+            if (!payload.playRingback) stopRingbackForCall(payload.callId)
+            persistOngoingCall(payload, CallwaveConstants.EVENT_STARTED)
+            // This is an update, not another start or a cold-start restoration.
+            return
+        }
         if (!activeCallRegistry.tryStart(payload.callId)) {
             emitEvent(payload.callId, CallwaveConstants.EVENT_DECLINED, payload.extra)
             return
@@ -151,13 +161,40 @@ class AndroidCallManager(
             payload = payload,
             eventType = CallwaveConstants.EVENT_STARTED,
         )
-        if (payload.playRingback) {
-            outgoingRingbackController.start(
-                callId = payload.callId,
-                maxDurationMs = payload.maxRingbackSeconds * 1000L,
-            )
-        }
-        emitEvent(payload.callId, CallwaveConstants.EVENT_STARTED, payload.extra)
+        outgoingRingbackReadiness.prepare(payload.callId, payload.playRingback, payload.ringbackStartMode == "appControlled")
+        emitEvent(payload.callId, CallwaveConstants.EVENT_STARTED, eventExtra(payload, payload.extra))
+    }
+
+    fun allowOutgoingRingback(callId: String, requestId: String) {
+        check(Looper.myLooper() == Looper.getMainLooper())
+        outgoingRingbackReadiness.allow(callId, requestId)
+        tryStartOutgoingRingback(callId, requestId, visible = false)
+    }
+
+    fun reportOutgoingCallScreenHidden(callId: String, requestId: String) {
+        check(Looper.myLooper() == Looper.getMainLooper())
+        outgoingRingbackReadiness.hide(callId, requestId)
+    }
+
+    fun reportOutgoingCallScreenVisible(callId: String, requestId: String) {
+        tryStartOutgoingRingback(callId, requestId, visible = true)
+    }
+
+    private fun tryStartOutgoingRingback(callId: String, requestId: String, visible: Boolean) {
+        check(Looper.myLooper() == Looper.getMainLooper())
+        val payload = payloadStore[callId]
+        if (!outgoingRingbackReadiness.consume(
+                callId = callId,
+                requestId = requestId,
+                active = activeCallRegistry.contains(callId),
+                outgoing = outgoingCalls.contains(callId),
+                connected = connectedAtByCallId.containsKey(callId),
+                enabled = payload?.playRingback == true,
+                visible = visible,
+            ) || payload == null
+        ) return
+        Log.d(TAG, "Starting outgoing ringback after screen readiness for $callId.")
+        outgoingRingbackController.start(callId, payload.maxRingbackSeconds * 1000L)
     }
 
     fun endCall(callId: String) {
@@ -316,6 +353,7 @@ class AndroidCallManager(
         if (!openedIncomingCalls.add(callId)) {
             return true
         }
+        stopRingbackForCall(callId)
         outgoingCalls.remove(callId)
 
         val extraFromIntent = CallPayload.fromIntentExtras(
@@ -397,6 +435,7 @@ class AndroidCallManager(
             pendingAcceptedCalls.remove(callId)
             confirmedAcceptedCalls.remove(callId)
             pendingLaunchAfterConfirm.remove(callId)
+            stopRingbackForCall(callId)
             outgoingCalls.remove(callId)
             if (fallbackPayload != null) {
                 cancelIncomingTimeouts(callId, clearPersistedState = true)
@@ -423,6 +462,7 @@ class AndroidCallManager(
         )
         openedIncomingCalls.remove(callId)
         launchActionOverrides.remove(callId)
+        stopRingbackForCall(callId)
         outgoingCalls.remove(callId)
         if (payload.incomingAcceptStrategy ==
             CallwaveConstants.INCOMING_ACCEPT_STRATEGY_DEFER_OPEN_UNTIL_CONFIRMED
@@ -864,7 +904,7 @@ class AndroidCallManager(
     }
 
     fun syncCallConnectedState(callId: String, connectedAtMs: Long) {
-        outgoingRingbackController.stop(callId)
+        stopRingbackForCall(callId)
         if (!activeCallRegistry.contains(callId)) {
             return
         }
@@ -873,7 +913,13 @@ class AndroidCallManager(
     }
 
     /** Without an engine nothing can report the call as connected, so stop ringback. */
+    private fun stopRingbackForCall(callId: String) {
+        outgoingRingbackReadiness.invalidate(callId)
+        outgoingRingbackController.stop(callId)
+    }
+
     fun stopOutgoingRingback() {
+        outgoingRingbackReadiness.clear()
         outgoingRingbackController.stopAll()
     }
 
@@ -963,6 +1009,7 @@ class AndroidCallManager(
         pendingDeclinedCalls.remove(payload.callId)
         pendingLaunchAfterConfirm.remove(payload.callId)
         launchActionOverrides.remove(payload.callId)
+        stopRingbackForCall(payload.callId)
         outgoingCalls.remove(payload.callId)
         when (snapshot.eventType) {
             CallwaveConstants.EVENT_ACCEPTED -> {
@@ -1361,9 +1408,9 @@ class AndroidCallManager(
     }
 
     private fun clearCallRuntimeState(callId: String, dismissMissed: Boolean) {
+        stopRingbackForCall(callId)
         cancelIncomingTimeouts(callId, clearPersistedState = true)
         incomingRingtoneController.stop(callId)
-        outgoingRingbackController.stop(callId)
         notificationManager.dismissIncoming(callId)
         if (dismissMissed) {
             notificationManager.dismissMissed(callId)
@@ -1457,6 +1504,15 @@ class AndroidCallManager(
             ?: callType
             ?: merged[CallwaveConstants.EXTRA_CALL_TYPE]
             ?: "audio"
+        merged.remove(CallwaveConstants.EXTRA_OUTGOING_RINGBACK_REQUEST_ID)
+        if (payload != null) {
+            merged[CallwaveConstants.EXTRA_PLAY_RINGBACK] = payload.playRingback
+            merged[CallwaveConstants.EXTRA_RINGBACK_START_MODE] = payload.ringbackStartMode
+            merged[CallwaveConstants.EXTRA_MAX_RINGBACK_SECONDS] = payload.maxRingbackSeconds
+        }
+        callId?.let(outgoingRingbackReadiness::requestId)?.let {
+            merged[CallwaveConstants.EXTRA_OUTGOING_RINGBACK_REQUEST_ID] = it
+        }
         val connectedAtMs = callId?.let(connectedAtByCallId::get)
         if (connectedAtMs != null) {
             merged[CallwaveConstants.EXTRA_CONNECTED_AT_MS] = connectedAtMs
@@ -1664,6 +1720,7 @@ class AndroidCallManager(
         confirmedAcceptedCalls.remove(payload.callId)
         pendingLaunchAfterConfirm.remove(payload.callId)
         launchActionOverrides.remove(payload.callId)
+        stopRingbackForCall(payload.callId)
         outgoingCalls.remove(payload.callId)
 
         backgroundValidator.reportDecline(

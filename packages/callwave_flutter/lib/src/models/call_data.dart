@@ -1,3 +1,4 @@
+import '../enums/ringback_start_mode.dart';
 import '../enums/call_type.dart';
 
 class CallData {
@@ -12,6 +13,7 @@ class CallData {
     this.callType = CallType.audio,
     this.extra,
     this.playRingback = true,
+    this.ringbackStartMode = RingbackStartMode.automatic,
     this.maxRingbackDuration = const Duration(seconds: 120),
   });
 
@@ -24,9 +26,14 @@ class CallData {
   final Map<String, dynamic>? extra;
 
   /// Whether the plugin plays a ringback tone for an outgoing call until it
-  /// connects or ends. Set to `false` when your media stack plays its own
+  /// connects or ends. On Android, playback waits for call-screen readiness.
+  /// Set to `false` when your media stack plays its own
   /// (for example SIP early media). Ignored for incoming calls.
   final bool playRingback;
+
+  /// Startup policy for outgoing sound; ignored when playRingback is false.
+  /// Supported on Android and iOS. Audio routing remains owned by the host.
+  final RingbackStartMode ringbackStartMode;
 
   /// Safety cap for the outgoing ringback tone, in case the call is never
   /// reported connected or ended. Only stops the tone; the call stays active.
@@ -42,6 +49,7 @@ class CallData {
     CallType? callType,
     Object? extra = _sentinel,
     bool? playRingback,
+    RingbackStartMode? ringbackStartMode,
     Duration? maxRingbackDuration,
   }) {
     return CallData(
@@ -57,6 +65,7 @@ class CallData {
           ? this.extra
           : extra as Map<String, dynamic>?,
       playRingback: playRingback ?? this.playRingback,
+      ringbackStartMode: ringbackStartMode ?? this.ringbackStartMode,
       maxRingbackDuration: maxRingbackDuration ?? this.maxRingbackDuration,
     );
   }
